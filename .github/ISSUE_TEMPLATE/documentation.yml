@@ -1,0 +1,32 @@
+name: Documentation problem
+description: Report a public, non-sensitive problem with repository documentation
+title: "[Docs]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fulmar has no supported public release yet. Do not include credentials, private prompts, personal paths, logs, vulnerability details, or other sensitive data.
+  - type: input
+    id: location
+    attributes:
+      label: Document or page
+      description: Link to or name the affected document.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is incorrect or unclear?
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: Suggested correction
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I have not included secrets, personal data, private paths, logs, or confidential security information.
+          required: true
