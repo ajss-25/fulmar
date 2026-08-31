@@ -1,0 +1,86 @@
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Editors and local tooling
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+.codex/
+
+# Swift, Xcode and test products
+.build/
+build/
+DerivedData/
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.testresult
+*.xcresult
+*.profraw
+*.profdata
+
+# Packaged applications and release products
+*.app/
+*.dSYM/
+*.dmg
+*.pkg
+*.zip
+*.tar
+*.tar.gz
+*.sha256
+SHA256SUMS.txt
+notarization-*.json
+
+# Generated and downloaded runtimes
+VendorRuntime/node_modules/
+VendorRuntime/node-v*-darwin-*/
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Local model weights and stores
+*.gguf
+*.safetensors
+.ollama/
+models/blobs/
+models/manifests/
+
+# Credentials, signing material and local environment
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.crt
+*.mobileprovision
+.credentials.yaml
+credentials.yaml
+secrets.*
+*.secret
+
+# Logs, caches, databases and local state
+*.log
+*.trace
+*.pid
+*.sock
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+.cache/
+tmp/
+temp/
