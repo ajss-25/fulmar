@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project status and download safety
+    url: https://github.com/ajss-25/fulmar#project-status
+    about: Read the current pre-release status before opening an issue.
+  - name: Sensitive security issue
+    url: https://github.com/ajss-25/fulmar/security
+    about: Never post secrets or vulnerability details publicly. Private reporting will be enabled before the first supported release.
