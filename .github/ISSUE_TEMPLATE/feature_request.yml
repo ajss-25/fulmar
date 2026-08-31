@@ -1,0 +1,40 @@
+name: Product suggestion
+description: Suggest a future Fulmar capability without implying release commitment
+title: "[Idea]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fulmar is still undergoing private qualification. Suggestions are welcome, but acceptance does not imply a release commitment.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the user need without private prompts, credentials, or confidential data.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Expected data boundary
+      options:
+        - On-device only
+        - Optional remote provider
+        - Either, with explicit user control
+        - Not applicable
+        - Unsure
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I have not included secrets, personal data, private paths, logs, or confidential security information.
+          required: true
