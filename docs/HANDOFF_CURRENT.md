@@ -93,8 +93,8 @@ Updated: 2026-09-03 (Europe/London)
 
 ## Frozen test topology
 
-- JavaScript: 652 exact lifecycle tests, 627 top-level tests; expected source result
-  605 passed plus 47 reviewed skips, and expected candidate result 606 passed plus
+- JavaScript: 653 exact lifecycle tests, 628 top-level tests; expected source result
+  606 passed plus 47 reviewed skips, and expected candidate result 607 passed plus
   46 reviewed skips.
 - Swift: 1,445 exact function specifiers; sorted-specifier SHA-256
   `242833714f5486eb52adf376427c95f8f7c3a5e306b101bed0f3b29db2fc4dea`.
