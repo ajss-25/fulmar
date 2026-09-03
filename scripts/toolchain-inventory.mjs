@@ -80,7 +80,7 @@ function validateDescriptor(value, label) {
 
 export function validateToolchainInventory(value) {
   exactKeys(value, ["architecture", "build", "developerDirectory", "operatingSystem", "schemaVersion", "sdk", "tools", "versions"], "toolchain inventory");
-  if (value.schemaVersion !== 5 || value.architecture !== "arm64") throw new Error("toolchain inventory identity is unsupported");
+  if (value.schemaVersion !== 6 || value.architecture !== "arm64") throw new Error("toolchain inventory identity is unsupported");
   boundedString(value.developerDirectory, "developerDirectory", { absolute: true });
   exactKeys(value.operatingSystem, ["buildVersion", "productVersion"], "operatingSystem");
   boundedString(value.operatingSystem.productVersion, "operatingSystem.productVersion");
@@ -97,7 +97,7 @@ export function validateToolchainInventory(value) {
   for (const [name, version] of Object.entries(value.versions)) {
     boundedString(version, `versions.${name}`, { multiline: true });
   }
-  exactKeys(value.build, ["automaticDSYMGeneration", "canonicalSourceSnapshot", "compilationDirectory", "configuration", "dsymObjectPrefixMaps", "dsymObjectPrependScratch", "dsymutilThreads", "frontendDebugInfo", "generatedPrefix", "jobs", "linkerReproducible", "relativeDebugMapObjects", "scratchPrefix", "serializedDebugPrefixMappings", "sourcePrefix", "swiftFrontendThreads", "swiftPMDebugInfoFormat"], "build");
+  exactKeys(value.build, ["automaticDSYMGeneration", "canonicalSourceSnapshot", "clangModuleBreadcrumbs", "compilationDirectory", "configuration", "dsymObjectPrefixMaps", "dsymObjectPrependScratch", "dsymutilThreads", "frontendDebugInfo", "generatedPrefix", "jobs", "linkerReproducible", "relativeDebugMapObjects", "scratchPrefix", "serializedDebugPrefixMappings", "sourcePrefix", "swiftFrontendThreads", "swiftPMDebugInfoFormat"], "build");
   const expectedBuild = {
     configuration: "release",
     jobs: 1,
@@ -112,6 +112,7 @@ export function validateToolchainInventory(value) {
     serializedDebugPrefixMappings: true,
     swiftPMDebugInfoFormat: "none",
     frontendDebugInfo: "dwarf",
+    clangModuleBreadcrumbs: false,
     automaticDSYMGeneration: false,
     compilationDirectory: "/Fulmar/Compilation",
     dsymObjectPrependScratch: true,
@@ -193,7 +194,7 @@ export async function captureToolchainInventory(requireCleanEnvironment = false,
     xcrun: "/usr/bin/xcrun"
   })) tools[name] = await descriptor(path, developerDirectory, hostedDeveloperTreeOwnerUID);
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     architecture: await command("/usr/bin/uname", ["-m"]),
     operatingSystem: {
       productVersion: await command("/usr/bin/sw_vers", ["-productVersion"]),
@@ -238,6 +239,7 @@ export async function captureToolchainInventory(requireCleanEnvironment = false,
       serializedDebugPrefixMappings: true,
       swiftPMDebugInfoFormat: "none",
       frontendDebugInfo: "dwarf",
+      clangModuleBreadcrumbs: false,
       automaticDSYMGeneration: false,
       compilationDirectory: "/Fulmar/Compilation",
       dsymObjectPrependScratch: true,

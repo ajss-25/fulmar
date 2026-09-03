@@ -31,7 +31,7 @@
       }
     },
     "toolchain": {
-      "schemaVersion": 5,
+      "schemaVersion": 6,
       "architecture": "arm64",
       "operatingSystem": {
         "productVersion": "26.5.2",
@@ -137,6 +137,7 @@
         "serializedDebugPrefixMappings": true,
         "swiftPMDebugInfoFormat": "none",
         "frontendDebugInfo": "dwarf",
+        "clangModuleBreadcrumbs": false,
         "automaticDSYMGeneration": false,
         "compilationDirectory": "/Fulmar/Compilation",
         "dsymObjectPrependScratch": true,

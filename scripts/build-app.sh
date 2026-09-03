@@ -409,6 +409,15 @@ done
 "$NODE_BIN" "$SOURCE_INPUT_TOOL" verify "$SWIFT_SOURCE_ROOT" "$SOURCE_INPUT_INVENTORY"
 
 export CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR"
+
+# Swift's Clang-module DWARF breadcrumbs are skeleton compile units whose
+# DW_AT_GNU_dwo_name is the .pcm path inside this build's private Clang module
+# cache. That path carries Clang's per-invocation context hash, whose base-36
+# spelling varies in length (12 or 13 characters) from build to build, so the
+# __DWARF,__debug_str size of every object varies and shifts the object-file
+# addresses of zero-fill globals that dsymutil records as symObjAddr in the
+# dSYM relocation map. The cache never survives this scratch root, so the
+# breadcrumbs could never be followed anyway; omit them at the producer.
 typeset -a swift_release_command
 swift_release_command=(swift build \
   --package-path "$SWIFT_SOURCE_ROOT" \
@@ -444,6 +453,8 @@ swift_release_command=(swift build \
   -Xswiftc /Fulmar/Compilation \
   -Xswiftc -Xfrontend \
   -Xswiftc -g \
+  -Xswiftc -Xfrontend \
+  -Xswiftc -no-clang-module-breadcrumbs \
   -Xlinker -oso_prefix \
   -Xlinker "$BUILD_SCRATCH" \
   -Xlinker -reproducible)

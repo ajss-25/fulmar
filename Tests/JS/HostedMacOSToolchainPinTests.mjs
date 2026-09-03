@@ -40,7 +40,7 @@ function toolchainFixture() {
   const toolRoot = `${developer}/Toolchains/XcodeDefault.xctoolchain/usr/bin`;
   const sdk = `${developer}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk`;
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     architecture: "arm64",
     operatingSystem: { productVersion: "26.0", buildVersion: "25A123" },
     developerDirectory: developer,
@@ -87,6 +87,7 @@ function toolchainFixture() {
       serializedDebugPrefixMappings: true,
       swiftPMDebugInfoFormat: "none",
       frontendDebugInfo: "dwarf",
+      clangModuleBreadcrumbs: false,
       automaticDSYMGeneration: false,
       compilationDirectory: "/Fulmar/Compilation",
       dsymObjectPrependScratch: true,

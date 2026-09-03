@@ -163,6 +163,8 @@ test("production assembly always compiles into a fresh private Swift scratch tre
   assert.match(script, /-Xlinker -oso_prefix[\s\\]+-Xlinker "\$BUILD_SCRATCH"[\s\\]+-Xlinker -reproducible/u);
   assert.match(script, /-debug-info-format none/u);
   assert.match(script, /-Xswiftc -Xfrontend[\s\\]*-Xswiftc -g/u);
+  assert.equal(releaseCommand.match(/-no-clang-module-breadcrumbs/gu)?.length, 1);
+  assert.match(releaseCommand, /-Xswiftc -Xfrontend[\s\\]*-Xswiftc -no-clang-module-breadcrumbs/u);
   assert.match(script, /-Xswiftc -file-compilation-dir[\s\\]*-Xswiftc \/Fulmar\/Compilation/u);
   assert.match(script, /automatic_dsym="\$\(\/usr\/bin\/find "\$BUILD_SCRATCH" -type d -name '\*\.dSYM' -print -quit\)"/u);
   assert.match(script, /--oso-prepend-path "\$BUILD_SCRATCH"/u);
