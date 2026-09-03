@@ -3,6 +3,7 @@ import { lstat, open, readdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { verifyBundledFirstPartyLicense } from "./first-party-license-policy.mjs";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const [runtimeArgument, destination, applicationVersion, projectRootArgument, ...localPackagePaths] = process.argv.slice(2);
 if (!runtimeArgument || !destination || !projectRootArgument || localPackagePaths.length === 0
@@ -80,6 +81,8 @@ async function readRuntimeFile(relativePath, maximumBytes, { optional = false, l
   if (before.size > maximumBytes) throw new Error(`${label} exceeds its byte limit`);
   let handle;
   try {
+    // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
+    // codeql[js/file-system-race]
     handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     const opened = await handle.stat();
     if (!opened.isFile() || opened.size > maximumBytes || opened.dev !== before.dev || opened.ino !== before.ino) {
@@ -314,17 +317,10 @@ for (const [lockPath, value] of Object.entries(lock.packages)) {
       // Runtime-relative traversal is forbidden for general package paths. The
       // fixed signed sibling is read explicitly and must still be regular.
       if (!String(error?.message ?? "").startsWith("invalid ")) throw error;
-      const stat = await lstat(patchPath);
-      if (stat.isSymbolicLink() || !stat.isFile() || stat.size > maximumLocalSourceBytes) {
-        throw new Error("Fulmar DSH patch provenance must be a bounded regular file");
-      }
-      let handle;
-      try {
-        handle = await open(patchPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-        return await handle.readFile();
-      } finally {
-        await handle?.close();
-      }
+      return (await readAttestedRegularFile(patchPath, {
+        label: "Fulmar DSH patch provenance",
+        maximumBytes: maximumLocalSourceBytes
+      })).bytes;
     });
     component.properties.push(
       { name: "local-harness:artifact-modification", value: "Fulmar preset sanitization and reviewed local-plugin dependency materialization" },

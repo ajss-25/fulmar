@@ -1,6 +1,60 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { closeSync, fstatSync, writeSync } from "node:fs";
+import { closeSync, fstatSync, readSync, writeSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const commandBarrierDescriptor = 3;
+const internalCommandBarrierArgument = "--fulmar-command-start-barrier-v2";
+const maximumCommandFrameBytes = 1024 * 1024;
+const maximumCommandArguments = 4_096;
+
+function readCommandBarrierFrame() {
+  const chunks = [];
+  const buffer = Buffer.allocUnsafe(8_192);
+  let length = 0;
+  try {
+    while (true) {
+      const count = readSync(commandBarrierDescriptor, buffer, 0, buffer.length, null);
+      if (count === 0) break;
+      length += count;
+      if (length > maximumCommandFrameBytes) throw new Error("oversized command barrier frame");
+      chunks.push(Buffer.from(buffer.subarray(0, count)));
+    }
+  } finally {
+    closeSync(commandBarrierDescriptor);
+  }
+  const bytes = Buffer.concat(chunks, length);
+  if (bytes.length < 1 || bytes.at(-1) !== 0x0a) throw new Error("unterminated command barrier frame");
+  const frame = JSON.parse(bytes.subarray(0, -1).toString("utf8"));
+  const expectedNonce = process.env.FULMAR_COMMAND_START_NONCE;
+  if (frame === null || Array.isArray(frame) || typeof frame !== "object"
+      || Object.keys(frame).sort().join(",") !== "command,nonce,version"
+      || frame.version !== "FULMAR_COMMAND_START_V2"
+      || !/^[a-f0-9]{64}$/u.test(expectedNonce ?? "")
+      || frame.nonce !== expectedNonce
+      || !Array.isArray(frame.command) || frame.command.length < 1
+      || frame.command.length > maximumCommandArguments
+      || frame.command.some((value) => typeof value !== "string" || value.includes("\0"))
+      || frame.command[0].length === 0) {
+    throw new Error("invalid command barrier frame");
+  }
+  return frame.command;
+}
+
+if (process.argv.length === 3 && process.argv[2] === internalCommandBarrierArgument) {
+  try {
+    if (typeof process.execve !== "function") throw new Error("execve unavailable");
+    const command = readCommandBarrierFrame();
+    delete process.env.FULMAR_COMMAND_START_NONCE;
+    // `env --` provides execvp-compatible PATH lookup while the option barrier
+    // keeps every requested command and argument in an opaque argv position.
+    // No requested byte is ever parsed as shell or interpreter source.
+    process.execve("/usr/bin/env", ["/usr/bin/env", "--", ...command], process.env);
+  } catch {
+    process.stderr.write("Fulmar command start barrier rejected its private frame.\n");
+    process.exit(126);
+  }
+}
 
 const argv = process.argv.slice(2);
 function take(name) {
@@ -13,7 +67,8 @@ let rssGraceSeconds = 5;
 if (argv[0] === "--rss-grace-seconds") rssGraceSeconds = Number(take("--rss-grace-seconds"));
 const emergencyRSSBytes = Number(take("--emergency-rss-bytes"));
 const label = take("--label");
-if (argv.shift() !== "--" || argv.length === 0
+if (argv.shift() !== "--" || argv.length === 0 || argv.length > maximumCommandArguments
+    || argv[0].length === 0
     || !Number.isSafeInteger(seconds) || seconds < 1 || seconds > 21_600
     || !Number.isSafeInteger(maximumRSSBytes) || maximumRSSBytes < 64 * 1024 * 1024
     || !Number.isSafeInteger(rssGraceSeconds) || rssGraceSeconds < 0 || rssGraceSeconds > 300
@@ -54,7 +109,6 @@ for (const signal of signalCodes.keys()) {
   process.once(signal, () => { requestedSignal ??= signal; });
 }
 
-const commandBarrierDescriptor = 3;
 let commandStdio = ["inherit", "inherit", "inherit", "pipe"];
 const inheritedSecretDescriptors = [];
 for (const [name, expected] of [
@@ -81,14 +135,18 @@ if (process.env.FULMAR_ROOT_WATCHDOG_FD_V1 === "198" || inheritedSecretDescripto
   for (const { descriptor } of inheritedSecretDescriptors) commandStdio[descriptor] = descriptor;
 }
 const commandBarrierNonce = randomBytes(32).toString("hex");
+const commandBarrierFrame = Buffer.from(`${JSON.stringify({
+  version: "FULMAR_COMMAND_START_V2",
+  nonce: commandBarrierNonce,
+  command
+})}\n`, "utf8");
+if (commandBarrierFrame.length > maximumCommandFrameBytes) {
+  throw new Error("invalid bounded process-tree watchdog command frame");
+}
 const commandStartedAt = Date.now();
-const child = spawn("/bin/sh", ["-p", "-c", `
-  IFS= read -r fulmar_start_line <&${commandBarrierDescriptor} || exit 126
-  [ "$fulmar_start_line" = "FULMAR_COMMAND_START_V1:$FULMAR_COMMAND_START_NONCE" ] || exit 126
-  exec ${commandBarrierDescriptor}<&-
-  unset fulmar_start_line FULMAR_COMMAND_START_NONCE
-  exec "$@"
-`, "fulmar-command-start-barrier", ...command], {
+const child = spawn(process.execPath, [
+  fileURLToPath(import.meta.url), internalCommandBarrierArgument
+], {
   stdio: commandStdio,
   env: { ...process.env, FULMAR_COMMAND_START_NONCE: commandBarrierNonce }
 });
@@ -257,12 +315,25 @@ async function establishChildIdentity() {
       supervisorPGID = supervisor.pgid;
       childIdentity = { pid: root.pid, started: root.started };
       childIdentityActive = true;
-      const frame = `FULMAR_COMMAND_START_V1:${commandBarrierNonce}\n`;
-      if (!child.stdio[commandBarrierDescriptor]?.writable
-          || !child.stdio[commandBarrierDescriptor].write(frame)) {
-        throw new Error("command start barrier could not be released");
-      }
-      child.stdio[commandBarrierDescriptor].end();
+      const barrier = child.stdio[commandBarrierDescriptor];
+      if (!barrier?.writable) throw new Error("command start barrier could not be released");
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          barrier.off("error", onError);
+          if (error) reject(error); else resolve();
+        };
+        const onError = () => finish(new Error("command start barrier write failed"));
+        const timer = setTimeout(() => {
+          barrier.destroy();
+          finish(new Error("command start barrier write timed out"));
+        }, 2_000);
+        barrier.once("error", onError);
+        barrier.end(commandBarrierFrame, () => finish());
+      });
       return;
     }
     await pause(20);

@@ -1,4 +1,11 @@
-import { constants as fsConstants } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync
+} from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -217,6 +224,57 @@ export async function readAttestedRegularFile(path, options = {}) {
     chunks.push(Buffer.from(chunk));
   });
   return Object.freeze({ ...result, bytes: Buffer.concat(chunks, result.bytes) });
+}
+
+export function readAttestedRegularFileSync(path, options = {}) {
+  const canonical = resolve(path);
+  const normalized = Object.freeze({
+    label: options.label ?? "attested artifact",
+    minimumBytes: boundedInteger(options.minimumBytes ?? 1, "minimumBytes"),
+    maximumBytes: boundedInteger(options.maximumBytes ?? 64 * 1024 * 1024, "maximumBytes"),
+    requireCurrentUser: options.requireCurrentUser !== false,
+    requirePrivateMode: options.requirePrivateMode === true,
+    requireSingleLink: options.requireSingleLink !== false
+  });
+  if (normalized.minimumBytes > normalized.maximumBytes) {
+    throw new TypeError("minimumBytes must not exceed maximumBytes");
+  }
+
+  const flags = fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_CLOEXEC ?? 0);
+  const descriptor = openSync(canonical, flags);
+  try {
+    const before = fstatSync(descriptor, { bigint: true });
+    validateShape(before, normalized, canonical);
+    const openedPath = lstatSync(canonical, { bigint: true });
+    if (!sameIdentity(before, openedPath)) {
+      throw new Error(`${normalized.label} path changed while its descriptor was opened: ${basename(canonical)}`);
+    }
+
+    const expectedBytes = Number(before.size);
+    const bytes = Buffer.allocUnsafe(expectedBytes);
+    let offset = 0;
+    while (offset < expectedBytes) {
+      const count = readSync(descriptor, bytes, offset, expectedBytes - offset, offset);
+      if (count <= 0) {
+        throw new Error(`${normalized.label} ended before its attested size: ${basename(canonical)}`);
+      }
+      offset += count;
+    }
+    const trailing = Buffer.allocUnsafe(1);
+    if (readSync(descriptor, trailing, 0, 1, expectedBytes) !== 0) {
+      throw new Error(`${normalized.label} grew while its bytes were read: ${basename(canonical)}`);
+    }
+
+    const after = fstatSync(descriptor, { bigint: true });
+    const finalPath = lstatSync(canonical, { bigint: true });
+    if (!sameIdentity(before, after) || !sameIdentity(before, finalPath)) {
+      throw new Error(`${normalized.label} changed while its bytes were read: ${basename(canonical)}`);
+    }
+    validateShape(after, normalized, canonical);
+    return Object.freeze({ bytes, metadata: before, path: canonical });
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 export async function sha256AttestedRegularFile(path, options = {}) {

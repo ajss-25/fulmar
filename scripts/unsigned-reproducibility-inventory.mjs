@@ -484,6 +484,8 @@ async function writeCanonical(destinationArgument, value) {
   const temporary = path.join(parent, `.${path.basename(destination)}.${process.pid}.${randomUUID()}.tmp`);
   let handle;
   try {
+    // O_EXCL makes the descriptor creation itself the non-racy existence check.
+    // codeql[js/file-system-race]
     handle = await open(temporary, "wx", 0o600);
     await handle.writeFile(payload);
     await handle.sync();
@@ -511,6 +513,8 @@ async function readBoundedCapture(sourceArgument) {
     fail("a reproducibility inventory is not a bounded single-link regular file");
   }
   if (!Number.isInteger(fsConstants.O_NOFOLLOW)) fail("the host does not expose O_NOFOLLOW");
+  // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
+  // codeql[js/file-system-race]
   const handle = await open(source, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   try {
     const opened = await handle.stat({ bigint: true });

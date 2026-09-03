@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
 import path from "node:path";
+import { readAttestedRegularFileSync } from "./attested-regular-file.mjs";
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const ICNS_ENTRIES = new Map([
@@ -35,10 +35,19 @@ function crc32(data) {
 
 function readRegularFile(filePath, label) {
   const absolute = path.resolve(filePath);
-  const status = fs.lstatSync(absolute);
-  if (!status.isFile() || status.isSymbolicLink()) fail(`${label} is not a regular file`);
-  if (status.size <= 0 || status.size > MAX_ICON_BYTES) fail(`${label} has an unsafe size`);
-  return { absolute, data: fs.readFileSync(absolute) };
+  let artifact;
+  try {
+    artifact = readAttestedRegularFileSync(absolute, {
+      label,
+      minimumBytes: 1,
+      maximumBytes: MAX_ICON_BYTES,
+      requireCurrentUser: true,
+      requireSingleLink: true
+    });
+  } catch {
+    fail(`${label} is not a safe independent regular file`);
+  }
+  return { absolute: artifact.path, data: artifact.bytes };
 }
 
 function validatePNG(data, label) {

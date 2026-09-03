@@ -5,7 +5,6 @@ import {
   chmod,
   lstat,
   open,
-  readFile,
   realpath,
   rename,
   stat,
@@ -19,6 +18,7 @@ import {
   toolchainInputOwnerIsAccepted,
   validateToolchainInventory
 } from "./toolchain-inventory.mjs";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const execFileAsync = promisify(execFile);
 const safePath = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -245,13 +245,23 @@ export async function readHostedMacOSToolchainPin(pathArgument) {
   if (canonicalPath !== path) {
     throw new Error("hosted macOS toolchain pin path is linked or non-canonical");
   }
-  const details = await lstat(path);
-  if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1
-      || details.uid !== process.getuid() || (details.mode & 0o022) !== 0
-      || details.size < 2 || details.size > maximumDocumentBytes) {
+  let input;
+  try {
+    input = await readAttestedRegularFile(path, {
+      label: "hosted macOS toolchain pin",
+      minimumBytes: 2,
+      maximumBytes: maximumDocumentBytes
+    });
+  } catch (error) {
+    throw new Error(
+      "hosted macOS toolchain pin is not one bounded owner-controlled regular file",
+      { cause: error }
+    );
+  }
+  if ((input.metadata.mode & 0o022n) !== 0n) {
     throw new Error("hosted macOS toolchain pin is not one bounded owner-controlled regular file");
   }
-  const encoded = await readFile(path, "utf8");
+  const encoded = input.bytes.toString("utf8");
   const value = validateHostedMacOSToolchainPin(JSON.parse(encoded));
   if (encoded !== canonicalPinJSON(value)) {
     throw new Error("hosted macOS toolchain pin is not canonical JSON");
@@ -439,6 +449,8 @@ export async function writeHostedMacOSToolchainProposal(pathArgument, value) {
   const temporary = join(parent, `.${leaf}.${process.pid}.tmp`);
   let handle;
   try {
+    // O_EXCL makes the descriptor creation itself the non-racy existence check.
+    // codeql[js/file-system-race]
     handle = await open(temporary, "wx", 0o600);
     await handle.writeFile(payload, "utf8");
     await handle.sync();

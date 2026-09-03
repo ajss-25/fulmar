@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { readAttestedRegularFile } from "../../scripts/attested-regular-file.mjs";
 
 import {
   NATIVE_PRODUCTS,
@@ -95,7 +96,12 @@ test("two different roots produce one path-free exact pre-sign summary", async (
     assert.equal(cli.status, 0, cli.stderr);
     assert.match(cli.stdout, /8 compiler products, 8 dSYMs/u);
     assert.equal((await lstat(report)).mode & 0o777, 0o600);
-    assert.deepEqual(JSON.parse(await readFile(report, "utf8")), {
+    const reportInput = await readAttestedRegularFile(report, {
+      label: "two-root comparison report",
+      maximumBytes: 1024 * 1024,
+      requirePrivateMode: true
+    });
+    assert.deepEqual(JSON.parse(reportInput.bytes.toString("utf8")), {
       ...summary,
       source: { commit: "a".repeat(40), tree: "b".repeat(40) }
     });

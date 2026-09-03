@@ -5,6 +5,7 @@ import { chmod, lstat, open, readFile, realpath, rename, stat, unlink } from "no
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const execFileAsync = promisify(execFile);
 const safePath = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -267,13 +268,22 @@ export async function writeToolchainInventory(destinationArgument, inventory) {
 
 export async function verifyToolchainInventory(pathArgument) {
   const path = resolve(pathArgument);
-  const details = await lstat(path);
-  if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1
-      || details.size <= 0 || details.size > maximumInventoryBytes || (details.mode & 0o777) !== 0o644
-      || details.uid !== process.getuid()) {
+  let input;
+  try {
+    input = await readAttestedRegularFile(path, {
+      label: "toolchain inventory",
+      maximumBytes: maximumInventoryBytes
+    });
+  } catch (error) {
+    throw new Error(
+      "toolchain inventory is not one bounded owner-controlled regular file",
+      { cause: error }
+    );
+  }
+  if ((input.metadata.mode & 0o777n) !== 0o644n) {
     throw new Error("toolchain inventory is not one bounded owner-controlled regular file");
   }
-  const encoded = await readFile(path, "utf8");
+  const encoded = input.bytes.toString("utf8");
   const recorded = validateToolchainInventory(JSON.parse(encoded));
   if (encoded !== `${JSON.stringify(recorded, null, 2)}\n`) throw new Error("toolchain inventory is not canonical JSON");
   const current = await captureToolchainInventory();

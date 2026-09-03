@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import {
-  closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync,
+  closeSync, fsyncSync, lstatSync, openSync,
   realpathSync, writeFileSync
 } from "node:fs";
 import { basename, dirname } from "node:path";
+import { readAttestedRegularFileSync } from "./attested-regular-file.mjs";
 
 const [executable, readyPath, donePath, evidencePath] = process.argv.slice(2);
 const expectedNames = new Set([
@@ -149,11 +150,21 @@ function sleep(milliseconds) {
 }
 
 function validateDone() {
-  if (!existsSync(donePath)) return false;
-  const details = lstatSync(donePath);
-  if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1
-      || details.uid !== process.getuid() || (details.mode & 0o777) !== 0o600
-      || details.size !== 5 || readFileSync(donePath, "utf8") !== "done\n") fail();
+  let artifact;
+  try {
+    artifact = readAttestedRegularFileSync(donePath, {
+      label: "credential XPC completion marker",
+      minimumBytes: 5,
+      maximumBytes: 5,
+      requireCurrentUser: true,
+      requirePrivateMode: true,
+      requireSingleLink: true
+    });
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    fail();
+  }
+  if (artifact.bytes.toString("utf8") !== "done\n") fail();
   return true;
 }
 

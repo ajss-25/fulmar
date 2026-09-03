@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { lstatSync, readFileSync, realpathSync, readdirSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  readdirSync
+} from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const [mode, rawFirst, rawSecond, capabilityPath, capabilityNonce] = process.argv.slice(2);
@@ -12,24 +21,54 @@ if (!Number.isSafeInteger(first) || first <= 1
   throw new Error("usage: bounded-process-group-inspector.mjs <child-group|count|pid-in-group|root-attest|sole-child|detect-root> <pid-or-pgid> [pgid]");
 }
 
+const capabilityIdentityFields = Object.freeze([
+  "dev", "ino", "mode", "nlink", "uid", "gid", "size", "mtimeNs", "ctimeNs"
+]);
+
+function readCapability(path, expected) {
+  const descriptor = openSync(
+    path,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_CLOEXEC ?? 0)
+  );
+  try {
+    const before = fstatSync(descriptor, { bigint: true });
+    const expectedBytes = Buffer.from(expected, "utf8");
+    if (!before.isFile() || before.nlink !== 1n
+        || before.uid !== BigInt(process.getuid()) || (before.mode & 0o777n) !== 0o600n
+        || before.size !== BigInt(expectedBytes.length)) {
+      throw new Error("unsafe root-watchdog capability identity");
+    }
+    const openedPath = lstatSync(path, { bigint: true });
+    if (!capabilityIdentityFields.every((field) => before[field] === openedPath[field])) {
+      throw new Error("root-watchdog capability path changed after open");
+    }
+    const bytes = readFileSync(descriptor);
+    const after = fstatSync(descriptor, { bigint: true });
+    const finalPath = lstatSync(path, { bigint: true });
+    if (!capabilityIdentityFields.every((field) => before[field] === after[field])
+        || !capabilityIdentityFields.every((field) => before[field] === finalPath[field])) {
+      throw new Error("root-watchdog capability changed while it was read");
+    }
+    if (!bytes.equals(expectedBytes)) {
+      throw new Error("stale root-watchdog capability content");
+    }
+    return { dev: before.dev, ino: before.ino, size: before.size };
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 function capabilitySnapshot() {
   if (mode !== "root-attest") return undefined;
   if (!/^[a-f0-9]{64}$/u.test(capabilityNonce ?? "")
       || capabilityPath !== `/private/tmp/fulmar-watchdog-capability.${first}.${capabilityNonce}`) {
     throw new Error("malformed root-watchdog capability path");
   }
-  const details = lstatSync(capabilityPath);
-  if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1
-      || details.uid !== process.getuid() || (details.mode & 0o777) !== 0o600
-      || details.size < 68 || details.size > 256) {
+  const expected = `${first}\n${second}\n${capabilityNonce}\n`;
+  if (Buffer.byteLength(expected) < 68 || Buffer.byteLength(expected) > 256) {
     throw new Error("unsafe root-watchdog capability identity");
   }
-  const bytes = readFileSync(capabilityPath);
-  const expected = `${first}\n${second}\n${capabilityNonce}\n`;
-  if (bytes.length !== details.size || bytes.toString("utf8") !== expected) {
-    throw new Error("stale root-watchdog capability content");
-  }
-  return { dev: details.dev, ino: details.ino, size: details.size };
+  return readCapability(capabilityPath, expected);
 }
 const capabilityBefore = capabilitySnapshot();
 
@@ -154,12 +193,9 @@ if (mode === "count") {
       if (!/^[a-f0-9]{64}$/u.test(nonce)) continue;
       const path = `/private/tmp/${name}`;
       try {
-        const details = lstatSync(path);
         const expected = `${leader[0].ppid}\n${first}\n${nonce}\n`;
-        if (details.isFile() && !details.isSymbolicLink() && details.nlink === 1
-            && details.uid === process.getuid() && (details.mode & 0o777) === 0o600
-            && details.size === Buffer.byteLength(expected)
-            && readFileSync(path, "utf8") === expected) detected = true;
+        readCapability(path, expected);
+        detected = true;
       } catch { /* fail this candidate closed and continue exact matching */ }
     }
   }

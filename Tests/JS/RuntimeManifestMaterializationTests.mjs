@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { readAttestedRegularFile } from "../../scripts/attested-regular-file.mjs";
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const materializer = join(project, "scripts", "materialize-local-plugin-dependencies.mjs");
@@ -38,7 +39,10 @@ test("materializes the exact signed local dependency closure deterministically",
   try {
     const first = invoke(current.manifest);
     assert.equal(first.status, 0, first.stderr);
-    const bytes = await readFile(current.manifest);
+    const bytes = (await readAttestedRegularFile(current.manifest, {
+      label: "materialized runtime manifest",
+      maximumBytes: 2 * 1024 * 1024
+    })).bytes;
     const value = JSON.parse(bytes.toString("utf8"));
     assert.deepEqual(
       Object.fromEntries(Object.entries(value.dependencies).filter(([name]) => name.startsWith("@local-harness/"))),
@@ -47,7 +51,10 @@ test("materializes the exact signed local dependency closure deterministically",
     assert.equal((await stat(current.manifest)).mode & 0o777, 0o640);
     const second = invoke(current.manifest);
     assert.equal(second.status, 0, second.stderr);
-    assert.deepEqual(await readFile(current.manifest), bytes);
+    assert.deepEqual((await readAttestedRegularFile(current.manifest, {
+      label: "rematerialized runtime manifest",
+      maximumBytes: 2 * 1024 * 1024
+    })).bytes, bytes);
   } finally {
     await rm(current.root, { recursive: true, force: true });
   }

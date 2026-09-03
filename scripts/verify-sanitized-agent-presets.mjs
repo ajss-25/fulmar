@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
+import { readAttestedRegularFileSync } from "./attested-regular-file.mjs";
 
 const dshRootArgument = process.argv[2];
 if (!dshRootArgument) throw new Error("packaged DSH root is required");
@@ -64,14 +65,19 @@ function assertExactEntries(path, expected) {
 }
 
 function readRegular(path, maximumBytes) {
-  const metadata = lstatSync(path);
-  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
+  let artifact;
+  try {
+    artifact = readAttestedRegularFileSync(path, {
+      label: "sanitized preset file",
+      minimumBytes: 1,
+      maximumBytes,
+      requireCurrentUser: true,
+      requireSingleLink: true
+    });
+  } catch {
     throw new Error(`sanitized preset file is not an independent regular file: ${safeRelative(path)}`);
   }
-  if (metadata.size < 1 || metadata.size > maximumBytes) {
-    throw new Error(`sanitized preset file has invalid size: ${safeRelative(path)}`);
-  }
-  return readFileSync(path, "utf8");
+  return artifact.bytes.toString("utf8");
 }
 
 function verifyPresetRoot(root) {

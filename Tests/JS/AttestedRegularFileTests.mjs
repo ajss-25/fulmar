@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  readAttestedRegularFile, withAttestedDirectory
+  readAttestedRegularFile, readAttestedRegularFileSync, withAttestedDirectory
 } from "../../scripts/attested-regular-file.mjs";
 
 test("attested regular-file reader returns only bytes from one stable no-follow descriptor", async () => {
@@ -22,6 +22,16 @@ test("attested regular-file reader returns only bytes from one stable no-follow 
     });
     assert.equal(result.bytes.toString("utf8"), "reviewed bytes\n");
     assert.equal(result.metadata.nlink, 1n);
+    const synchronous = readAttestedRegularFileSync(path, {
+      label: "synchronous fixture artifact",
+      minimumBytes: 1,
+      maximumBytes: 1024,
+      requireCurrentUser: true,
+      requirePrivateMode: true,
+      requireSingleLink: true
+    });
+    assert.equal(synchronous.bytes.toString("utf8"), "reviewed bytes\n");
+    assert.equal(synchronous.metadata.nlink, 1n);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -39,9 +49,21 @@ test("attested regular-file reader rejects symbolic and hard-linked inputs", asy
       readAttestedRegularFile(symbolic, { maximumBytes: 1024 }),
       /ELOOP|symbolic|too many levels/iu
     );
+    assert.throws(
+      () => readAttestedRegularFileSync(symbolic, { maximumBytes: 1024 }),
+      /ELOOP|symbolic|too many levels/iu
+    );
+    assert.throws(
+      () => readAttestedRegularFileSync(target, { maximumBytes: 2 }),
+      /permitted byte bounds/u
+    );
     await link(target, hard);
     await assert.rejects(
       readAttestedRegularFile(target, { maximumBytes: 1024 }),
+      /must not be hard linked/u
+    );
+    assert.throws(
+      () => readAttestedRegularFileSync(target, { maximumBytes: 1024 }),
       /must not be hard linked/u
     );
   } finally {

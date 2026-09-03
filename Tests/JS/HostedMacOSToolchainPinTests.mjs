@@ -141,13 +141,26 @@ function proposalFixture(pinStatus = "review-required") {
   };
 }
 
-test("source pin is canonical, explicitly unresolved, and cannot verify before hosted discovery", async () => {
+test("source pin is canonical, active, and retains fail-closed unresolved behavior", async () => {
   const pin = await readHostedMacOSToolchainPin(sourcePin);
-  assert.equal(pin.pinStatus, "discovery-required");
-  assert.equal(pin.hostedDiscovery, null);
+  assert.equal(pin.pinStatus, "active");
+  assert.notEqual(pin.hostedDiscovery, null);
+
+  const freshProposal = structuredClone(pin);
+  freshProposal.pinStatus = "review-required";
+  freshProposal.hostedDiscovery.github.commitSHA = "b".repeat(40);
+  freshProposal.hostedDiscovery.github.runID = "987654321";
+  compareHostedMacOSToolchainIdentity(pin, freshProposal);
+
+  const unresolved = {
+    schemaVersion: 2,
+    pinStatus: "discovery-required",
+    runnerContract: structuredClone(pin.runnerContract),
+    hostedDiscovery: null
+  };
   let captureCalled = false;
   await assert.rejects(
-    verifyHostedMacOSToolchainPin("macos-26", pin, {
+    verifyHostedMacOSToolchainPin("macos-26", unresolved, {
       captureToolchain: async () => { captureCalled = true; return toolchainFixture(); }
     }),
     /discovery-required; hosted discovery and review remain mandatory/u
@@ -351,7 +364,7 @@ test("proposal writer is canonical, exclusive, and refuses a linked parent", asy
   }
 });
 
-test("CLI discovery refuses a local impersonation and unresolved verification performs no capture", () => {
+test("CLI discovery and active verification both refuse a local runner impersonation", () => {
   const baseEnvironment = {
     HOME: process.env.HOME,
     PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
@@ -372,7 +385,7 @@ test("CLI discovery refuses a local impersonation and unresolved verification pe
     encoding: "utf8"
   });
   assert.notEqual(verification.status, 0);
-  assert.match(verification.stderr, /discovery-required; hosted discovery and review remain mandatory/u);
+  assert.match(verification.stderr, /requires a GitHub Actions macOS ARM64 runner/u);
 });
 
 test("hosted macOS CI retains fresh discovery before enforcing the exact reviewed source pin", async () => {

@@ -98,6 +98,8 @@ async function readBoundedRegular(path, maximumBytes) {
       || before.size < 1n || before.size > BigInt(maximumBytes)) {
     fail(`unsafe input file: ${path}`);
   }
+  // O_NOFOLLOW and descriptor fstat bind the read to the reviewed inode.
+  // codeql[js/file-system-race]
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const opened = await handle.stat({ bigint: true });

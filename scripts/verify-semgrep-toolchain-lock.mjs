@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const supportedPythonDistributions = Object.freeze({
   "Darwin:arm64": Object.freeze({
@@ -45,11 +46,10 @@ function safeRelativePath(value) {
 }
 
 async function boundedRegularFile(path, maximumBytes, label) {
-  const metadata = await lstat(path).catch(() => null);
-  if (!metadata?.isFile() || metadata.isSymbolicLink()) fail(`${label} is missing, linked, or not regular`);
-  if ((metadata.mode & 0o022) !== 0) fail(`${label} is group/world writable`);
-  if (metadata.size < 1 || metadata.size > maximumBytes) fail(`${label} has an unsafe size`);
-  return readFile(path);
+  const input = await readAttestedRegularFile(path, { label, maximumBytes }).catch(() => null);
+  if (!input) fail(`${label} is missing, linked, or not regular`);
+  if ((input.metadata.mode & 0o022n) !== 0n) fail(`${label} is group/world writable`);
+  return input.bytes;
 }
 
 function exactSHA256(value, label) {

@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scriptDirectory, "..");
@@ -189,11 +190,11 @@ export function runBoundedCommand(executable, argumentsList, {
 }
 
 async function boundedJSON(path, maximumBytes = 8 * 1024 * 1024) {
-  const details = await lstat(path);
-  if (!details.isFile() || details.isSymbolicLink() || details.size <= 0 || details.size > maximumBytes) {
-    throw new Error(`expected a bounded regular JSON file: ${path}`);
-  }
-  return JSON.parse(await readFile(path, "utf8"));
+  const input = await readAttestedRegularFile(path, {
+    label: "bounded upgrade JSON",
+    maximumBytes
+  });
+  return JSON.parse(input.bytes.toString("utf8"));
 }
 
 async function fileInventory(root) {
@@ -469,13 +470,16 @@ async function verifyPublishedReviewBundle(directory, files) {
   }
   for (const name of expectedNames) {
     const path = join(directory, name);
-    const fileDetails = await lstat(path);
-    if (!fileDetails.isFile() || fileDetails.isSymbolicLink() || fileDetails.uid !== process.getuid()
-        || fileDetails.nlink !== 1 || (fileDetails.mode & 0o7777) !== 0o600) {
+    const input = await readAttestedRegularFile(path, {
+      label: "published review file",
+      maximumBytes: maximumOutputBytes,
+      requirePrivateMode: true
+    });
+    if ((input.metadata.mode & 0o7777n) !== 0o600n) {
       throw new Error("published review file metadata is invalid");
     }
     const expected = Buffer.isBuffer(files[name]) ? files[name] : Buffer.from(files[name]);
-    const actual = await readFile(path);
+    const actual = input.bytes;
     if (actual.length !== expected.length || !actual.equals(expected)) {
       throw new Error("published review file bytes do not match the immutable observation");
     }

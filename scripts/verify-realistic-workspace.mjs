@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { lstat, readFile, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const expectedEntries = Object.freeze(["game.js", "index.html", "styles.css"]);
 const requiredFeatures = Object.freeze([
@@ -28,15 +29,13 @@ export async function verifyRealisticWorkspace(rootArgument) {
   const content = {};
   for (const name of expectedEntries) {
     const target = join(root, name);
-    const metadata = await lstat(target);
-    if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new Error(`${name} is not a regular file`);
-    }
-    if (metadata.size < 64 || metadata.size > 524_288) {
-      throw new Error(`${name} has implausible size ${metadata.size}`);
-    }
-    totalBytes += metadata.size;
-    content[name] = await readFile(target, "utf8");
+    const input = await readAttestedRegularFile(target, {
+      label: `${name} realistic fixture`,
+      minimumBytes: 64,
+      maximumBytes: 524_288
+    });
+    totalBytes += Number(input.metadata.size);
+    content[name] = input.bytes.toString("utf8");
   }
   if (totalBytes > 1_048_576) {
     throw new Error(`Realistic fixture is too large: ${totalBytes}`);

@@ -9,6 +9,7 @@ import { closeSync, constants, existsSync, openSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { readAttestedRegularFile } from "../../scripts/attested-regular-file.mjs";
 
 const watchdog = join(process.cwd(), "scripts", "run-with-watchdog.sh");
 const watchdogInternal = join(process.cwd(), "scripts", "run-with-watchdog.pl");
@@ -252,7 +253,12 @@ test("watchdog capability janitor rejects an inode replacement at the unlink bou
     assert.equal(result.ok, false);
     assert.equal(result.removed, 0);
     assert.notEqual(after.ino, before.ino, "race fixture did not replace the capability inode");
-    assert.equal(await readFile(fixture.path, "utf8"), fixture.bytes,
+    const retained = await readAttestedRegularFile(fixture.path, {
+      label: "replaced watchdog capability fixture",
+      maximumBytes: 256,
+      requirePrivateMode: true
+    });
+    assert.equal(retained.bytes.toString("utf8"), fixture.bytes,
       "changed capability was removed or rewritten");
   } finally {
     await rm(root, { recursive: true });
@@ -866,7 +872,12 @@ async function publishFixtureRelease(path) {
   assert.equal(details.uid, process.getuid(), "fixture release marker changed owner");
   assert.equal(details.mode & 0o777, 0o600, "fixture release marker is not private");
   assert.equal(details.size, Buffer.byteLength(bytes), "fixture release marker has unexpected bytes");
-  assert.equal(await readFile(path, "utf8"), bytes);
+  const retained = await readAttestedRegularFile(path, {
+    label: "watchdog release marker fixture",
+    maximumBytes: 256,
+    requirePrivateMode: true
+  });
+  assert.equal(retained.bytes.toString("utf8"), bytes);
 }
 
 function assertRetainedLockIdentity(path, details, expectedNonce, expectedLinks) {
@@ -967,17 +978,25 @@ async function removeAttestedRetainedLock(lock, expectedCapability, fixtureNonce
 supervisorFixture("watchdog preserves an ordinary command status", async () => {
   const root = await mkdtemp(join(tmpdir(), "fulmar-watchdog-status-"));
   const capabilityFile = join(root, "capability-path.txt");
+  const injectionMarker = join(root, "command-injection-marker");
   let capability;
   let bodyError;
   try {
+    const literalArgument = `$(/usr/bin/touch ${injectionMarker}) ; & | two words\nsecond line`;
     const result = run([
       "/usr/bin/perl", "-e",
-      "open(my $fh,'>',$ARGV[0]) or die $!; " +
+      "exit 8 unless @ARGV == 4 && $ARGV[1] eq $ARGV[2] && $ARGV[3] eq ''; " +
+        "open(my $fh,'>',$ARGV[0]) or die $!; " +
         "print $fh $ENV{FULMAR_ROOT_WATCHDOG_CAPABILITY_V1}; close($fh); exit 7",
-      capabilityFile
+      capabilityFile, literalArgument, literalArgument, ""
     ]);
     assert.equal(result.error, undefined, result.error?.message);
     assert.equal(result.status, 7, result.stderr);
+    assert.equal(existsSync(injectionMarker), false,
+      "a requested argv value was evaluated as shell source");
+    const pathLookup = run(["true"]);
+    assert.equal(pathLookup.status, 0,
+      pathLookup.stderr || "the command barrier did not preserve PATH lookup");
     capability = await readFixtureCapabilityPath(capabilityFile);
     await assert.rejects(lstat(capability), { code: "ENOENT" });
   } catch (error) {
@@ -1112,7 +1131,11 @@ test("watchdog source contains no blocking reap fallback", async () => {
     readFile(new URL(import.meta.url), "utf8")
   ]);
   assert.doesNotMatch(source, /waitpid\([^,\n]+,\s*0\s*\)/u);
-  assert.match(treeSource, /FULMAR_COMMAND_START_V1:\$\{commandBarrierNonce\}/u);
+  assert.match(treeSource, /version: "FULMAR_COMMAND_START_V2"/u);
+  assert.match(treeSource,
+    /process\.execve\("\/usr\/bin\/env", \["\/usr\/bin\/env", "--", \.\.\.command\], process\.env\)/u);
+  assert.doesNotMatch(treeSource, /spawn\("\/bin\/sh"/u,
+    "the command barrier must not pass requested argv through a shell interpreter");
   assert.match(treeSource, /await establishChildIdentity\(\)/u);
   assert.match(treeSource, /childExit !== undefined && childIdentityActive/u);
   assert.match(treeSource, /a retired test-runner PID reappeared while supervised/u);

@@ -22,6 +22,7 @@ import {
   snapshotLocalTree,
   writeLocalTreeSnapshot
 } from "../../scripts/local-tree-snapshot.mjs";
+import { readAttestedRegularFile } from "../../scripts/attested-regular-file.mjs";
 
 async function fixture() {
   const temporary = await mkdtemp(path.join(tmpdir(), "local-tree-snapshot-tests."));
@@ -227,7 +228,12 @@ test("CLI writes a private snapshot silently and reports failures generically", 
     assert.equal(success.stdout, "");
     assert.equal(success.stderr, "");
     assert.equal((await stat(output)).mode & 0o777, 0o600);
-    assert.deepEqual(await readFile(output), await snapshotLocalTree(tree.root));
+    const snapshot = await readAttestedRegularFile(output, {
+      label: "CLI tree snapshot",
+      maximumBytes: 1024 * 1024,
+      requirePrivateMode: true
+    });
+    assert.deepEqual(snapshot.bytes, await snapshotLocalTree(tree.root));
 
     const sensitiveMarker = path.join(tree.temporary, "private-customer-name-does-not-exist");
     const failure = spawnSync(process.execPath, [script, sensitiveMarker, output], { encoding: "utf8" });

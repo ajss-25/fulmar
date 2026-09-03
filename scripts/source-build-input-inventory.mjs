@@ -11,6 +11,7 @@ import {
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 export const buildInputRoots = Object.freeze([
   "Package.swift",
@@ -219,12 +220,11 @@ async function writeInventory(destinationArgument, inventory) {
 
 async function loadBoundedInventory(pathArgument) {
   const path = resolve(pathArgument);
-  const details = await lstat(path);
-  if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1
-      || details.size <= 0 || details.size > limits.maximumInventoryBytes) {
-    throw new Error("build-input inventory must be a bounded regular file");
-  }
-  return JSON.parse(await readFile(path, "utf8"));
+  const input = await readAttestedRegularFile(path, {
+    label: "build-input inventory",
+    maximumBytes: limits.maximumInventoryBytes
+  });
+  return JSON.parse(input.bytes.toString("utf8"));
 }
 
 export async function verifyBuildInputInventory(projectRoot, inventoryPath) {

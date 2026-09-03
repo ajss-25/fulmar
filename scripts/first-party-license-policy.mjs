@@ -65,6 +65,8 @@ async function readPrivateRegularFile(path, maximumBytes, label) {
   }
   let handle;
   try {
+    // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
+    // codeql[js/file-system-race]
     handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     const opened = await handle.stat();
     if (!opened.isFile() || opened.nlink !== 1 || !sameIdentity(before, opened)) {

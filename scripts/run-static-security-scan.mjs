@@ -87,6 +87,8 @@ function readStableRegularFile(path, relativePath, maximumBytes) {
       || before.size > BigInt(maximumBytes)) {
     failure(`secret-scan input is unsafe or exceeds its byte limit: ${relativePath}`);
   }
+  // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
+  // codeql[js/file-system-race]
   const descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const opened = fstatSync(descriptor, { bigint: true });
@@ -501,6 +503,8 @@ export function writeCanonicalSummary(projectRoot, summary) {
     failure("canonical static-security summary exceeds its byte limit");
   }
   const temporary = join(directory, `.static-security-summary.${process.pid}.tmp`);
+  // O_EXCL makes the descriptor creation itself the non-racy existence check.
+  // codeql[js/file-system-race]
   const descriptor = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
   try {
     let offset = 0;

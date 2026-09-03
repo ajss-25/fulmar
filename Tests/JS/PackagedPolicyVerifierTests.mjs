@@ -77,6 +77,15 @@ test("packaged policy verifier rejects dependency, composition, and file-topolog
       await writeFile(files.patch, text.replace("id: code-runtime\n  disabled: true", "id: code-runtime\n  disabled: false"));
     },
     async (files) => {
+      const text = await readFile(files.patch, "utf8");
+      const start = text.indexOf("- id: fs-sandbox\n");
+      const end = text.indexOf("\n- ", start + 1);
+      assert.ok(start >= 0 && end > start, "fixture omitted the fs-sandbox policy row");
+      const hostileCommentWall = "  # bounded hostile comment fixture\n".repeat(4_096);
+      const replacement = `- id: fs-sandbox\n${hostileCommentWall}  disabled: false`;
+      await writeFile(files.patch, text.slice(0, start) + replacement + text.slice(end));
+    },
+    async (files) => {
       const text = await readFile(files.preset, "utf8");
       await writeFile(files.preset, text.replace("    search: false", "    search: true"));
     },

@@ -14,7 +14,9 @@ import {
   TELEMETRY_MAXIMUM_RECORDS,
   UPSTREAM_MODEL,
   UPSTREAM_PROVIDER,
+  WEB_FETCH_CANARY_URL,
   assertBlankLocalSession,
+  assertExactWebFetchApprovalReason,
   assertExactMCPProviderCallTopology,
   assertExactLocalDefault,
   assertFreshRuntimeState,
@@ -44,6 +46,20 @@ test("live approved-page evidence matches DSH's canonical fetch rendering", () =
   assert.equal(hasSuccessfulWebFetchToolResult([{
     content: "Fetched https://example.com/ (HTTP 200)"
   }]), false);
+  const exact = `Allow Fulmar to retrieve this exact public page once? ${WEB_FETCH_CANARY_URL}`;
+  assert.equal(assertExactWebFetchApprovalReason(exact), exact);
+  for (const hostile of [
+    `${exact} extra`,
+    `prefix ${exact}`,
+    `Allow Fulmar to retrieve this exact public page once? https://attacker.invalid/?next=${WEB_FETCH_CANARY_URL}`,
+    `Allow Fulmar to retrieve this exact public page once? ${WEB_FETCH_CANARY_URL}attacker.invalid/`,
+    undefined
+  ]) {
+    expectCompatibilityFailure(
+      () => assertExactWebFetchApprovalReason(hostile),
+      /exact one-shot URL disclosure/u
+    );
+  }
 });
 
 test("the packaged client-bridge proof creates one browser-faithful Web Crypto realm", async () => {
@@ -339,6 +355,8 @@ test("the web canary requires the exact private adaptive thermal control plane",
   assert.ok(source.includes("thermalPolicy.ecoMaxOutputTokens !== 2_048"));
   assert.ok(source.includes("thermalPolicy.minimumDelayMilliseconds !== 5_000"));
   assert.ok(source.includes("assertPerformanceTelemetryContentAbsent(thermalPolicyBytes)"));
+  assert.ok(source.includes('import { readAttestedRegularFile } from "./attested-regular-file.mjs"'));
+  assert.doesNotMatch(source, /readFile\(state\.(?:telemetryFile|thermalPolicyFile|mcpCatalog)\)/u);
 });
 
 test("the web canary launches authenticated runtimes through one-shot stdin", async () => {

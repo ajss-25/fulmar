@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 import { validateTargetVersion } from "./prepare-dsh-upgrade.mjs";
 import {
   fetchOfficialGitHubPromotionObservation,
@@ -145,18 +145,12 @@ function validateAcknowledgement(value, reviewedPin) {
 }
 
 async function boundedRegularJSON(path, maximumBytes = 1024 * 1024) {
-  const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1
-      || before.size < 2 || before.size > maximumBytes) {
-    throw new Error("upstream acknowledgement input is not a bounded regular file");
-  }
-  const data = await readFile(path);
-  const after = await lstat(path);
-  if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
-      || after.nlink !== 1 || data.length !== before.size) {
-    throw new Error("upstream acknowledgement input changed while it was read");
-  }
-  return JSON.parse(data.toString("utf8"));
+  const input = await readAttestedRegularFile(path, {
+    label: "upstream acknowledgement input",
+    minimumBytes: 2,
+    maximumBytes
+  });
+  return JSON.parse(input.bytes.toString("utf8"));
 }
 
 export function validateDistTags(value) {

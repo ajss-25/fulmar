@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { lstat, readFile } from "node:fs/promises";
 import { basename } from "node:path";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const [submissionPath, logPath] = process.argv.slice(2);
 if (!submissionPath || !logPath) {
@@ -9,21 +9,21 @@ if (!submissionPath || !logPath) {
 }
 
 async function boundedPrivateJSON(path, maximumBytes) {
-  let details;
+  let input;
   try {
-    details = await lstat(path);
+    input = await readAttestedRegularFile(path, {
+      label: "notarization evidence",
+      minimumBytes: 2,
+      maximumBytes,
+      requirePrivateMode: true
+    });
   } catch (error) {
     if (error?.code === "ENOENT") {
       throw new Error(`notarization evidence is missing: ${basename(path)}`);
     }
     throw new Error(`notarization evidence could not be inspected: ${basename(path)}`);
   }
-  if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1
-      || (details.mode & 0o077) !== 0 || details.size < 2 || details.size > maximumBytes) {
-    throw new Error(`notarization evidence is not one bounded private regular file: ${basename(path)}`);
-  }
-  const bytes = await readFile(path);
-  try { return JSON.parse(bytes.toString("utf8")); }
+  try { return JSON.parse(input.bytes.toString("utf8")); }
   catch { throw new Error(`notarization evidence is not valid JSON: ${basename(path)}`); }
 }
 

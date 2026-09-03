@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { rootWatchdogChildOptions } from "./RootWatchdogChildProcess.mjs";
+import { readAttestedRegularFile } from "../../scripts/attested-regular-file.mjs";
 
 const root = process.cwd();
 const verifier = join(root, "scripts", "verify-public-distribution.sh");
@@ -792,10 +793,18 @@ test("public verifier rejects the exact private candidate", async (context) => {
     unavailableCandidateFixture(context, "private release fixture is not present in this source checkout");
     return;
   }
-  const [identity, currentManifest] = await Promise.all([
-    readFile(join(root, "Config", "ReleaseIdentity.json"), "utf8").then(JSON.parse),
-    readFile(manifest, "utf8").then(JSON.parse)
+  const [identityInput, manifestInput] = await Promise.all([
+    readAttestedRegularFile(join(root, "Config", "ReleaseIdentity.json"), {
+      label: "release identity fixture",
+      maximumBytes: 1024 * 1024
+    }),
+    readAttestedRegularFile(manifest, {
+      label: "private release manifest fixture",
+      maximumBytes: 1024 * 1024
+    })
   ]);
+  const identity = JSON.parse(identityInput.bytes.toString("utf8"));
+  const currentManifest = JSON.parse(manifestInput.bytes.toString("utf8"));
   if (currentManifest.version !== identity.appVersion || currentManifest.build !== identity.appBuild) {
     unavailableCandidateFixture(context, "private release fixture predates the current source release identity");
     return;

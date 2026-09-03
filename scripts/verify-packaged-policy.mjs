@@ -1,5 +1,6 @@
-import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const [patchArgument, presetArgument, noticesArgument] = process.argv.slice(2);
 if (!patchArgument || !presetArgument || !noticesArgument) {
@@ -8,16 +9,43 @@ if (!patchArgument || !presetArgument || !noticesArgument) {
 
 async function boundedText(pathArgument, maximumBytes, label) {
   const path = resolve(pathArgument);
-  const details = await lstat(path);
-  if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1
-      || details.size <= 0 || details.size > maximumBytes) throw new Error(`${label} is not one bounded regular file`);
-  const text = await readFile(path, "utf8");
-  if (text.includes("\0") || text.includes("\r")) throw new Error(`${label} has unsafe encoding`);
+  const { bytes } = await readAttestedRegularFile(path, {
+    label,
+    minimumBytes: 1,
+    maximumBytes,
+    requireCurrentUser: false,
+    requirePrivateMode: false,
+    requireSingleLink: true
+  });
+  const text = bytes.toString("utf8");
+  if (text.includes("\0") || text.includes("\r") || !Buffer.from(text, "utf8").equals(bytes)) {
+    throw new Error(`${label} has unsafe encoding`);
+  }
   return text;
 }
 
 function requireMatch(text, expression, label) {
   if (!expression.test(text)) throw new Error(`packaged policy is missing ${label}`);
+}
+
+function requireExactlyDisabledTopLevelPlugin(text, id, label) {
+  const lines = text.split("\n");
+  const header = `- id: ${id}`;
+  const starts = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index] === header) starts.push(index);
+  }
+  if (starts.length !== 1) throw new Error(`packaged policy is missing ${label}`);
+  const start = starts[0];
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (lines[index].startsWith("- ")) {
+      end = index;
+      break;
+    }
+  }
+  const disabledRows = lines.slice(start + 1, end).filter((line) => line === "  disabled: true");
+  if (disabledRows.length !== 1) throw new Error(`packaged policy is missing ${label}`);
 }
 
 const patch = await boundedText(patchArgument, 1024 * 1024, "runtime patch");
@@ -36,11 +64,11 @@ if (dependencyRows.some((line) => !/`sha256:[a-f0-9]{64}`/u.test(line))) {
   throw new Error("packaged notices contain a dependency without hash-bound licence material");
 }
 requireMatch(notices, /auditable material inventory, not legal clearance/u, "the external legal-review warning");
+requireExactlyDisabledTopLevelPlugin(patch, "fs-sandbox", "disabled upstream filesystem sandbox");
 
 const patchRequirements = [
   [/includeUserRoot: false/u, "disabled user-root inclusion"],
   [/id: credentials-keychain\s+name: '@local-harness\/dsh-credentials-keychain'/u, "Keychain credential plugin"],
-  [/id: fs-sandbox\s*(?:#[^\n]*\n\s*#?[^\n]*\n?)*\s+disabled: true/u, "disabled upstream filesystem sandbox"],
   [/id: fs-confined\s+name: '@local-harness\/dsh-fs-confined'/u, "confined filesystem plugin"],
   [/id: code-runtime\s+disabled: true/u, "disabled code runtime"],
   [/id: workflow-worker-thread\s+disabled: true/u, "disabled workflow worker"],

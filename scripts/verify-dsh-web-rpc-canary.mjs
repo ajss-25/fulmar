@@ -23,6 +23,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runInNewContext } from "node:vm";
 
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 import { snapshotLocalTree } from "./local-tree-snapshot.mjs";
 import { openRuntimeAuthenticationInput } from "../Tests/Fixtures/RuntimeAuthenticationInput.mjs";
 
@@ -123,6 +124,14 @@ export function hasSuccessfulWebFetchToolResult(value, expectedURL = WEB_FETCH_C
     offset = text.indexOf(prefix, offset + prefix.length);
   }
   return false;
+}
+
+export function assertExactWebFetchApprovalReason(reason, expectedURL = WEB_FETCH_CANARY_URL) {
+  const expectedReason = `Allow Fulmar to retrieve this exact public page once? ${expectedURL}`;
+  if (reason !== expectedReason) {
+    compatibilityFailure("the approved-page permission omitted its exact one-shot URL disclosure");
+  }
+  return reason;
 }
 
 function compatibilityFailure(message) {
@@ -448,19 +457,45 @@ async function stopExactChild(child, label) {
   if (result === undefined) compatibilityFailure(`${label} PID ${child.pid} did not terminate after SIGKILL`);
 }
 
-async function boundedText(file, maximum = MAX_LOG_BYTES) {
-  const info = await lstat(file).catch(() => undefined);
-  if (!info?.isFile() || info.size > maximum) compatibilityFailure(`${path.basename(file)} is missing or exceeds its canary bound`);
-  return readFile(file, "utf8");
+async function boundedFile(file, maximum = MAX_LOG_BYTES, options = {}) {
+  try {
+    return await readAttestedRegularFile(file, {
+      label: options.label ?? path.basename(file),
+      minimumBytes: options.minimumBytes ?? 0,
+      maximumBytes: maximum,
+      requireCurrentUser: options.requireCurrentUser === true,
+      requirePrivateMode: options.requirePrivateMode === true,
+      requireSingleLink: options.requireSingleLink !== false
+    });
+  } catch {
+    compatibilityFailure(`${path.basename(file)} is missing, unstable, or exceeds its canary bound`);
+  }
 }
 
-async function boundedJSON(file, maximum = 64 * 1024) {
-  const text = await boundedText(file, maximum);
+async function boundedText(file, maximum = MAX_LOG_BYTES, options = {}) {
+  const { bytes } = await boundedFile(file, maximum, options);
+  const text = bytes.toString("utf8");
+  if (!Buffer.from(text, "utf8").equals(bytes)) {
+    compatibilityFailure(`${path.basename(file)} is not canonical UTF-8 text`);
+  }
+  return text;
+}
+
+async function boundedJSONSnapshot(file, maximum = 64 * 1024, options = {}) {
+  const snapshot = await boundedFile(file, maximum, options);
+  const text = snapshot.bytes.toString("utf8");
+  if (!Buffer.from(text, "utf8").equals(snapshot.bytes)) {
+    compatibilityFailure(`${path.basename(file)} is not canonical UTF-8 text`);
+  }
   try {
-    return JSON.parse(text);
+    return Object.freeze({ ...snapshot, value: JSON.parse(text) });
   } catch {
     compatibilityFailure(`${path.basename(file)} is not valid JSON`);
   }
+}
+
+async function boundedJSON(file, maximum = 64 * 1024, options = {}) {
+  return (await boundedJSONSnapshot(file, maximum, options)).value;
 }
 
 async function auditedMCPFile(file, executable, core) {
@@ -1631,11 +1666,7 @@ async function waitForWebFetchApproval(state, sessionId, startIndex) {
     && entry.payload.toolName === WEB_FETCH_TOOL_NAME
     && entry.payload.callId === "call_web_fetch_1"
   ), { child: state.runtime.child, label: "approved-page permission request", timeoutMs: 30_000 });
-  const reason = request.payload.reason ?? "";
-  if (!reason.includes("Allow Fulmar to retrieve this exact public page once?")
-      || !reason.includes(WEB_FETCH_CANARY_URL)) {
-    compatibilityFailure("the approved-page permission omitted its exact one-shot URL disclosure");
-  }
+  assertExactWebFetchApprovalReason(request.payload.reason);
   return request;
 }
 
@@ -1903,9 +1934,7 @@ async function runMCPCompatibility(layout, state) {
 }
 
 async function assertEphemeralArtifacts(state) {
-  const telemetry = await waitFor(async () => {
-    const info = await lstat(state.telemetryFile).catch(() => undefined);
-    if (!info?.isFile()) return undefined;
+  await waitFor(async () => {
     const candidate = await boundedJSON(state.telemetryFile, TELEMETRY_MAXIMUM_FILE_BYTES);
     try {
       assertPerformanceTelemetryDocument(candidate);
@@ -1918,25 +1947,37 @@ async function assertEphemeralArtifacts(state) {
   const [
     supportInfo,
     telemetryDirectoryInfo,
-    telemetryFileInfo,
     telemetryLockInfo,
-    thermalPolicyInfo,
     supportEntries,
     telemetryEntries,
-    telemetryBytes,
-    thermalPolicyBytes
+    telemetrySnapshot,
+    thermalPolicySnapshot
   ] = await Promise.all([
     lstat(state.applicationSupport),
     lstat(state.telemetryDirectory),
-    lstat(state.telemetryFile),
     lstat(state.telemetryLock),
-    lstat(state.thermalPolicyFile),
     readdir(state.applicationSupport),
     readdir(state.telemetryDirectory),
-    readFile(state.telemetryFile),
-    readFile(state.thermalPolicyFile)
+    boundedJSONSnapshot(state.telemetryFile, TELEMETRY_MAXIMUM_FILE_BYTES, {
+      label: "candidate performance telemetry",
+      minimumBytes: 2,
+      requireCurrentUser: true,
+      requirePrivateMode: true
+    }),
+    boundedJSONSnapshot(state.thermalPolicyFile, THERMAL_POLICY_MAXIMUM_FILE_BYTES, {
+      label: "candidate adaptive thermal policy",
+      minimumBytes: 2,
+      requireCurrentUser: true,
+      requirePrivateMode: true
+    })
   ]);
-  const currentUID = typeof process.getuid === "function" ? process.getuid() : telemetryFileInfo.uid;
+  const telemetryFileInfo = telemetrySnapshot.metadata;
+  const thermalPolicyInfo = thermalPolicySnapshot.metadata;
+  const telemetryBytes = telemetrySnapshot.bytes;
+  const thermalPolicyBytes = thermalPolicySnapshot.bytes;
+  const telemetry = telemetrySnapshot.value;
+  const thermalPolicy = thermalPolicySnapshot.value;
+  const currentUID = typeof process.getuid === "function" ? process.getuid() : Number(telemetryFileInfo.uid);
   if (
     !supportInfo.isDirectory()
     || supportInfo.isSymbolicLink()
@@ -1947,12 +1988,11 @@ async function assertEphemeralArtifacts(state) {
     || telemetryDirectoryInfo.uid !== currentUID
     || (telemetryDirectoryInfo.mode & 0o777) !== 0o700
     || !telemetryFileInfo.isFile()
-    || telemetryFileInfo.isSymbolicLink()
-    || telemetryFileInfo.uid !== currentUID
-    || telemetryFileInfo.nlink !== 1
-    || (telemetryFileInfo.mode & 0o777) !== 0o600
-    || telemetryFileInfo.size < 2
-    || telemetryFileInfo.size > TELEMETRY_MAXIMUM_FILE_BYTES
+    || telemetryFileInfo.uid !== BigInt(currentUID)
+    || telemetryFileInfo.nlink !== 1n
+    || (telemetryFileInfo.mode & 0o777n) !== 0o600n
+    || telemetryFileInfo.size < 2n
+    || telemetryFileInfo.size > BigInt(TELEMETRY_MAXIMUM_FILE_BYTES)
     || !telemetryLockInfo.isFile()
     || telemetryLockInfo.isSymbolicLink()
     || telemetryLockInfo.uid !== currentUID
@@ -1960,12 +2000,11 @@ async function assertEphemeralArtifacts(state) {
     || (telemetryLockInfo.mode & 0o777) !== 0o600
     || telemetryLockInfo.size !== 0
     || !thermalPolicyInfo.isFile()
-    || thermalPolicyInfo.isSymbolicLink()
-    || thermalPolicyInfo.uid !== currentUID
-    || thermalPolicyInfo.nlink !== 1
-    || (thermalPolicyInfo.mode & 0o777) !== 0o600
-    || thermalPolicyInfo.size < 2
-    || thermalPolicyInfo.size > THERMAL_POLICY_MAXIMUM_FILE_BYTES
+    || thermalPolicyInfo.uid !== BigInt(currentUID)
+    || thermalPolicyInfo.nlink !== 1n
+    || (thermalPolicyInfo.mode & 0o777n) !== 0o600n
+    || thermalPolicyInfo.size < 2n
+    || thermalPolicyInfo.size > BigInt(THERMAL_POLICY_MAXIMUM_FILE_BYTES)
     || supportEntries.length !== 1
     || supportEntries[0] !== "PerformanceTelemetry"
     || JSON.stringify(telemetryEntries.sort()) !== JSON.stringify([
@@ -1974,9 +2013,6 @@ async function assertEphemeralArtifacts(state) {
       "thermal-workload-policy.json"
     ])
   ) compatibilityFailure("performance telemetry or thermal policy escaped its exact owner-only directory/file topology or byte bound");
-  let thermalPolicy;
-  try { thermalPolicy = JSON.parse(thermalPolicyBytes.toString("utf8")); }
-  catch { compatibilityFailure("the adaptive thermal policy is not valid JSON"); }
   if (JSON.stringify(Object.keys(thermalPolicy).sort()) !== JSON.stringify([
     "ecoMaxOutputTokens", "minimumDelayMilliseconds", "mode", "schemaVersion"
   ]) || thermalPolicy.schemaVersion !== 1 || thermalPolicy.mode !== "normal"
@@ -2222,17 +2258,22 @@ async function runCandidateMCPCanary(layout) {
     result = await runMCPCompatibility(layout, state);
     await assertEphemeralArtifacts(state);
     result.telemetryRecords = state.telemetryRecordCount;
-    const [catalogInfo, serverInfo, catalogValue, catalogBytes] = await Promise.all([
-      lstat(state.mcpCatalog),
-      lstat(state.activation.serverPath),
-      boundedJSON(state.mcpCatalog, 2 * 1024 * 1024),
-      readFile(state.mcpCatalog)
+    const [catalogSnapshot, serverInfo] = await Promise.all([
+      boundedJSONSnapshot(state.mcpCatalog, 2 * 1024 * 1024, {
+        label: "reviewed MCP activation catalog",
+        minimumBytes: 2,
+        requireCurrentUser: true,
+        requirePrivateMode: true
+      }),
+      lstat(state.activation.serverPath)
     ]);
+    const catalogInfo = catalogSnapshot.metadata;
+    const catalogValue = catalogSnapshot.value;
+    const catalogBytes = catalogSnapshot.bytes;
     if (
       !catalogInfo.isFile()
-      || catalogInfo.isSymbolicLink()
-      || catalogInfo.nlink !== 1
-      || (catalogInfo.mode & 0o777) !== 0o600
+      || catalogInfo.nlink !== 1n
+      || (catalogInfo.mode & 0o777n) !== 0o600n
       || !serverInfo.isFile()
       || serverInfo.isSymbolicLink()
       || serverInfo.nlink !== 1

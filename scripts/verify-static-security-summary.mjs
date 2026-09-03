@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const [summaryPath, inventoryPath, policyPath] = process.argv.slice(2);
 if (!summaryPath || !inventoryPath || !policyPath) {
@@ -16,14 +16,15 @@ const digestPattern = /^[a-f0-9]{64}$/u;
 
 async function boundedJSON(pathArgument, expectedName, maximumBytes) {
   const path = resolve(pathArgument);
-  const details = await lstat(path);
-  const effectiveUID = typeof process.geteuid === "function" ? process.geteuid() : details.uid;
-  if (basename(path) !== expectedName || !details.isFile() || details.isSymbolicLink()
-      || details.nlink !== 1 || details.uid !== effectiveUID || (details.mode & 0o022) !== 0
-      || details.size < 2 || details.size > maximumBytes) {
+  const input = await readAttestedRegularFile(path, {
+    label: `static-security evidence ${expectedName}`,
+    minimumBytes: 2,
+    maximumBytes
+  });
+  if (basename(path) !== expectedName || (input.metadata.mode & 0o022n) !== 0n) {
     throw new Error(`static-security evidence input is unsafe or unbounded: ${expectedName}`);
   }
-  const bytes = await readFile(path);
+  const bytes = input.bytes;
   let value;
   try { value = JSON.parse(bytes.toString("utf8")); }
   catch { throw new Error(`static-security evidence is not valid JSON: ${expectedName}`); }
