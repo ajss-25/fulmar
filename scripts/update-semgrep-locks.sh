@@ -40,11 +40,16 @@ for source_file in "$MANIFEST" "$REQUIREMENTS_INPUT"; do
     exit 1
   }
   source_permissions="$(/usr/bin/stat -f '%Lp' "$source_file")"
-  case "$source_permissions" in (*[!0-7]*|'') echo "Could not validate source input permissions." >&2; exit 1;; esac
-  (( (8#$source_permissions & 8#022) == 0 )) || {
-    echo "Semgrep lock source input is group/world writable." >&2
+  [[ "$source_permissions" =~ ^[0-7]{3,4}$ ]] || {
+    echo "Could not validate source input permissions." >&2
     exit 1
   }
+  case "$source_permissions" in
+    *[2367][0-7]|*[0-7][2367])
+      echo "Semgrep lock source input is group/world writable." >&2
+      exit 1
+      ;;
+  esac
 done
 
 EXPECTED_UV_SHA="51f0ae3c531a124727fa39e16e8599f2e371e427822a4aa92ebf667b52548b43"
