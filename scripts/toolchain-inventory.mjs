@@ -42,7 +42,7 @@ function validateDescriptor(value, label) {
 
 export function validateToolchainInventory(value) {
   exactKeys(value, ["architecture", "build", "developerDirectory", "operatingSystem", "schemaVersion", "sdk", "tools", "versions"], "toolchain inventory");
-  if (value.schemaVersion !== 2 || value.architecture !== "arm64") throw new Error("toolchain inventory identity is unsupported");
+  if (value.schemaVersion !== 3 || value.architecture !== "arm64") throw new Error("toolchain inventory identity is unsupported");
   boundedString(value.developerDirectory, "developerDirectory", { absolute: true });
   exactKeys(value.operatingSystem, ["buildVersion", "productVersion"], "operatingSystem");
   boundedString(value.operatingSystem.productVersion, "operatingSystem.productVersion");
@@ -59,7 +59,7 @@ export function validateToolchainInventory(value) {
   for (const [name, version] of Object.entries(value.versions)) {
     boundedString(version, `versions.${name}`, { multiline: true });
   }
-  exactKeys(value.build, ["automaticDSYMGeneration", "compilationDirectory", "configuration", "dsymObjectPrefixMaps", "frontendDebugInfo", "generatedPrefix", "jobs", "linkerReproducible", "relativeDebugMapObjects", "scratchPrefix", "serializedDebugPrefixMappings", "sourcePrefix", "swiftPMDebugInfoFormat"], "build");
+  exactKeys(value.build, ["automaticDSYMGeneration", "canonicalSourceSnapshot", "compilationDirectory", "configuration", "dsymObjectPrefixMaps", "dsymObjectPrependScratch", "frontendDebugInfo", "generatedPrefix", "jobs", "linkerReproducible", "relativeDebugMapObjects", "scratchPrefix", "serializedDebugPrefixMappings", "sourcePrefix", "swiftPMDebugInfoFormat"], "build");
   const expectedBuild = {
     configuration: "release",
     jobs: 1,
@@ -67,13 +67,15 @@ export function validateToolchainInventory(value) {
     scratchPrefix: "/Fulmar/Build",
     generatedPrefix: "/Fulmar/Generated",
     linkerReproducible: true,
-    relativeDebugMapObjects: false,
+    canonicalSourceSnapshot: true,
+    relativeDebugMapObjects: true,
     serializedDebugPrefixMappings: true,
     swiftPMDebugInfoFormat: "none",
     frontendDebugInfo: "dwarf",
     automaticDSYMGeneration: false,
     compilationDirectory: "/Fulmar/Compilation",
-    dsymObjectPrefixMaps: ["scratch", "generatedScratchLeaf"]
+    dsymObjectPrependScratch: true,
+    dsymObjectPrefixMaps: ["scratchToEmpty", "generatedScratchLeafToEmpty"]
   };
   if (JSON.stringify(value.build) !== JSON.stringify(expectedBuild)) throw new Error("toolchain build controls changed");
   return value;
@@ -144,7 +146,7 @@ export async function captureToolchainInventory(requireCleanEnvironment = false)
     xcrun: "/usr/bin/xcrun"
   })) tools[name] = await descriptor(path);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     architecture: await command("/usr/bin/uname", ["-m"]),
     operatingSystem: {
       productVersion: await command("/usr/bin/sw_vers", ["-productVersion"]),
@@ -174,13 +176,15 @@ export async function captureToolchainInventory(requireCleanEnvironment = false)
       scratchPrefix: "/Fulmar/Build",
       generatedPrefix: "/Fulmar/Generated",
       linkerReproducible: true,
-      relativeDebugMapObjects: false,
+      canonicalSourceSnapshot: true,
+      relativeDebugMapObjects: true,
       serializedDebugPrefixMappings: true,
       swiftPMDebugInfoFormat: "none",
       frontendDebugInfo: "dwarf",
       automaticDSYMGeneration: false,
       compilationDirectory: "/Fulmar/Compilation",
-      dsymObjectPrefixMaps: ["scratch", "generatedScratchLeaf"]
+      dsymObjectPrependScratch: true,
+      dsymObjectPrefixMaps: ["scratchToEmpty", "generatedScratchLeafToEmpty"]
     }
   };
 }

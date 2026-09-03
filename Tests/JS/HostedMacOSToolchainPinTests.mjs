@@ -40,7 +40,7 @@ function toolchainFixture() {
   const toolRoot = `${developer}/Toolchains/XcodeDefault.xctoolchain/usr/bin`;
   const sdk = `${developer}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk`;
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     architecture: "arm64",
     operatingSystem: { productVersion: "26.0", buildVersion: "25A123" },
     developerDirectory: developer,
@@ -80,13 +80,15 @@ function toolchainFixture() {
       scratchPrefix: "/Fulmar/Build",
       generatedPrefix: "/Fulmar/Generated",
       linkerReproducible: true,
-      relativeDebugMapObjects: false,
+      canonicalSourceSnapshot: true,
+      relativeDebugMapObjects: true,
       serializedDebugPrefixMappings: true,
       swiftPMDebugInfoFormat: "none",
       frontendDebugInfo: "dwarf",
       automaticDSYMGeneration: false,
       compilationDirectory: "/Fulmar/Compilation",
-      dsymObjectPrefixMaps: ["scratch", "generatedScratchLeaf"]
+      dsymObjectPrependScratch: true,
+      dsymObjectPrefixMaps: ["scratchToEmpty", "generatedScratchLeafToEmpty"]
     }
   };
 }

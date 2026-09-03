@@ -24,7 +24,7 @@ function descriptor(name) {
 
 function inventoryFixture() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     architecture: "arm64",
     operatingSystem: { productVersion: "26.6.2", buildVersion: "25G83" },
     developerDirectory: "/Library/Developer/CommandLineTools",
@@ -51,13 +51,15 @@ function inventoryFixture() {
       scratchPrefix: "/Fulmar/Build",
       generatedPrefix: "/Fulmar/Generated",
       linkerReproducible: true,
-      relativeDebugMapObjects: false,
+      canonicalSourceSnapshot: true,
+      relativeDebugMapObjects: true,
       serializedDebugPrefixMappings: true,
       swiftPMDebugInfoFormat: "none",
       frontendDebugInfo: "dwarf",
       automaticDSYMGeneration: false,
       compilationDirectory: "/Fulmar/Compilation",
-      dsymObjectPrefixMaps: ["scratch", "generatedScratchLeaf"]
+      dsymObjectPrependScratch: true,
+      dsymObjectPrefixMaps: ["scratchToEmpty", "generatedScratchLeafToEmpty"]
     }
   };
 }
@@ -70,7 +72,7 @@ test("toolchain inventory schema rejects identity, descriptor, build-control, an
   const baseline = inventoryFixture();
   assert.equal(validateToolchainInventory(baseline), baseline);
   const mutations = [
-    (value) => { value.schemaVersion = 3; },
+    (value) => { value.schemaVersion = 4; },
     (value) => { value.architecture = "x86_64"; },
     (value) => { value.unreviewed = true; },
     (value) => { delete value.tools["swift-build"]; },
@@ -82,8 +84,11 @@ test("toolchain inventory schema rejects identity, descriptor, build-control, an
     (value) => { value.build.swiftPMDebugInfoFormat = "dwarf"; },
     (value) => { value.build.frontendDebugInfo = "none"; },
     (value) => { value.build.automaticDSYMGeneration = true; },
+    (value) => { value.build.canonicalSourceSnapshot = false; },
+    (value) => { value.build.relativeDebugMapObjects = false; },
+    (value) => { value.build.dsymObjectPrependScratch = false; },
     (value) => { value.build.compilationDirectory = "/private/tmp/checkout"; },
-    (value) => { value.build.dsymObjectPrefixMaps = ["scratch"]; }
+    (value) => { value.build.dsymObjectPrefixMaps = ["scratchToEmpty"]; }
   ];
   for (const mutate of mutations) {
     const candidate = clone(baseline);
