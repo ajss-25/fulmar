@@ -458,7 +458,9 @@ export async function writeHostedMacOSToolchainProposal(pathArgument, value) {
     await handle.close();
     handle = undefined;
     await rename(temporary, destination);
-    const directory = await open(parent, constants.O_RDONLY);
+    // The directory handle only fsyncs the completed rename; the O_EXCL create
+    // above is the non-racy authority for the file itself.
+    const directory = await open(parent, constants.O_RDONLY); // codeql[js/file-system-race]
     try { await directory.sync(); } finally { await directory.close(); }
   } catch (error) {
     await handle?.close().catch(() => {});

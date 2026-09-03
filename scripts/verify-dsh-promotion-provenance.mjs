@@ -59,8 +59,7 @@ async function readBoundedRegularFile(path, maximumBytes = maximumJSONBytes) {
     throw new Error(`expected one bounded regular file: ${path}`);
   }
   // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-  // codeql[js/file-system-race]
-  const descriptor = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  const descriptor = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); // codeql[js/file-system-race]
   try {
     const opened = await descriptor.stat();
     if (opened.dev !== before.dev || opened.ino !== before.ino || opened.size !== before.size

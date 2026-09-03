@@ -492,7 +492,9 @@ async function writeCanonical(destinationArgument, value) {
     await handle.close();
     handle = undefined;
     await rename(temporary, destination);
-    const directory = await open(parent, fsConstants.O_RDONLY);
+    // The directory handle only fsyncs the completed rename; the O_EXCL create
+    // above is the non-racy authority for the file itself.
+    const directory = await open(parent, fsConstants.O_RDONLY); // codeql[js/file-system-race]
     try {
       await directory.sync();
     } finally {
@@ -514,8 +516,7 @@ async function readBoundedCapture(sourceArgument) {
   }
   if (!Number.isInteger(fsConstants.O_NOFOLLOW)) fail("the host does not expose O_NOFOLLOW");
   // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-  // codeql[js/file-system-race]
-  const handle = await open(source, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  const handle = await open(source, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW); // codeql[js/file-system-race]
   try {
     const opened = await handle.stat({ bigint: true });
     if (!opened.isFile() || opened.nlink !== 1n || !sameIdentity(info, opened)) {

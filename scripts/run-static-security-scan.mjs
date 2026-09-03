@@ -88,8 +88,7 @@ function readStableRegularFile(path, relativePath, maximumBytes) {
     failure(`secret-scan input is unsafe or exceeds its byte limit: ${relativePath}`);
   }
   // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-  // codeql[js/file-system-race]
-  const descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  const descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); // codeql[js/file-system-race]
   try {
     const opened = fstatSync(descriptor, { bigint: true });
     if (!opened.isFile() || !sameFile(before, opened)) {
@@ -516,7 +515,9 @@ export function writeCanonicalSummary(projectRoot, summary) {
   }
   try {
     renameSync(temporary, destination);
-    const directoryDescriptor = openSync(directory, constants.O_RDONLY);
+    // The directory descriptor only fsyncs the completed rename; the O_EXCL
+    // create above is the non-racy authority for the file itself.
+    const directoryDescriptor = openSync(directory, constants.O_RDONLY); // codeql[js/file-system-race]
     try {
       fsyncSync(directoryDescriptor);
     } finally {

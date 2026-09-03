@@ -82,8 +82,7 @@ async function readRuntimeFile(relativePath, maximumBytes, { optional = false, l
   let handle;
   try {
     // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-    // codeql[js/file-system-race]
-    handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); // codeql[js/file-system-race]
     const opened = await handle.stat();
     if (!opened.isFile() || opened.size > maximumBytes || opened.dev !== before.dev || opened.ino !== before.ino) {
       throw new Error(`${label} changed while it was being verified`);
