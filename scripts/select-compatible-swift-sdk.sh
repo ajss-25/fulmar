@@ -7,11 +7,9 @@
 # for controlled CI, but it must pass the same import probe.
 
 select_local_harness_swift_sdk() {
-  local developer_root candidate existing probe_cache candidate_is_present
+  local developer_root candidate existing candidate_is_present
   typeset -a candidates
   developer_root="$(xcode-select -p)"
-  probe_cache="${TMPDIR%/}/local-harness-swift-sdk-probe-cache"
-  mkdir -p "$probe_cache"
 
   candidates=()
   if [[ -n "${SDKROOT:-}" ]]; then
@@ -30,7 +28,7 @@ select_local_harness_swift_sdk() {
   for candidate in "${candidates[@]}"; do
     [[ -d "$candidate" ]] || continue
     if print -r -- 'import Foundation' | env SDKROOT="$candidate" \
-      swiftc -sdk "$candidate" -module-cache-path "$probe_cache" -typecheck - \
+      swiftc -sdk "$candidate" -typecheck - \
       >/dev/null 2>&1; then
       export SDKROOT="$candidate"
       return 0

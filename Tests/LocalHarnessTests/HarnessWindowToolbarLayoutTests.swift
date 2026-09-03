@@ -199,9 +199,9 @@ private func renderedCommonProbeBounds(
 
         status.layoutSubtreeIfNeeded()
 
-        // The status label keeps the release-qualified half-point optical
-        // correction while both controls grow from the same type metric.
-        #expect(abs(label.frame.midY - picker.frame.midY + 0.5) < 0.1)
+        // Both controls grow from the same type metric, and the status label's
+        // intrinsic-height frame remains geometrically centred.
+        #expect(abs(label.frame.midY - picker.frame.midY) < 0.1)
         #expect(abs(label.frame.height - label.intrinsicContentSize.height) < 0.5)
         #expect(status.frame.height == picker.frame.height)
         #expect(label.frame.minY >= status.bounds.minY)
@@ -319,7 +319,7 @@ private func renderedCommonProbeBounds(
         #expect(label.font?.pointSize == picker.font?.pointSize)
         #expect(label.frame.minY >= status.bounds.minY)
         #expect(label.frame.maxY <= status.bounds.maxY)
-        #expect(abs(label.frame.midY - status.bounds.midY + 0.5) < 0.1)
+        #expect(abs(label.frame.midY - status.bounds.midY) < 0.1)
         window.orderOut(nil)
     }
 }
@@ -502,7 +502,7 @@ func renderedMacOS26ToolbarStatusAndModelTextAreVisuallyLevelAcrossReleaseMatrix
                         #expect(frameView.bounds.insetBy(dx: -0.5, dy: -0.5).contains(statusRect))
                         #expect(frameView.bounds.insetBy(dx: -0.5, dy: -0.5).contains(routeRect))
                         #expect(statusRect.maxX <= routeRect.minX + 0.5)
-                        #expect(abs(statusLabel.frame.midY - statusContainer.bounds.midY + 0.5) < 0.1)
+                        #expect(abs(statusLabel.frame.midY - statusContainer.bounds.midY) < 0.1)
                         #expect(abs(statusRect.midY - routeRect.midY) < 0.5)
                         #expect(abs(statusRect.height - routeRect.height) < 0.5)
                         #expect(abs(statusRect.height - 26) < 0.5)

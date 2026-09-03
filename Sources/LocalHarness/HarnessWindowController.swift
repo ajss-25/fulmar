@@ -4,13 +4,10 @@ import WebKit
 /// Keeps the dynamic service status visually centred beside the adjacent model
 /// picker. An `NSTextField` label stretched to the toolbar's full height draws
 /// against its cell's top inset, which made the green Ready text appear several
-/// points higher than the popup title on macOS 26.
+/// points higher than the popup title on macOS 26. Geometrically centring the
+/// label at its intrinsic height also keeps its rendered glyph centre aligned
+/// across supported semantic type scales.
 final class CenteredToolbarStatusView: NSView {
-    /// `NSPopUpButtonCell` paints its title a fraction below the geometric
-    /// centre of its 26-point control. Matching that optical centre avoids the
-    /// status text looking high beside the model title on Retina displays.
-    private static let opticalVerticalOffset: CGFloat = -0.5
-
     let label: NSTextField
 
     init(label: NSTextField, width: CGFloat, height: CGFloat) {
@@ -27,7 +24,7 @@ final class CenteredToolbarStatusView: NSView {
     override func layout() {
         super.layout()
         let intrinsicHeight = max(1, label.intrinsicContentSize.height)
-        let y = max(0, (bounds.height - intrinsicHeight) / 2 + Self.opticalVerticalOffset)
+        let y = max(0, (bounds.height - intrinsicHeight) / 2)
         label.frame = NSRect(x: 0, y: y, width: bounds.width, height: intrinsicHeight)
     }
 

@@ -203,6 +203,7 @@ test("release entitlement extraction uses the supported XML output form", async 
 test("native qualification uses the portable warning-clean Swift Testing runner", async () => {
   const verifier = await readFile(verifierPath, "utf8");
   const runner = await readFile(join(process.cwd(), "scripts", "run-swift-tests.sh"), "utf8");
+  const sdkSelector = await readFile(join(process.cwd(), "scripts", "select-compatible-swift-sdk.sh"), "utf8");
   const eventVerifier = await readFile(join(process.cwd(), "scripts", "verify-swift-test-events.mjs"), "utf8");
   const planVerifier = await readFile(join(process.cwd(), "scripts", "verify-swift-test-plan.mjs"), "utf8");
   const plan = JSON.parse(await readFile(join(process.cwd(), "Config", "SwiftTestPlan.json"), "utf8"));
@@ -210,6 +211,16 @@ test("native qualification uses the portable warning-clean Swift Testing runner"
 
   assert.match(verifier, /\/bin\/zsh -f "\$PROJECT_DIR\/scripts\/run-swift-tests\.sh"/u);
   assert.match(runner, /-Xswiftc -warnings-as-errors/u);
+  assert.match(
+    runner,
+    /run_guarded "Swift SDK compatibility probe" 600 2147483648 3 3221225472/u,
+    "a cold Swift SDK import probe must retain enough wall time for slower supported Macs"
+  );
+  assert.doesNotMatch(
+    sdkSelector,
+    /-module-cache-path/u,
+    "SDK selection must not rebuild the entire system module cache inside each disposable gate root"
+  );
   assert.match(runner, /Testing\.framework/u);
   assert.match(runner, /lib_TestingInterop\.dylib/u);
   assert.match(runner, /-Xlinker -rpath/u);

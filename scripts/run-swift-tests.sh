@@ -264,7 +264,7 @@ fi
 # SDK probing runs in the same clean home/environment boundary as the tests.
 # This prevents compiler loader hooks, proxy credentials, or package-manager
 # state from influencing even the pre-test compatibility probe.
-SDKROOT="$(run_guarded "Swift SDK compatibility probe" 180 2147483648 3 3221225472 -- \
+SDKROOT="$(run_guarded "Swift SDK compatibility probe" 600 2147483648 3 3221225472 -- \
   /usr/bin/env -i "${sdk_probe_environment[@]}" /bin/zsh -f -c '
   source "$1"
   print -r -- "$SDKROOT"
