@@ -1,0 +1,89 @@
+- id: credentials
+  disabled: true
+- insert:
+    - id: credentials-keychain
+      name: '@local-harness/dsh-credentials-keychain'
+- insert:
+    - id: mcp-guarded
+      name: '@local-harness/dsh-mcp-guarded'
+      config:
+        # A native, owner-only catalog contains reviewed activation plans and
+        # credential references only. The plugin never accepts HTTP transport,
+        # shell command strings, ambient secrets, or an unreviewed executable.
+        catalogPath: !!js process.env.LOCAL_HARNESS_MCP_CATALOG
+- insert:
+    - id: client-security-bridge
+      name: '@local-harness/dsh-client-security-bridge'
+- insert:
+    - id: performance-profile
+      name: '@local-harness/dsh-performance-profile'
+- id: web
+  config:
+    # General search is not advertised unless a separately configured search
+    # route is genuinely usable. Exact page retrieval uses the reviewed,
+    # per-call approval boundary below in both local and connected modes.
+    fetchProvider: fulmar-approved-fetch
+- id: web-search-deepseek
+  disabled: true
+- insert:
+    - id: web-fetch-safe
+      name: '@local-harness/dsh-web-fetch-safe'
+- id: tool-web
+  config:
+    search: false
+    fetch: true
+    fetchTimeoutMs: 30000
+    fetchMaxOutputChars: 200000
+# Keep the settings transport available for read-only theme/runtime consumers,
+# but remove the embedded mutation shell and every settings page. Provider,
+# credential, model-default, skill, and MCP changes are exposed only through
+# the native stop -> isolated control plane -> fresh inference lifecycle gate.
+- id: ui-settings-general
+  disabled: true
+- id: ui-settings-models
+  disabled: true
+- id: ui-settings-plugin-inventory
+  disabled: true
+- id: ui-settings-plugins
+  disabled: true
+- id: ui-agent-preset
+  disabled: true
+- id: sandbox
+  config:
+    runnerCommand:
+      - !!js process.env.LOCAL_HARNESS_SANDBOX_HELPER
+    runnerFailureSignatures:
+      - 'fulmar-sandbox-runner:'
+- id: fs-sandbox
+  # The reviewed adapter confines both reads and writes to app-approved roots;
+  # upstream dsh-fs-sandbox confines writes only.
+  disabled: true
+- insert:
+    - id: fs-confined
+      name: '@local-harness/dsh-fs-confined'
+- id: skill-filesystem
+  # Defense in depth for the host-plane provider. The web profile currently
+  # disables this row and the reviewed Standard preset owns discovery, but a
+  # future upstream composition change must still never reopen project, ~/.dsh,
+  # ~/.agents, or environment-provided skill roots.
+  config:
+    includeDefaultRoots: false
+    bundledSkillDir: !!js "process.getBuiltinModule('node:path').join(process.env.DSH_HOME, 'skills', 'Active')"
+    watchFollowSymlinks: false
+- id: agent-presets
+  config:
+    default: standard
+    # User-authored presets execute composition code inside the Harness host.
+    # They are admitted only after Local Harness grows a capability-aware preset
+    # review pipeline; the private release fails closed in the meantime.
+    includeUserRoot: false
+- id: code-runtime
+  disabled: true
+- id: workflow-worker-thread
+  disabled: true
+- id: tool-workflow
+  # The model-facing consumers must be disabled with their worker. Leaving
+  # them enabled keeps the Cordis tree pending forever on `workflowEngine`.
+  disabled: true
+- id: tool-ralph
+  disabled: true

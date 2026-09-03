@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "engineVersion": "1.135.0",
+  "pythonVersion": "3.12.3",
+  "pipVersion": "24.0",
+  "resolverVersion": "0.11.8",
+  "resolutionCutoff": "2026-09-03T00:00:00Z",
+  "indexURL": "https://pypi.org/simple",
+  "requirementsInput": {
+    "path": "Config/SemgrepRequirements.in",
+    "sha256": "0b5bee18684d658764ac9db2fdc9c8786cf28b85c90c83ddbd432e10ba66366c"
+  },
+  "lockGeneration": {
+    "platform": "Darwin:arm64",
+    "resolverExecutableSHA256": "51f0ae3c531a124727fa39e16e8599f2e371e427822a4aa92ebf667b52548b43",
+    "pythonExecutableSHA256": "02f1498c0eff1936ab91de7c411abf49c6f918e11628445cc6502da94d5aa15b"
+  },
+  "pythonDistributions": {
+    "Darwin:arm64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20240415/cpython-3.12.3%2B20240415-aarch64-apple-darwin-install_only.tar.gz",
+      "bytes": 16814925,
+      "sha256": "ccc40e5af329ef2af81350db2a88bbd6c17b56676e82d62048c15d548401519e",
+      "archiveEntries": 2176,
+      "executable": "python/bin/python3.12",
+      "executableSHA256": "02f1498c0eff1936ab91de7c411abf49c6f918e11628445cc6502da94d5aa15b"
+    },
+    "Linux:x86_64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20240415/cpython-3.12.3%2B20240415-x86_64-unknown-linux-gnu-install_only.tar.gz",
+      "bytes": 67368051,
+      "sha256": "a73ba777b5d55ca89edef709e6b8521e3f3d4289581f174c8699adfb608d09d6",
+      "archiveEntries": 5191,
+      "executable": "python/bin/python3.12",
+      "executableSHA256": "4933b6c4a8521fb3aa93856701e30b3ac2626d3c47ceb22965a3b0b422e85b44"
+    }
+  },
+  "locks": {
+    "Darwin:arm64": {
+      "path": "Config/SemgrepRequirements-macos-arm64.lock",
+      "sha256": "4d0df281e8d04b806b9570a0a80da69db55cee10044baeeb7d0c6a35a12bf618"
+    },
+    "Linux:x86_64": {
+      "path": "Config/SemgrepRequirements-linux-x64.lock",
+      "sha256": "4d0df281e8d04b806b9570a0a80da69db55cee10044baeeb7d0c6a35a12bf618"
+    }
+  }
+}

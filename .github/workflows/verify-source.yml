@@ -1,0 +1,369 @@
+name: Verify source
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+concurrency:
+  group: verify-source-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static-analysis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Reject an unsafe tracked source index before repository tooling
+        run: /bin/bash -p scripts/verify-tracked-index.sh .
+
+      - name: Install exact Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.1
+
+      - name: Verify exact Node runtime
+        run: |
+          test "$(uname -s):$(uname -m)" = "Linux:x86_64"
+          node_path="$(command -v node)"
+          test -f "$node_path" && test ! -L "$node_path" && test -x "$node_path"
+          expected_sha="$(sed -nE 's/^[[:space:]]*"nodeLinuxX64SHA256": "([a-f0-9]{64})",?$/\1/p' Config/ReleaseIdentity.json)"
+          test "${#expected_sha}" -eq 64
+          test "$(sha256sum "$node_path" | awk '{ print $1 }')" = "$expected_sha"
+          test "$("$node_path" --version)" = "v22.23.1"
+
+      - name: Verify promoted DSH source and registry provenance
+        run: node scripts/verify-dsh-promotion-provenance.mjs .
+
+      - name: Install content-pinned Python and hash-locked Semgrep
+        run: |
+          /bin/bash -p scripts/install-pinned-semgrep.sh \
+            "$RUNNER_TEMP/fulmar-semgrep-static" \
+            "$GITHUB_PATH" \
+            "$(command -v node)"
+
+      - name: Run static security scan
+        run: make static-security-scan
+
+  codeql-javascript:
+    name: codeql-javascript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Reject an unsafe tracked source index before analysis
+        run: /bin/bash -p scripts/verify-tracked-index.sh .
+
+      - name: Initialize CodeQL for JavaScript and TypeScript
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze JavaScript and TypeScript
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: /language:javascript-typescript
+
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 120
+    outputs:
+      archive_artifact_id: ${{ steps.upload_archive.outputs.artifact-id }}
+      archive_artifact_digest: ${{ steps.upload_archive.outputs.artifact-digest }}
+      manifest_artifact_id: ${{ steps.upload_manifest.outputs.artifact-id }}
+      manifest_artifact_digest: ${{ steps.upload_manifest.outputs.artifact-digest }}
+      evidence_artifact_id: ${{ steps.upload_evidence.outputs.artifact-id }}
+      evidence_artifact_digest: ${{ steps.upload_evidence.outputs.artifact-digest }}
+      signables_artifact_id: ${{ steps.upload_signables.outputs.artifact-id }}
+      signables_artifact_digest: ${{ steps.upload_signables.outputs.artifact-digest }}
+      transport_artifact_id: ${{ steps.upload_transport.outputs.artifact-id }}
+      transport_artifact_digest: ${{ steps.upload_transport.outputs.artifact-digest }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Reject an unsafe tracked source index before repository tooling
+        run: /bin/bash -p scripts/verify-tracked-index.sh .
+
+      - name: Verify hosted architecture and build capacity
+        run: |
+          test "$(/usr/bin/uname -s):$(/usr/bin/uname -m)" = "Darwin:arm64"
+          available_kib="$(/bin/df -Pk "$PWD" | /usr/bin/awk 'END { print $4 }')"
+          case "$available_kib" in (*[!0-9]*|'') exit 1;; esac
+          test "$available_kib" -ge 6291456
+
+      - name: Reconstruct and verify pinned runtime
+        run: /bin/zsh -f scripts/bootstrap-source-checkout.sh
+
+      - name: Capture the exact hosted macOS image and toolchain identity
+        run: |
+          proposal="$RUNNER_TEMP/hosted-macos-toolchain-proposal.json"
+          test ! -e "$proposal" && test ! -L "$proposal"
+          "$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node" \
+            scripts/hosted-macos-toolchain-pin.mjs discover \
+            macos-26 "$proposal"
+
+      - name: Retain the hosted macOS identity proposal for maintainer review
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hosted-macos-toolchain-proposal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hosted-macos-toolchain-proposal.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Require the exact reviewed hosted macOS toolchain pin
+        run: |
+          "$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node" \
+            scripts/hosted-macos-toolchain-pin.mjs verify \
+            macos-26 Config/HostedMacOSToolchainPin.json
+
+      - name: Verify source contracts and runtime inventory
+        run: |
+          make source-contract-test
+          make deepseek-contract-test
+          make runtime-inventory-verify
+          make runtime-inventory-test
+
+      - name: Produce the current credential-free production dependency audit
+        run: make dependency-audit
+
+      - name: Install content-pinned Semgrep for candidate-bound source evidence
+        run: |
+          /bin/bash -p scripts/install-pinned-semgrep.sh \
+            "$RUNNER_TEMP/fulmar-semgrep-candidate" \
+            "$GITHUB_PATH" \
+            "$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node"
+
+      - name: Provision one isolated unlocked CI Keychain
+        run: |
+          ci_keychain="$RUNNER_TEMP/fulmar-ci.keychain-db"
+          ci_password="$(/usr/bin/uuidgen)"
+          identity="$(LOCAL_HARNESS_SIGNING_KEYCHAIN="$ci_keychain" \
+            LOCAL_HARNESS_SIGNING_KEYCHAIN_PASSWORD="$ci_password" \
+            scripts/run-with-watchdog.sh \
+              --seconds 180 --max-rss-bytes 1073741824 --rss-grace-seconds 2 \
+              --emergency-rss-bytes 2147483648 \
+              --label "Fulmar CI signing bootstrap" -- \
+              /bin/zsh -f scripts/provision-ci-signing-keychain.sh "$ci_keychain")"
+          unset ci_password
+          case "$identity" in (*[!A-Fa-f0-9]*|'') exit 1;; esac
+          test "${#identity}" -eq 40
+          echo "LOCAL_HARNESS_SIGNING_KEYCHAIN=$ci_keychain" >> "$GITHUB_ENV"
+          echo "LOCAL_HARNESS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build the exact stable-signed candidate fixtures
+        run: make private-release
+
+      - name: Qualify every deterministic credential-free candidate gate
+        run: make deterministic-release-verify
+
+      - name: Publish the safe canonical candidate evidence in the job summary
+        run: |
+          test -s build/ci-evidence-summary.json
+          evidence_sha="$(/usr/bin/shasum -a 256 build/ci-evidence-summary.json | /usr/bin/awk '{ print $1 }')"
+          {
+            echo "### Fulmar deterministic candidate evidence"
+            echo
+            echo "SHA-256: \`$evidence_sha\`"
+            echo
+            echo '```json'
+            /bin/cat build/ci-evidence-summary.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Snapshot the exact path-free candidate transport
+        run: |
+          source_revision="$(/usr/bin/git rev-parse --verify 'HEAD^{commit}')"
+          test "$source_revision" = "$GITHUB_SHA"
+          transport_root="$RUNNER_TEMP/fulmar-ci-candidate"
+          test ! -e "$transport_root" && test ! -L "$transport_root"
+          /bin/mkdir -m 0700 "$transport_root"
+          producer_node="$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node"
+          "$producer_node" scripts/snapshot-regular-file.mjs \
+            "$PWD/build/Fulmar.app.zip" "$transport_root/Fulmar.app.zip" 2147483648
+          "$producer_node" scripts/snapshot-regular-file.mjs \
+            "$PWD/build/release-manifest.json" "$transport_root/release-manifest.json" 1048576
+          "$producer_node" scripts/snapshot-regular-file.mjs \
+            "$PWD/build/ci-evidence-summary.json" "$transport_root/ci-evidence-summary.json" 65536
+          "$producer_node" scripts/snapshot-regular-file.mjs \
+            "$PWD/build/runtime-signables.json" "$transport_root/runtime-signables.json" 4194304
+          "$producer_node" scripts/ci-candidate-transport.mjs create \
+            "$PWD/Config/ReleaseIdentity.json" \
+            "$transport_root/release-manifest.json" \
+            "$transport_root/Fulmar.app.zip" \
+            "$transport_root/ci-evidence-summary.json" \
+            "$transport_root/runtime-signables.json" \
+            "$source_revision" \
+            "$transport_root/ci-candidate-transport.json"
+
+      - name: Retain the exact candidate archive for minimum-macOS verification
+        id: upload_archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Fulmar.app.zip
+          path: ${{ runner.temp }}/fulmar-ci-candidate/Fulmar.app.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Retain the exact release manifest
+        id: upload_manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-manifest.json
+          path: ${{ runner.temp }}/fulmar-ci-candidate/release-manifest.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Retain the path-free canonical qualification evidence
+        id: upload_evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-evidence-summary.json
+          path: ${{ runner.temp }}/fulmar-ci-candidate/ci-evidence-summary.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Retain the exact Runtime Mach-O inventory
+        id: upload_signables
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtime-signables.json
+          path: ${{ runner.temp }}/fulmar-ci-candidate/runtime-signables.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Retain the path-free transport binding
+        id: upload_transport
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-candidate-transport.json
+          path: ${{ runner.temp }}/fulmar-ci-candidate/ci-candidate-transport.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Remove the isolated CI Keychain
+        if: always()
+        run: |
+          ci_keychain="$RUNNER_TEMP/fulmar-ci.keychain-db"
+          if test -f "$ci_keychain"; then
+            /usr/bin/security delete-keychain "$ci_keychain"
+          fi
+
+  minimum-macos-candidate:
+    needs: macos
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact producer source revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Reject an unsafe tracked source index before repository tooling
+        run: /bin/bash -p scripts/verify-tracked-index.sh .
+
+      - name: Verify the declared minimum-macOS ARM runner
+        run: |
+          test "$(/usr/bin/uname -s):$(/usr/bin/uname -m)" = "Darwin:arm64"
+          test "$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d. -f1)" = "15"
+          test "$(/usr/bin/git rev-parse --verify 'HEAD^{commit}')" = "$GITHUB_SHA"
+
+      - name: Install the exact verification Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.1
+
+      - name: Verify the exact verification Node runtime
+        run: |
+          node_path="$(command -v node)"
+          test -f "$node_path" && test ! -L "$node_path" && test -x "$node_path"
+          expected_sha="$(/usr/bin/plutil -extract runtime.nodeSHA256 raw -o - Config/ReleaseIdentity.json)"
+          test "${#expected_sha}" -eq 64
+          test "$(/usr/bin/shasum -a 256 "$node_path" | /usr/bin/awk '{ print $1 }')" = "$expected_sha"
+          test "$("$node_path" --version)" = "v22.23.1"
+
+      - name: Create one private candidate download root
+        run: |
+          download_root="$RUNNER_TEMP/fulmar-ci-candidate"
+          test ! -e "$download_root" && test ! -L "$download_root"
+          /bin/mkdir -m 0700 "$download_root"
+
+      - name: Download the immutable candidate archive by producer artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.macos.outputs.archive_artifact_id }}
+          path: ${{ runner.temp }}/fulmar-ci-candidate
+          skip-decompress: true
+          digest-mismatch: error
+
+      - name: Download the immutable release manifest by producer artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.macos.outputs.manifest_artifact_id }}
+          path: ${{ runner.temp }}/fulmar-ci-candidate
+          skip-decompress: true
+          digest-mismatch: error
+
+      - name: Download the immutable canonical evidence by producer artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.macos.outputs.evidence_artifact_id }}
+          path: ${{ runner.temp }}/fulmar-ci-candidate
+          skip-decompress: true
+          digest-mismatch: error
+
+      - name: Download the immutable Runtime Mach-O inventory by producer artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.macos.outputs.signables_artifact_id }}
+          path: ${{ runner.temp }}/fulmar-ci-candidate
+          skip-decompress: true
+          digest-mismatch: error
+
+      - name: Download the immutable transport binding by producer artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.macos.outputs.transport_artifact_id }}
+          path: ${{ runner.temp }}/fulmar-ci-candidate
+          skip-decompress: true
+          digest-mismatch: error
+
+      - name: Verify and smoke the transported candidate without rebuilding it
+        run: |
+          /bin/zsh -f scripts/verify-hosted-candidate-consumer.sh \
+            "$RUNNER_TEMP/fulmar-ci-candidate" \
+            "$GITHUB_SHA" \
+            "${{ needs.macos.outputs.archive_artifact_digest }}" \
+            "${{ needs.macos.outputs.manifest_artifact_digest }}" \
+            "${{ needs.macos.outputs.evidence_artifact_digest }}" \
+            "${{ needs.macos.outputs.signables_artifact_digest }}" \
+            "${{ needs.macos.outputs.transport_artifact_digest }}" \
+            "$(command -v node)"

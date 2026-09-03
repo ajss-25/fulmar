@@ -1,0 +1,161 @@
+# Hosted CI and repository security
+
+Fulmar's hosted workflow has two distinct purposes: reject unsafe source before
+running it, and exercise the deterministic part of candidate qualification. A green hosted run
+is useful evidence, but it is not by itself permission to publish a release.
+
+## First-index gate
+
+The first command after each checkout is `scripts/verify-tracked-index.sh`. It uses
+only the operating system's Bash, Git, Perl, and basic file tools; downloaded Node,
+Semgrep, Swift build products, and repository package code have not run yet. The gate
+examines the stage-zero Git index and fails closed for:
+
+- tracked `.build`, `build`, `recovered-duplicates`, generated `VendorRuntime`, or
+  unknown top-level content;
+- symlinks, gitlinks/submodules, unresolved stages, non-regular blob modes,
+  unexpected executable files, and reviewed executable scripts whose executable bit
+  was removed;
+- absolute, traversal-like, control-character, backslash, invalid-UTF-8, or
+  case/Unicode-normalization-colliding paths;
+- blobs larger than 100 MiB; and
+- filenames conventionally used for credentials, private keys, certificates,
+  provisioning profiles, or package-manager authentication.
+
+The policy intentionally returns a non-successful **NOT RUN** result when Git metadata
+is absent. It never turns a source export into evidence about an index it cannot
+inspect. The gate examines the current index only; it does not scan prior commits,
+deleted blobs, reflogs, tags, GitHub settings, or the provenance of imported history.
+
+## Hosted jobs and deterministic candidate profile
+
+The workflow defines four required jobs: `static-analysis`, `codeql-javascript`,
+`macos`, and `minimum-macos-candidate`. CodeQL analyzes JavaScript and TypeScript only;
+Swift is covered by the warning-clean Swift gate and the repository's targeted
+security tests, not by a claimed CodeQL Swift scan.
+
+The separate `Check upstream DSH` workflow is a read-only scheduled/manual observer.
+It verifies the exact Node runtime and requires source acknowledgement of every
+monitored DSH release channel. It reports drift; it never promotes or installs a newer
+Harness package. Both workflows require a real hosted pass before source publication.
+
+The static job verifies exact Node bytes, installs a content-pinned standalone Python
+3.12.3 distribution, installs Semgrep 1.135.0 from a complete `--require-hashes`
+wheel closure, and runs the source-controlled rule-pack and source-inventory gate.
+The two platform locks, Python archive bytes, interpreter bytes, requirements input,
+and generated-lock contract are bound by `Config/SemgrepToolchain.json`. A
+version-only `pipx install semgrep==1.135.0` is useful for informal development but is
+not equivalent release or hosted-CI evidence.
+
+The macOS job verifies ARM64 and at least 6 GiB of free build capacity, reconstructs
+the exact inventoried runtime, captures the hosted image/Xcode/SDK/tool identities,
+requires them to match the reviewed source pin before compilation, creates a
+credential-free production dependency audit, installs the same content-pinned
+Semgrep toolchain, and builds only after a fresh source/secret scan has been bound to
+the frozen source-input inventory. It then invokes
+`make deterministic-release-verify` without rebuilding that candidate. An isolated
+unlocked CI Keychain lets Keychain transaction and provider-fixture tests run without
+storing a real provider secret. The candidate verifier runs the archive, manifest,
+inventory, signature, entitlement, dSYM, SBOM, notice, packaged-policy, JavaScript,
+native, credential, runtime, sandbox, MCP, installed-layout, cloned-state, web/RPC,
+and simulated provider/protocol gates against the archive extraction.
+
+Candidate-dependent JavaScript tests run with
+`FULMAR_CI_REQUIRE_CURRENT_CANDIDATE_TESTS=1`; a missing or stale fixture is a failure,
+not a skipped success. The cloned-state gate constructs a non-secret, non-empty prior-
+DSH-state fixture, proves its exact nested bytes were copied, and proves the source
+fixture remained unchanged.
+
+The deterministic profile explicitly records the physical-Qwen gates as
+`required-not-run` in `build/ci-evidence-summary.json`. The normal
+`make release-verify` path remains the full-hardware profile and still runs the app-
+owned Ollama generation plus Qwen bash, filesystem, and project tool routes. There is
+no environment flag that converts the default release gate into a silent skip.
+
+The bounded, path-free JSON evidence is rendered in the GitHub job summary. Five
+reviewed candidate files are additionally sent through exact-SHA-pinned GitHub
+artifact actions: the candidate archive, release manifest, canonical evidence,
+Runtime Mach-O inventory, and a transport record that binds those bytes to the source
+commit. No console log, private path, Keychain value, model output, workspace content,
+or complete build directory is uploaded. The archive is retained for one day only;
+the bounded machine-readable records are retained for review. These CI artifacts are
+test inputs and do not constitute an approved public binary release.
+
+## Six implemented reproducibility controls and remaining evidence
+
+The source now implements all six previously identified controls. Implementation and
+focused tests do not count as a successful hosted run; each control remains fail-
+closed until its stated execution evidence exists.
+
+In short, those controls cover the exact Xcode and related hosted-tool identities, a
+macOS 15 ARM consumer, two different checkout roots, the hash-locked Semgrep closure,
+two scanners over the complete real Git history, and content-pinned upload/download
+evidence transport.
+
+1. **Hosted toolchain identity.** `Config/HostedMacOSToolchainPin.json` and
+   `scripts/hosted-macos-toolchain-pin.mjs` source-bind the requested image, exact
+   hosted image identity, Xcode, SDK, compiler, linker, and related tools. The initial
+   `discovery-required` state uploads a bounded proposal and deliberately fails before
+   compilation. A maintainer must review and commit the exact active pin, after which
+   a fresh hosted run must verify it.
+2. **Exact minimum-macOS consumption.** The `macos-15` ARM job downloads the five
+   producer artifacts by immutable artifact ID, requires GitHub's artifact digest,
+   revalidates the source/manifest/archive/transport binding, checks every Mach-O
+   deployment target and signature, and performs a bounded headless smoke without
+   rebuilding the app.
+3. **Two-root unsigned reproducibility.** The gate clones one clean committed tree
+   into two different-length checkout paths with distinct private scratch roots,
+   builds both, and compares all eight native products, their eight matching dSYMs,
+   and the path-free unsigned bundle inventory. Signed, notarized, and `ditto` ZIP
+   bytes remain immutable hash-bound artifacts rather than claimed reproducible
+   outputs.
+4. **Scanner closure.** The exact Python archives/interpreters and complete Semgrep
+   wheel closures for macOS ARM64 and Linux x64 are source-hash-bound. Installation
+   runs in an isolated environment with package hashes, `pip check`, metrics and
+   version checks disabled, and no account token. The separately downloaded Semgrep
+   rule responses retain their existing exact content/origin/rule-set pins.
+5. **Complete-history review.** Gitleaks and TruffleHog are the two independent
+   scanners selected for all-ref history review. Their first scan of the existing
+   public repository history found no secret; the final candidate commit and every
+   reachable branch/tag must be rescanned and the reports retained before source
+   publication. A shallow pull-request checkout cannot establish this evidence.
+6. **Content-pinned evidence transport.** Exact-SHA-pinned GitHub-owned upload and
+   download actions retain and transport only the bounded files described above.
+   Artifact IDs, service digests, file digests, source revision, and release-manifest
+   identity are checked by the independent consumer.
+
+The source implementation has focused contract coverage. The first real GitHub-hosted
+run, active hosted-toolchain pin, app-ID/source-revision binding, final all-ref secret
+scan, and retained hosted evidence are still pending and must not be described as
+passed.
+
+The weekly schedule catches runner, registry-audit, runtime-bootstrap, toolchain, and
+rule-endpoint drift. The production dependency audit, Python/wheel installation, and
+external rule fetch are intentionally network-dependent security observations, not
+offline reproducibility claims.
+
+## Repository controls
+
+The public repository has private vulnerability reporting, secret scanning and push
+protection, Dependabot alerts and automated security updates, read-only default
+workflow permissions, SHA-pinned GitHub-owned Actions only, protected `main` with the
+four job contexts above required, and immutable `v*` tags. Branch rules do not make an
+unrun workflow green. The first real hosted run, final app-ID/revision check, final-
+history rescan, collaborator/app/webhook review, and retained settings evidence remain
+release operations rather than source-code assertions.
+
+## Gates that cannot move to a standard hosted Mac
+
+GitHub's standard Apple-silicon runner does not meet Fulmar's 48 GB local-model
+admission contract. Candidate-bound local-model qualification therefore still requires
+a physical 48 GB Apple-silicon Mac with the exact reviewed Qwen model and official
+Ollama binary for Metal/MLX residency, thermal admission, cancellation, cleanup, and
+tool-route tests. Successful live funded cloud-provider routes also remain separate
+evidence rather than simulated-protocol claims.
+
+Developer ID signing, Apple notarization/stapling, offline Gatekeeper, clean-Mac
+installation, two-version update/rollback and power-loss recovery, interactive
+permissions/accessibility/status-item behavior, and the unresolved libvips LGPL/GPL
+notice/source/relink obligations are **public-binary** gates. They do not prevent an
+accurately labelled MIT source preview once its source-specific history, hosted-CI,
+repository-control, and licence evidence is complete.

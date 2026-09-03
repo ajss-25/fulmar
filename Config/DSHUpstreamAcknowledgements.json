@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 2,
+  "registryOrigin": "https://registry.npmjs.org",
+  "reviewedPin": "0.1.1-rc.1",
+  "tags": {
+    "alpha": {
+      "version": "0.1.2-alpha.5",
+      "disposition": "observed-not-promoted",
+      "note": "Observed from npm alpha on 2026-09-02T08:41:57Z; published 2026-09-02T08:38:34.797Z with root integrity sha512-MrD2rPhmjz+8Phs+d9lD9xL1qswCYjcSHMd96fF8NTdDm7FRRsU5QhLDR0x6U4JwGxEvee1pccuvbZY6NyEQhA==. Official GitHub release 381145530 and tag dsh-v0.1.2-alpha.5 were subsequently published at commit db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5. The release fixes upgrade failures and missing session-list titles when upgrading from 0.1.1-rc.2 or 0.1.2-alpha.3. This is an observation, not an exact-cohort assessment or promotion; it is not part of Fulmar."
+    },
+    "latest": {
+      "version": "0.1.1-rc.2",
+      "disposition": "assessed-not-promoted",
+      "note": "The 2026-08-29 assessor found privacy-patch and guarded-MCP contract blockers."
+    },
+    "next": {
+      "version": "0.1.1-rc.2",
+      "disposition": "assessed-not-promoted",
+      "note": "The 2026-08-29 assessor found privacy-patch and guarded-MCP contract blockers."
+    }
+  },
+  "officialGitHub": {
+    "apiOrigin": "https://api.github.com",
+    "repository": "deepseek-ai/deepseek-harness",
+    "releaseIndexURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases?per_page=100&page=1",
+    "tagIndexURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/tags?per_page=100&page=1",
+    "versions": {
+      "0.1.0-rc.7": {
+        "tag": "dsh-v0.1.0-rc.7",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/371725157",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.7",
+        "commitSHA": "99f6f02fecdb7dff40c3fbc9470f5907c29f74ca",
+        "disposition": "observed-not-promoted",
+        "note": "Historical official GitHub release and tag observed on 2026-09-02. It predates Fulmar's reviewed pin and is not shipped."
+      },
+      "0.1.0-rc.8": {
+        "tag": "dsh-v0.1.0-rc.8",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/373166049",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8",
+        "commitSHA": "141eb6fef83422698aef7a981029e843e8161534",
+        "disposition": "observed-not-promoted",
+        "note": "Historical official GitHub release and tag observed on 2026-09-02. It predates Fulmar's reviewed pin and is not shipped."
+      },
+      "0.1.1-rc.1": {
+        "tag": "dsh-v0.1.1-rc.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/374224613",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.1",
+        "commitSHA": "528c682e061696f5a160f363f236ecbf53cbd006",
+        "disposition": "promoted",
+        "note": "This is the only GitHub release/tag identity promoted into Fulmar 1.2.36 build 156."
+      },
+      "0.1.1-rc.2": {
+        "tag": "dsh-v0.1.1-rc.2",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/374388128",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.2",
+        "commitSHA": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+        "disposition": "assessed-not-promoted",
+        "note": "The 2026-08-29 assessor found privacy-patch and guarded-MCP contract blockers. This official GitHub release/tag is not shipped."
+      },
+      "0.1.2-alpha.1": {
+        "tag": "dsh-v0.1.2-alpha.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/377991936",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1",
+        "commitSHA": "cd5ef8148158c3a752a658978873241fdf8e2bbc",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub release/tag observed and included in the cumulative alpha compatibility matrix. It is not promoted or shipped."
+      },
+      "0.1.2-alpha.2": {
+        "tag": "dsh-v0.1.2-alpha.2",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/379296034",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.2",
+        "commitSHA": "0a53fb55bea101816fa226bb964ae2bed71c343b",
+        "disposition": "assessed-not-promoted",
+        "note": "The 2026-08-31 assessment did not promote this official GitHub release/tag. It is not shipped."
+      },
+      "0.1.2-alpha.3": {
+        "tag": "dsh-v0.1.2-alpha.3",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/379884041",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.3",
+        "commitSHA": "dd6322d604e00eec1ba5e0c8541159906a21094a",
+        "disposition": "assessed-not-promoted",
+        "note": "The 2026-09-01 exact-cohort assessment found privacy and guarded-MCP blockers. This official GitHub release/tag is not shipped."
+      },
+      "0.1.2-alpha.4": {
+        "tag": "dsh-v0.1.2-alpha.4",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/380633709",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.4",
+        "commitSHA": "4e84901e6471b79ec0338099867ebb4606d12bb5",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub release/tag observed and included in the cumulative alpha compatibility matrix. It has not completed promotion and is not shipped."
+      },
+      "0.1.2-alpha.5": {
+        "tag": "dsh-v0.1.2-alpha.5",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/381145530",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.5",
+        "commitSHA": "db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub release/tag published 2026-09-02T10:02:56Z and observed after the earlier npm-only sighting. It fixes upgrade startup failures and missing session-list titles from 0.1.1-rc.2 or 0.1.2-alpha.3; it still requires cumulative exact-cohort requalification and is not promoted or shipped."
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@local-harness/dsh-performance-profile",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  }
+}

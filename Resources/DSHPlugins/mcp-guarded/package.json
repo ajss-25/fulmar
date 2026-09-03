@@ -1,0 +1,13 @@
+{
+  "name": "@local-harness/dsh-mcp-guarded",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": "./index.mjs",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-credentials": "0.1.1-rc.1",
+    "@deepseek-ai/dsh-mcp-client": "0.1.1-rc.1",
+    "@deepseek-ai/schemastery": "3.18.1"
+  }
+}

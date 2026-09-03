@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.fulmar.invalid/schema/cyclonedx-1.5-fulmar-v1.json",
+  "title": "Pinned Fulmar CycloneDX 1.5 release profile",
+  "type": "object",
+  "required": ["bomFormat", "specVersion", "version", "metadata", "components", "dependencies"],
+  "properties": {
+    "bomFormat": { "const": "CycloneDX" },
+    "specVersion": { "const": "1.5" },
+    "version": { "const": 1 },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "bom-ref", "name", "version", "scope"],
+        "properties": {
+          "type": { "enum": ["library", "framework"] },
+          "bom-ref": { "type": "string", "minLength": 1 },
+          "scope": { "enum": ["required", "optional"] },
+          "hashes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["alg", "content"],
+              "properties": {
+                "alg": {
+                  "enum": ["MD5", "SHA-1", "SHA-256", "SHA-384", "SHA-512", "SHA3-256", "SHA3-384", "SHA3-512", "BLAKE2b-256", "BLAKE2b-384", "BLAKE2b-512", "BLAKE3"]
+                },
+                "content": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "licenses": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                { "required": ["expression"] },
+                { "required": ["license"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "dependsOn"],
+        "properties": {
+          "ref": { "type": "string", "minLength": 1 },
+          "dependsOn": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    }
+  }
+}

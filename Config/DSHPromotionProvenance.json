@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "repository": "deepseek-ai/deepseek-harness",
+  "npm": {
+    "registryOrigin": "https://registry.npmjs.org",
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.1-rc.1",
+    "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.1.1-rc.1.tgz",
+    "integrity": "sha512-HVauMT0F7MWUctkxzBcu5PMFc8j0lm0kX+4IbcUsA7Oh+/xv7xhigEDP0SaSOM/kR48U/BldHbZru116DcZz0w==",
+    "cohort": {
+      "version": "0.1.1-rc.1",
+      "packageCount": 188,
+      "canonicalization": "sorted-package-version-resolved-integrity-json-v1",
+      "sha256": "88ab9ba14bf22e172f1d330ad1aa7064fa855b37c803838da3a646d8d12e40e5",
+      "lockSHA256": "408c97b76eb20998fc7fbf7b86d6ff901cab59061e5a72114ee429cdc4b8d6be"
+    }
+  },
+  "github": {
+    "apiOrigin": "https://api.github.com",
+    "tag": "dsh-v0.1.1-rc.1",
+    "commitSHA": "528c682e061696f5a160f363f236ecbf53cbd006",
+    "releaseAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/tags/dsh-v0.1.1-rc.1",
+    "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/374224613",
+    "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.1",
+    "releaseNotes": {
+      "source": "github-release-body-utf8",
+      "byteCount": 1445,
+      "sha256": "48e4c1b31b2265d86ae0f168a1eb77c53dd587ef18bc2716b2cc99c54c17e0ff"
+    }
+  }
+}

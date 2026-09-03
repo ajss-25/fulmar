@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "pinStatus": "discovery-required",
+  "runnerContract": {
+    "provider": "github-hosted",
+    "requestedLabel": "macos-26",
+    "operatingSystem": "macOS",
+    "architecture": "ARM64"
+  },
+  "hostedDiscovery": null
+}
