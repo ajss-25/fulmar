@@ -166,6 +166,12 @@ test("production assembly always compiles into a fresh private Swift scratch tre
   assert.match(script, /-Xswiftc -file-compilation-dir[\s\\]*-Xswiftc \/Fulmar\/Compilation/u);
   assert.match(script, /automatic_dsym="\$\(\/usr\/bin\/find "\$BUILD_SCRATCH" -type d -name '\*\.dSYM' -print -quit\)"/u);
   assert.match(script, /--oso-prepend-path "\$BUILD_SCRATCH"/u);
+  const dsymutilStart = script.indexOf("/usr/bin/xcrun dsymutil --verify-dwarf=output");
+  const dsymutilEnd = script.indexOf('-o "$SYMBOL_ROOT/$product.dSYM" "$product"', dsymutilStart);
+  assert.ok(dsymutilStart >= 0 && dsymutilEnd > dsymutilStart, "the explicit dSYM command is missing");
+  const dsymutilCommand = script.slice(dsymutilStart, dsymutilEnd);
+  assert.equal(dsymutilCommand.match(/--num-threads/gu)?.length, 1);
+  assert.match(dsymutilCommand, /--num-threads 1/u);
   assert.match(script, /--object-prefix-map "\/Fulmar\/Build="/u);
   assert.match(script, /--object-prefix-map "\/Fulmar\/Generated\/\$scratch_leaf="/u);
   assert.doesNotMatch(script, /--no-object-timestamp|--no-swiftmodule-timestamp/u);

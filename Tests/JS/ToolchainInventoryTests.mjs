@@ -26,7 +26,7 @@ function descriptor(name) {
 
 function inventoryFixture() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     architecture: "arm64",
     operatingSystem: { productVersion: "26.6.2", buildVersion: "25G83" },
     developerDirectory: "/Library/Developer/CommandLineTools",
@@ -50,6 +50,7 @@ function inventoryFixture() {
       configuration: "release",
       jobs: 1,
       swiftFrontendThreads: 1,
+      dsymutilThreads: 1,
       sourcePrefix: "/Fulmar/Sources",
       scratchPrefix: "/Fulmar/Build",
       generatedPrefix: "/Fulmar/Generated",
@@ -93,6 +94,7 @@ test("toolchain inventory schema rejects identity, descriptor, build-control, an
     (value) => { value.versions.swiftc = "bad\0version"; },
     (value) => { value.build.jobs = 2; },
     (value) => { value.build.swiftFrontendThreads = 2; },
+    (value) => { value.build.dsymutilThreads = 2; },
     (value) => { value.build.swiftPMDebugInfoFormat = "dwarf"; },
     (value) => { value.build.frontendDebugInfo = "none"; },
     (value) => { value.build.automaticDSYMGeneration = true; },

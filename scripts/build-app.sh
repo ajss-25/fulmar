@@ -497,6 +497,7 @@ for product in "${native_products[@]}"; do
     run_release_command_without_warnings \
       "dSYM generation for $product" "$BUILD_SCRATCH/$product.dsymutil.log" \
       /usr/bin/xcrun dsymutil --verify-dwarf=output \
+        --num-threads 1 \
         --oso-prepend-path "$BUILD_SCRATCH" \
         --object-prefix-map "/Fulmar/Build=" \
         --object-prefix-map "/Fulmar/Generated/$scratch_leaf=" \
