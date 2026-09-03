@@ -76,9 +76,25 @@ TEMPORARY="$(/usr/bin/mktemp -d "$TEMP_PARENT/fulmar-semgrep-locks.XXXXXX")"
   exit 1
 }
 /bin/chmod 700 "$TEMPORARY"
-trap '/bin/rm -rf -- "$TEMPORARY"' EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+cleanup() {
+  local exit_code="${1:-$?}"
+  if [[ -n "$TEMPORARY" && "$TEMPORARY" == "$TEMP_PARENT"/fulmar-semgrep-locks.* \
+     && -d "$TEMPORARY" && ! -L "$TEMPORARY" ]]; then
+    /bin/rm -rf -- "$TEMPORARY"
+    TEMPORARY=""
+  fi
+  return "$exit_code"
+}
+on_signal() {
+  local exit_code="$1"
+  trap - EXIT HUP INT TERM
+  cleanup "$exit_code" || true
+  exit "$exit_code"
+}
+trap cleanup EXIT
+trap 'on_signal 129' HUP
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
 
 PRIVATE_HOME="$TEMPORARY/home"
 PRIVATE_TEMP="$TEMPORARY/tmp"
