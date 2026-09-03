@@ -153,13 +153,14 @@ test("production assembly always compiles into a fresh private Swift scratch tre
   assert.match(script, /\/usr\/bin\/env -i/u);
   assert.match(script, /unexpected_environment/u);
   assert.match(script, /SAFE_RELEASE_PATH="\/usr\/bin:\/bin:\/usr\/sbin:\/sbin"/u);
-  assert.match(script, /-Xlinker -reproducible/u);
+  assert.match(script, /-Xlinker -oso_prefix[\s\\]+-Xlinker "\$BUILD_SCRATCH"[\s\\]+-Xlinker -reproducible/u);
   assert.match(script, /-debug-info-format none/u);
   assert.match(script, /-Xswiftc -Xfrontend[\s\\]*-Xswiftc -g/u);
   assert.match(script, /-Xswiftc -file-compilation-dir[\s\\]*-Xswiftc \/Fulmar\/Compilation/u);
   assert.match(script, /automatic_dsym="\$\(\/usr\/bin\/find "\$BUILD_SCRATCH" -type d -name '\*\.dSYM' -print -quit\)"/u);
-  assert.match(script, /--object-prefix-map "\/Fulmar\/Build=\$BUILD_SCRATCH"/u);
-  assert.match(script, /--object-prefix-map "\/Fulmar\/Generated\/\$scratch_leaf=\$BUILD_SCRATCH"/u);
+  assert.match(script, /--oso-prepend-path "\$BUILD_SCRATCH"/u);
+  assert.match(script, /--object-prefix-map "\/Fulmar\/Build="/u);
+  assert.match(script, /--object-prefix-map "\/Fulmar\/Generated\/\$scratch_leaf="/u);
   assert.doesNotMatch(script, /--no-object-timestamp|--no-swiftmodule-timestamp/u);
   assert.match(script, /SWIFTPM_CACHE_DIR="\$BUILD_SCRATCH\/swiftpm-cache"/u);
   assert.match(script, /ICONSET_DIR="\$BUILD_SCRATCH\/AppIcon\.iconset"/u);
@@ -168,8 +169,6 @@ test("production assembly always compiles into a fresh private Swift scratch tre
   assert.match(script, /BUILD_OUTPUT_DIR="\$PROJECT_DIR\/build"/u);
   assert.match(script, /release-artifact root is not private/u);
   assert.match(script, /Refusing an unsafe pre-existing release output/u);
-  assert.doesNotMatch(script, /^\s*-Xlinker -oso_prefix\b/mu);
-  assert.doesNotMatch(script, /^\s*--oso-prepend-path\b/mu);
   assert.match(script, /run_release_command_without_warnings/u);
   assert.match(script, /release-command-gate\.zsh/u);
   assert.match(script, /Swift production build/u);

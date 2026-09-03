@@ -442,6 +442,8 @@ swift_release_command=(swift build \
   -Xswiftc /Fulmar/Compilation \
   -Xswiftc -Xfrontend \
   -Xswiftc -g \
+  -Xlinker -oso_prefix \
+  -Xlinker "$BUILD_SCRATCH" \
   -Xlinker -reproducible)
 run_release_command_without_warnings \
   "Swift production build" "$BUILD_SCRATCH/swift-build.log" \
@@ -484,16 +486,18 @@ for product in "${native_products[@]}"; do
   # Pass the input to dsymutil relative to the private build directory. Newer
   # dsymutil releases retain that spelling in Relocations metadata, so an
   # absolute random scratch path must never enter the public symbol bundle.
-  # Keep the compiler's supported absolute object references: applying ld's
-  # -oso_prefix here makes SwiftPM's automatic dSYM step unable to resolve its
-  # object files before this explicit, privacy-gated symbol pass runs.
+  # The linker removes the random scratch prefix from N_OSO records. The
+  # explicit dSYM pass prepends the attested scratch root again for relative
+  # object records, while the empty prefix-map replacements prevent that root
+  # from being prepended twice to compiler-remapped PCM references.
   (
     cd "$BUILD_SCRATCH/release"
     run_release_command_without_warnings \
       "dSYM generation for $product" "$BUILD_SCRATCH/$product.dsymutil.log" \
       /usr/bin/xcrun dsymutil --verify-dwarf=output \
-        --object-prefix-map "/Fulmar/Build=$BUILD_SCRATCH" \
-        --object-prefix-map "/Fulmar/Generated/$scratch_leaf=$BUILD_SCRATCH" \
+        --oso-prepend-path "$BUILD_SCRATCH" \
+        --object-prefix-map "/Fulmar/Build=" \
+        --object-prefix-map "/Fulmar/Generated/$scratch_leaf=" \
         -o "$SYMBOL_ROOT/$product.dSYM" "$product"
   )
   destination="$MACOS_DIR/$product"
