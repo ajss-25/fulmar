@@ -144,6 +144,7 @@ SWIFTPM_CACHE_DIR=""
 SWIFTPM_CONFIG_DIR=""
 SWIFTPM_SECURITY_DIR=""
 CLANG_CACHE_DIR=""
+SWIFT_SOURCE_ROOT=""
 BUILD_SCRATCH=""
 BUILD_SCRATCH_IDENTITY=""
 HOST_TEMP_ROOT="${TMPDIR:-/private/tmp}"
@@ -354,6 +355,7 @@ PUBLISHED_BUILD_SCRATCH_IDENTITY="$(fulmar_attest_new_build_scratch_root \
   exit 126
 }
 [[ "$PUBLISHED_BUILD_SCRATCH_IDENTITY" == "$BUILD_SCRATCH_IDENTITY" ]] || exit 126
+SWIFT_SOURCE_ROOT="$BUILD_SCRATCH/canonical-source"
 SWIFTPM_CACHE_DIR="$BUILD_SCRATCH/swiftpm-cache"
 SWIFTPM_CONFIG_DIR="$BUILD_SCRATCH/swiftpm-config"
 SWIFTPM_SECURITY_DIR="$BUILD_SCRATCH/swiftpm-security"
@@ -361,11 +363,55 @@ CLANG_CACHE_DIR="$BUILD_SCRATCH/clang-module-cache"
 ICONSET_DIR="$BUILD_SCRATCH/AppIcon.iconset"
 "$NODE_BIN" "$TOOLCHAIN_TOOL" create "$TOOLCHAIN_INVENTORY"
 
-/bin/mkdir -m 0700 "$SWIFTPM_CACHE_DIR" "$SWIFTPM_CONFIG_DIR" "$SWIFTPM_SECURITY_DIR" "$CLANG_CACHE_DIR"
+/bin/mkdir -m 0700 "$SWIFT_SOURCE_ROOT" "$SWIFTPM_CACHE_DIR" "$SWIFTPM_CONFIG_DIR" \
+  "$SWIFTPM_SECURITY_DIR" "$CLANG_CACHE_DIR"
+
+# Swift 6.3.3's non-escaping closure diagnostics remap the source-path bytes but
+# retain the pre-remap absolute-path length in generated machine code. Compile
+# from this private, inventory-identical location under the fixed-length scratch
+# namespace so a checkout's spelling cannot change the executable. Keeping the
+# runtime diagnostics enabled is intentional; the source snapshot removes the
+# nondeterministic input instead of weakening Swift's safety checks.
+typeset -a source_snapshot_roots
+source_snapshot_roots=(
+  Package.swift
+  Makefile
+  .gitattributes
+  .gitignore
+  .github
+  LICENSE
+  README.md
+  CHANGELOG.md
+  CONTRIBUTING.md
+  SECURITY.md
+  SUPPORT.md
+  docs
+  Config
+  Sources
+  Tools
+  Tests
+  scripts
+  Resources
+  VendorRuntime.inventory.json
+  VendorRuntime/package.json
+  VendorRuntime/package-lock.json
+)
+/bin/mkdir -m 0755 "$SWIFT_SOURCE_ROOT/VendorRuntime"
+for source_root in "${source_snapshot_roots[@]}"; do
+  if [[ ! -e "$PROJECT_DIR/$source_root" ]]; then
+    [[ "$source_root" == "LICENSE" ]] && continue
+    print -u2 "A required source-snapshot root disappeared: $source_root"
+    exit 1
+  fi
+  /usr/bin/ditto --norsrc --noextattr --noacl --noqtn \
+    "$PROJECT_DIR/$source_root" "$SWIFT_SOURCE_ROOT/$source_root"
+done
+"$NODE_BIN" "$SOURCE_INPUT_TOOL" verify "$SWIFT_SOURCE_ROOT" "$SOURCE_INPUT_INVENTORY"
+
 export CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR"
 typeset -a swift_release_command
 swift_release_command=(swift build \
-  --package-path "$PROJECT_DIR" \
+  --package-path "$SWIFT_SOURCE_ROOT" \
   --disable-sandbox \
   --scratch-path "$BUILD_SCRATCH" \
   --cache-path "$SWIFTPM_CACHE_DIR" \
@@ -376,6 +422,10 @@ swift_release_command=(swift build \
   -debug-info-format none \
   -Xswiftc -warnings-as-errors \
   -Xswiftc -prefix-serialized-debugging-options \
+  -Xswiftc -file-prefix-map \
+  -Xswiftc "$SWIFT_SOURCE_ROOT=/Fulmar/Sources" \
+  -Xswiftc -debug-prefix-map \
+  -Xswiftc "$SWIFT_SOURCE_ROOT=/Fulmar/Sources" \
   -Xswiftc -file-prefix-map \
   -Xswiftc "$PROJECT_DIR=/Fulmar/Sources" \
   -Xswiftc -debug-prefix-map \
@@ -396,6 +446,7 @@ swift_release_command=(swift build \
 run_release_command_without_warnings \
   "Swift production build" "$BUILD_SCRATCH/swift-build.log" \
   "${swift_release_command[@]}"
+"$NODE_BIN" "$SOURCE_INPUT_TOOL" verify "$SWIFT_SOURCE_ROOT" "$SOURCE_INPUT_INVENTORY"
 automatic_dsym="$(/usr/bin/find "$BUILD_SCRATCH" -type d -name '*.dSYM' -print -quit)"
 [[ -z "$automatic_dsym" ]] || {
   echo "SwiftPM unexpectedly created an uncontrolled dSYM bundle." >&2

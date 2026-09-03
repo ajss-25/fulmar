@@ -141,6 +141,13 @@ test("production assembly always compiles into a fresh private Swift scratch tre
   const script = await readFile(join(process.cwd(), "scripts", "build-app.sh"), "utf8");
   assert.match(script, /mktemp -d \/private\/tmp\/local-harness-swift-build\.XXXXXX/u);
   assert.match(script, /swift build[\s\S]*--scratch-path "\$BUILD_SCRATCH"/u);
+  assert.match(script, /SWIFT_SOURCE_ROOT="\$BUILD_SCRATCH\/canonical-source"/u);
+  assert.match(script, /--package-path "\$SWIFT_SOURCE_ROOT"/u);
+  assert.doesNotMatch(script, /--package-path "\$PROJECT_DIR"/u);
+  assert.match(script, /source-build-input-inventory\.mjs[\s\S]*verify "\$SWIFT_SOURCE_ROOT" "\$SOURCE_INPUT_INVENTORY"/u);
+  assert.ok((script.match(/verify "\$SWIFT_SOURCE_ROOT" "\$SOURCE_INPUT_INVENTORY"/gu)?.length ?? 0) >= 2);
+  assert.match(script, /ditto --norsrc --noextattr --noacl --noqtn/u);
+  assert.doesNotMatch(script, /-remove-runtime-asserts|-Ounchecked/u);
   assert.match(script, /--jobs 1/u);
   assert.match(script, /LOCAL_HARNESS_CLEAN_RELEASE_ENVIRONMENT/u);
   assert.match(script, /\/usr\/bin\/env -i/u);
@@ -177,6 +184,17 @@ test("production assembly always compiles into a fresh private Swift scratch tre
   assert.match(script, /verify-macho-compatibility\.sh" \\\n+  "\$APP_DIR" "\$RUNTIME_SIGNABLES" "\$MINIMUM_MACOS"/u);
   assert.match(script, /"\$BUILD_SCRATCH\/release\/IconPacker"/u);
   assert.doesNotMatch(script, /"\$PROJECT_DIR\/\.build\/release\//u);
+});
+
+test("the canonical Swift snapshot covers every source-build inventory root", async () => {
+  const script = await readFile(join(process.cwd(), "scripts", "build-app.sh"), "utf8");
+  const match = script.match(/source_snapshot_roots=\(\n([\s\S]*?)\n\)/u);
+  assert.ok(match, "missing canonical Swift source-snapshot roots");
+  const roots = match[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  assert.deepEqual(roots, buildInputRoots);
 });
 
 test("release command gate rejects producer, log-sink, stdout-warning, and stderr-warning failures", async () => {
