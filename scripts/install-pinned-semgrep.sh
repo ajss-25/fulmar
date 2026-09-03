@@ -62,11 +62,14 @@ command_file_identity() {
     identity="$(/usr/bin/stat -c '%d:%i:%h:%a:%u' "$command_file")" || return 1
   fi
   IFS=: read -r device inode links permissions owner <<< "$identity"
-  for numeric in "$device" "$inode" "$links" "$permissions" "$owner"; do
+  for numeric in "$device" "$inode" "$links" "$owner"; do
     [[ "$numeric" =~ ^[0-9]+$ ]] || return 1
   done
+  [[ "$permissions" =~ ^[0-7]{3,4}$ ]] || return 1
   [[ "$links" == "1" && "$owner" == "$(/usr/bin/id -u)" ]] || return 1
-  (( (8#$permissions & 8#022) == 0 )) || return 1
+  case "$permissions" in
+    *[2367][0-7]|*[0-7][2367]) return 1 ;;
+  esac
   /usr/bin/printf '%s\n' "$identity"
 }
 
@@ -126,11 +129,16 @@ if [[ "$PLATFORM" == "Darwin:arm64" ]]; then
 else
   node_permissions="$(/usr/bin/stat -c '%a' "$NODE")"
 fi
-case "$node_permissions" in (*[!0-7]*|'') echo "Could not validate Node permissions." >&2; exit 1;; esac
-(( (8#$node_permissions & 8#022) == 0 )) || {
-  echo "Pinned Node executable is group/world writable." >&2
+[[ "$node_permissions" =~ ^[0-7]{3,4}$ ]] || {
+  echo "Could not validate Node permissions." >&2
   exit 1
 }
+case "$node_permissions" in
+  *[2367][0-7]|*[0-7][2367])
+    echo "Pinned Node executable is group/world writable." >&2
+    exit 1
+    ;;
+esac
 
 RELEASE_IDENTITY="$PROJECT_DIR/Config/ReleaseIdentity.json"
 [[ -f "$RELEASE_IDENTITY" && ! -L "$RELEASE_IDENTITY" ]] || {
@@ -205,7 +213,7 @@ while IFS= read -r verbose_member; do
         echo "Python archive contains a malformed symbolic link." >&2
         exit 1
       }
-      link_target="${verbose_member##* -> }"
+      link_target="$(/usr/bin/printf '%s\n' "$verbose_member" | /usr/bin/sed 's/^.* -> //')"
       safe_archive_link_target "$archive_member" "$link_target" || {
         echo "Python archive contains an escaping symbolic-link target." >&2
         exit 1
