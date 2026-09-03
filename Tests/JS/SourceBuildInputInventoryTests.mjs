@@ -149,6 +149,13 @@ test("production assembly always compiles into a fresh private Swift scratch tre
   assert.match(script, /ditto --norsrc --noextattr --noacl --noqtn/u);
   assert.doesNotMatch(script, /-remove-runtime-asserts|-Ounchecked/u);
   assert.match(script, /--jobs 1/u);
+  const commandStart = script.indexOf("swift_release_command=(swift build \\");
+  const commandEnd = script.indexOf("\nrun_release_command_without_warnings", commandStart);
+  assert.notEqual(commandStart, -1);
+  assert.notEqual(commandEnd, -1);
+  const releaseCommand = script.slice(commandStart, commandEnd);
+  assert.equal(releaseCommand.match(/-num-threads/gu)?.length, 1);
+  assert.match(releaseCommand, /-Xswiftc -num-threads[\s\\]*-Xswiftc 1/u);
   assert.match(script, /LOCAL_HARNESS_CLEAN_RELEASE_ENVIRONMENT/u);
   assert.match(script, /\/usr\/bin\/env -i/u);
   assert.match(script, /unexpected_environment/u);

@@ -418,6 +418,8 @@ swift_release_command=(swift build \
   --config-path "$SWIFTPM_CONFIG_DIR" \
   --security-path "$SWIFTPM_SECURITY_DIR" \
   --jobs 1 \
+  -Xswiftc -num-threads \
+  -Xswiftc 1 \
   -c release \
   -debug-info-format none \
   -Xswiftc -warnings-as-errors \

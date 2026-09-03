@@ -24,7 +24,7 @@ function descriptor(name) {
 
 function inventoryFixture() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     architecture: "arm64",
     operatingSystem: { productVersion: "26.6.2", buildVersion: "25G83" },
     developerDirectory: "/Library/Developer/CommandLineTools",
@@ -47,6 +47,7 @@ function inventoryFixture() {
     build: {
       configuration: "release",
       jobs: 1,
+      swiftFrontendThreads: 1,
       sourcePrefix: "/Fulmar/Sources",
       scratchPrefix: "/Fulmar/Build",
       generatedPrefix: "/Fulmar/Generated",
@@ -72,7 +73,7 @@ test("toolchain inventory schema rejects identity, descriptor, build-control, an
   const baseline = inventoryFixture();
   assert.equal(validateToolchainInventory(baseline), baseline);
   const mutations = [
-    (value) => { value.schemaVersion = 4; },
+    (value) => { value.schemaVersion = 3; },
     (value) => { value.architecture = "x86_64"; },
     (value) => { value.unreviewed = true; },
     (value) => { delete value.tools["swift-build"]; },
@@ -81,6 +82,7 @@ test("toolchain inventory schema rejects identity, descriptor, build-control, an
     (value) => { value.sdk.settings.bytes = 0; },
     (value) => { value.versions.swiftc = "bad\0version"; },
     (value) => { value.build.jobs = 2; },
+    (value) => { value.build.swiftFrontendThreads = 2; },
     (value) => { value.build.swiftPMDebugInfoFormat = "dwarf"; },
     (value) => { value.build.frontendDebugInfo = "none"; },
     (value) => { value.build.automaticDSYMGeneration = true; },

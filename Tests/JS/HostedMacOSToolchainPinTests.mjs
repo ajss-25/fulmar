@@ -40,7 +40,7 @@ function toolchainFixture() {
   const toolRoot = `${developer}/Toolchains/XcodeDefault.xctoolchain/usr/bin`;
   const sdk = `${developer}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk`;
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     architecture: "arm64",
     operatingSystem: { productVersion: "26.0", buildVersion: "25A123" },
     developerDirectory: developer,
@@ -76,6 +76,7 @@ function toolchainFixture() {
     build: {
       configuration: "release",
       jobs: 1,
+      swiftFrontendThreads: 1,
       sourcePrefix: "/Fulmar/Sources",
       scratchPrefix: "/Fulmar/Build",
       generatedPrefix: "/Fulmar/Generated",
