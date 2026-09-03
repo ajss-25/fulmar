@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   captureToolchainInventory,
+  toolchainInputOwnerIsAccepted,
   validateToolchainInventory
 } from "./toolchain-inventory.mjs";
 
@@ -116,6 +117,15 @@ function validateRunnerImage(value) {
   return value;
 }
 
+function validateRunnerIdentity(value) {
+  exactKeys(value, ["effectiveUID"], "hosted runner identity");
+  if (!Number.isSafeInteger(value.effectiveUID) || value.effectiveUID <= 0
+      || value.effectiveUID > 2_147_483_647) {
+    throw new Error("hosted runner effective UID is invalid");
+  }
+  return value;
+}
+
 function validateDescriptor(value, label) {
   exactKeys(value, ["path", "bytes", "sha256"], label);
   safeAbsoluteSystemPath(value.path, `${label}.path`);
@@ -184,9 +194,10 @@ function validateHostedToolchain(value, requestedLabel) {
 }
 
 function validateHostedDiscovery(value, runnerContract) {
-  exactKeys(value, ["github", "image", "xcode", "toolchain"], "hosted discovery");
+  exactKeys(value, ["github", "image", "runner", "xcode", "toolchain"], "hosted discovery");
   validateGitHubSource(value.github);
   validateRunnerImage(value.image);
+  validateRunnerIdentity(value.runner);
   validateHostedToolchain(value.toolchain, runnerContract.requestedLabel);
   validateXcode(value.xcode, value.toolchain.developerDirectory);
   return value;
@@ -198,7 +209,7 @@ export function validateHostedMacOSToolchainPin(value) {
     ["schemaVersion", "pinStatus", "runnerContract", "hostedDiscovery"],
     "hosted macOS toolchain pin"
   );
-  if (value.schemaVersion !== 1 || !allowedPinStatuses.has(value.pinStatus)) {
+  if (value.schemaVersion !== 2 || !allowedPinStatuses.has(value.pinStatus)) {
     throw new Error("hosted macOS toolchain pin version or status is unsupported");
   }
   validateRunnerContract(value.runnerContract);
@@ -248,7 +259,10 @@ export async function readHostedMacOSToolchainPin(pathArgument) {
   return value;
 }
 
-export function hostedGitHubRunnerMetadata(environment = process.env) {
+export function hostedGitHubRunnerMetadata(
+  environment = process.env,
+  effectiveUID = process.geteuid?.() ?? process.getuid?.()
+) {
   if (environment.GITHUB_ACTIONS !== "true" || environment.CI !== "true"
       || environment.RUNNER_OS !== "macOS" || environment.RUNNER_ARCH !== "ARM64") {
     throw new Error("hosted discovery requires a GitHub Actions macOS ARM64 runner");
@@ -264,10 +278,12 @@ export function hostedGitHubRunnerMetadata(environment = process.env) {
     image: {
       imageOS: environment.ImageOS,
       imageVersion: environment.ImageVersion
-    }
+    },
+    runner: { effectiveUID }
   };
   validateGitHubSource(metadata.github);
   validateRunnerImage(metadata.image);
+  validateRunnerIdentity(metadata.runner);
   return metadata;
 }
 
@@ -290,13 +306,20 @@ async function command(path, arguments_) {
   return output;
 }
 
-async function systemFileDescriptor(pathArgument) {
+async function systemFileDescriptor(pathArgument, developerDirectory, hostedDeveloperTreeOwnerUID) {
   const path = await realpath(pathArgument);
   safeAbsoluteSystemPath(path, "hosted system executable");
   const details = await stat(path);
-  if (!details.isFile() || details.uid !== 0 || (details.mode & 0o022) !== 0
+  if (!details.isFile()
+      || !toolchainInputOwnerIsAccepted(
+        path,
+        developerDirectory,
+        details.uid,
+        hostedDeveloperTreeOwnerUID
+      )
+      || (details.mode & 0o022) !== 0
       || details.size < 1 || details.size > maximumSystemFileBytes) {
-    throw new Error("hosted system executable is not one bounded root-controlled regular file");
+    throw new Error("hosted system executable is not one bounded controlled regular file");
   }
   const digest = createHash("sha256");
   for await (const chunk of createReadStream(path)) digest.update(chunk);
@@ -307,22 +330,29 @@ export async function discoverHostedMacOSToolchainIdentity(
   requestedLabel,
   {
     environment = process.env,
+    effectiveUID = process.geteuid?.() ?? process.getuid?.(),
     captureToolchain = captureToolchainInventory,
     runCommand = command,
     describeSystemFile = systemFileDescriptor
   } = {}
 ) {
   safeRequestedLabel(requestedLabel);
-  const metadata = hostedGitHubRunnerMetadata(environment);
-  const toolchain = await captureToolchain(false);
+  const metadata = hostedGitHubRunnerMetadata(environment, effectiveUID);
+  const toolchain = await captureToolchain(false, {
+    hostedDeveloperTreeOwnerUID: metadata.runner.effectiveUID
+  });
   validateHostedToolchain(toolchain, requestedLabel);
   const selectedXcodebuild = await runCommand("/usr/bin/xcrun", ["-f", "xcodebuild"]);
   const xcode = {
     version: await runCommand("/usr/bin/xcodebuild", ["-version"]),
-    executable: await describeSystemFile(selectedXcodebuild)
+    executable: await describeSystemFile(
+      selectedXcodebuild,
+      toolchain.developerDirectory,
+      metadata.runner.effectiveUID
+    )
   };
   const proposal = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     pinStatus: "review-required",
     runnerContract: {
       provider: "github-hosted",
@@ -333,6 +363,7 @@ export async function discoverHostedMacOSToolchainIdentity(
     hostedDiscovery: {
       github: metadata.github,
       image: metadata.image,
+      runner: metadata.runner,
       xcode,
       toolchain
     }
@@ -345,6 +376,7 @@ function comparableIdentity(document) {
   return {
     repository: document.hostedDiscovery.github.repository,
     image: document.hostedDiscovery.image,
+    runner: document.hostedDiscovery.runner,
     xcode: document.hostedDiscovery.xcode,
     toolchain: document.hostedDiscovery.toolchain
   };

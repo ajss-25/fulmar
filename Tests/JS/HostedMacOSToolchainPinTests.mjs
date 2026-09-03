@@ -114,7 +114,7 @@ function hostedEnvironment(overrides = {}) {
 function proposalFixture(pinStatus = "review-required") {
   const toolchain = toolchainFixture();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     pinStatus,
     runnerContract: {
       provider: "github-hosted",
@@ -131,6 +131,7 @@ function proposalFixture(pinStatus = "review-required") {
         job: "macos"
       },
       image: { imageOS: "macos26", imageVersion: "20260901.1" },
+      runner: { effectiveUID: 501 },
       xcode: {
         version: "Xcode 26.0\nBuild version 17A123",
         executable: descriptor(`${toolchain.developerDirectory}/usr/bin/xcodebuild`, "0")
@@ -155,7 +156,7 @@ test("source pin is canonical, explicitly unresolved, and cannot verify before h
 });
 
 test("hosted metadata accepts only strict GitHub Actions macOS ARM64 identity", () => {
-  assert.deepEqual(hostedGitHubRunnerMetadata(hostedEnvironment()), {
+  assert.deepEqual(hostedGitHubRunnerMetadata(hostedEnvironment(), 501), {
     github: {
       repository: "ajss-25/fulmar",
       commitSHA: "a".repeat(40),
@@ -163,7 +164,8 @@ test("hosted metadata accepts only strict GitHub Actions macOS ARM64 identity", 
       runAttempt: "1",
       job: "macos"
     },
-    image: { imageOS: "macos26", imageVersion: "20260901.1" }
+    image: { imageOS: "macos26", imageVersion: "20260901.1" },
+    runner: { effectiveUID: 501 }
   });
   for (const environment of [
     hostedEnvironment({ GITHUB_ACTIONS: "false" }),
@@ -179,13 +181,25 @@ test("hosted metadata accepts only strict GitHub Actions macOS ARM64 identity", 
     () => hostedGitHubRunnerMetadata(hostedEnvironment({ GITHUB_REPOSITORY: "owner/repo\nleak" })),
     /GitHub repository is not one bounded safe value/u
   );
+  for (const effectiveUID of [0, -1, 1.5, Number.MAX_SAFE_INTEGER]) {
+    assert.throws(
+      () => hostedGitHubRunnerMetadata(hostedEnvironment(), effectiveUID),
+      /hosted runner effective UID is invalid/u
+    );
+  }
 });
 
 test("discovery always emits review-required evidence and validates the full hosted toolchain", async () => {
   const toolchain = toolchainFixture();
+  let captureArguments;
+  let descriptorArguments;
   const proposal = await discoverHostedMacOSToolchainIdentity("macos-26", {
     environment: hostedEnvironment(),
-    captureToolchain: async () => toolchain,
+    effectiveUID: 501,
+    captureToolchain: async (...arguments_) => {
+      captureArguments = arguments_;
+      return toolchain;
+    },
     runCommand: async (path, arguments_) => {
       if (path === "/usr/bin/xcrun" && arguments_.join(" ") === "-f xcodebuild") {
         return `${toolchain.developerDirectory}/usr/bin/xcodebuild`;
@@ -195,9 +209,19 @@ test("discovery always emits review-required evidence and validates the full hos
       }
       throw new Error("unexpected command fixture");
     },
-    describeSystemFile: async () => descriptor(`${toolchain.developerDirectory}/usr/bin/xcodebuild`, "0")
+    describeSystemFile: async (...arguments_) => {
+      descriptorArguments = arguments_;
+      return descriptor(`${toolchain.developerDirectory}/usr/bin/xcodebuild`, "0");
+    }
   });
   assert.equal(proposal.pinStatus, "review-required");
+  assert.deepEqual(captureArguments, [false, { hostedDeveloperTreeOwnerUID: 501 }]);
+  assert.deepEqual(descriptorArguments, [
+    `${toolchain.developerDirectory}/usr/bin/xcodebuild`,
+    toolchain.developerDirectory,
+    501
+  ]);
+  assert.deepEqual(proposal.hostedDiscovery.runner, { effectiveUID: 501 });
   assert.equal(proposal.hostedDiscovery.toolchain, toolchain);
   validateHostedMacOSToolchainPin(proposal);
   assert.equal(canonicalPinJSON(proposal), `${JSON.stringify(proposal, null, 2)}\n`);
@@ -205,7 +229,7 @@ test("discovery always emits review-required evidence and validates the full hos
 
 test("schema and path validation reject invented evidence and unsafe tool identities", () => {
   const unresolved = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     pinStatus: "discovery-required",
     runnerContract: proposalFixture().runnerContract,
     hostedDiscovery: proposalFixture().hostedDiscovery
@@ -225,6 +249,15 @@ test("schema and path validation reject invented evidence and unsafe tool identi
   const extraKey = proposalFixture();
   extraKey.unreviewed = true;
   assert.throws(() => validateHostedMacOSToolchainPin(extraKey), /unexpected schema/u);
+
+  for (const effectiveUID of [0, -1, 1.5, Number.MAX_SAFE_INTEGER]) {
+    const invalidOwner = proposalFixture();
+    invalidOwner.hostedDiscovery.runner.effectiveUID = effectiveUID;
+    assert.throws(
+      () => validateHostedMacOSToolchainPin(invalidOwner),
+      /hosted runner effective UID is invalid/u
+    );
+  }
 
   const homeTool = proposalFixture();
   homeTool.hostedDiscovery.toolchain.tools.clang.path = "/Users/runner/tool/clang";
@@ -249,6 +282,7 @@ test("active comparison is exact and fails closed for image, Xcode, or tool drif
 
   for (const mutate of [
     (value) => { value.hostedDiscovery.image.imageVersion = "20260902.1"; },
+    (value) => { value.hostedDiscovery.runner.effectiveUID = 502; },
     (value) => { value.hostedDiscovery.xcode.version = "Xcode 26.0\nBuild version 17A124"; },
     (value) => { value.hostedDiscovery.toolchain.tools.ld.sha256 = "f".repeat(64); }
   ]) {

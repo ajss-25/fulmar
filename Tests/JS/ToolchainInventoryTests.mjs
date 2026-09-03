@@ -6,7 +6,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import {
+  captureToolchainInventory,
   compareToolchainInventories,
+  toolchainInputOwnerIsAccepted,
   validateToolchainInventory,
   verifyToolchainInventory,
   writeToolchainInventory
@@ -72,6 +74,14 @@ function clone(value) {
 test("toolchain inventory schema rejects identity, descriptor, build-control, and extra-field mutations", () => {
   const baseline = inventoryFixture();
   assert.equal(validateToolchainInventory(baseline), baseline);
+  const developerDirectory = "/Applications/Xcode_26.6.app/Contents/Developer";
+  const developerTool = `${developerDirectory}/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang`;
+  assert.equal(toolchainInputOwnerIsAccepted("/usr/bin/xcrun", developerDirectory, 0), true);
+  assert.equal(toolchainInputOwnerIsAccepted(developerTool, developerDirectory, 501), false);
+  assert.equal(toolchainInputOwnerIsAccepted(developerTool, developerDirectory, 501, 501), true);
+  assert.equal(toolchainInputOwnerIsAccepted(developerTool, developerDirectory, 502, 501), false);
+  assert.equal(toolchainInputOwnerIsAccepted("/usr/bin/xcrun", developerDirectory, 501, 501), false);
+  assert.equal(toolchainInputOwnerIsAccepted(`${developerDirectory}-other/clang`, developerDirectory, 501, 501), false);
   const mutations = [
     (value) => { value.schemaVersion = 3; },
     (value) => { value.architecture = "x86_64"; },
@@ -162,6 +172,10 @@ test("toolchain verifier rejects permissive, linked, hard-linked, and oversized 
 test("toolchain create CLI refuses a non-release environment before inspecting tools", async () => {
   const root = await mkdtemp(join(tmpdir(), "fulmar-toolchain-clean-env-"));
   try {
+    await assert.rejects(
+      captureToolchainInventory(true, { hostedDeveloperTreeOwnerUID: 501 }),
+      /clean release toolchain capture remains root-only/u
+    );
     await assert.rejects(execFileAsync(process.execPath, [
       join(process.cwd(), "scripts", "toolchain-inventory.mjs"), "create", join(root, "toolchain.json")
     ], {

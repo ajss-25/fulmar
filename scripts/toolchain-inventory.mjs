@@ -29,6 +29,43 @@ function boundedString(value, label, { absolute = false, multiline = false } = {
       || (absolute && !value.startsWith("/"))) throw new Error(`${label} is not a bounded canonical string`);
 }
 
+function pathIsWithin(path, root) {
+  return path === root || path.startsWith(`${root}/`);
+}
+
+export function toolchainInputOwnerIsAccepted(
+  path,
+  developerDirectory,
+  ownerUID,
+  hostedDeveloperTreeOwnerUID = null
+) {
+  if (ownerUID === 0) return true;
+  return Number.isSafeInteger(hostedDeveloperTreeOwnerUID)
+    && hostedDeveloperTreeOwnerUID > 0
+    && ownerUID === hostedDeveloperTreeOwnerUID
+    && pathIsWithin(path, developerDirectory);
+}
+
+function hostedDeveloperTreeOwner(options, requireCleanEnvironment) {
+  if (!options || typeof options !== "object" || Array.isArray(options)
+      || Object.getPrototypeOf(options) !== Object.prototype) {
+    throw new Error("toolchain capture options must be one plain object");
+  }
+  const keys = Object.keys(options);
+  if (keys.some((key) => key !== "hostedDeveloperTreeOwnerUID") || keys.length > 1) {
+    throw new Error("toolchain capture options have an unexpected schema");
+  }
+  if (!Object.hasOwn(options, "hostedDeveloperTreeOwnerUID")) return null;
+  const ownerUID = options.hostedDeveloperTreeOwnerUID;
+  if (!Number.isSafeInteger(ownerUID) || ownerUID <= 0 || ownerUID > 2_147_483_647) {
+    throw new Error("hosted developer-tree owner identity is invalid");
+  }
+  if (requireCleanEnvironment) {
+    throw new Error("clean release toolchain capture remains root-only");
+  }
+  return ownerUID;
+}
+
 function validateDescriptor(value, label) {
   exactKeys(value, ["bytes", "path", "sha256"], label);
   boundedString(value.path, `${label}.path`, { absolute: true });
@@ -106,25 +143,32 @@ async function command(path, arguments_) {
   return output;
 }
 
-async function descriptor(pathArgument) {
+async function descriptor(pathArgument, developerDirectory, hostedDeveloperTreeOwnerUID) {
   const path = await realpath(pathArgument);
   const details = await stat(path);
   if (!details.isFile() || details.size <= 0 || details.size > maximumToolBytes
-      || details.uid !== 0 || (details.mode & 0o022) !== 0) {
-    throw new Error(`toolchain input is not a bounded root-owned regular file: ${path}`);
+      || !toolchainInputOwnerIsAccepted(
+        path,
+        developerDirectory,
+        details.uid,
+        hostedDeveloperTreeOwnerUID
+      )
+      || (details.mode & 0o022) !== 0) {
+    throw new Error(`toolchain input is not a bounded controlled regular file: ${path}`);
   }
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return { path, bytes: details.size, sha256: hash.digest("hex") };
 }
 
-async function resolvedTool(name) {
+async function resolvedTool(name, developerDirectory, hostedDeveloperTreeOwnerUID) {
   const selected = await command("/usr/bin/xcrun", ["-f", name]);
   if (!selected.startsWith("/") || selected.includes("\n")) throw new Error(`invalid ${name} path`);
-  return descriptor(selected);
+  return descriptor(selected, developerDirectory, hostedDeveloperTreeOwnerUID);
 }
 
-export async function captureToolchainInventory(requireCleanEnvironment = false) {
+export async function captureToolchainInventory(requireCleanEnvironment = false, options = {}) {
+  const hostedDeveloperTreeOwnerUID = hostedDeveloperTreeOwner(options, requireCleanEnvironment);
   if (requireCleanEnvironment && (process.env.PATH !== safePath || process.env.TMPDIR !== "/private/tmp/"
       || !process.env.SDKROOT || process.env.DEVELOPER_DIR)) {
     throw new Error("toolchain capture requires the exact clean release environment");
@@ -137,7 +181,7 @@ export async function captureToolchainInventory(requireCleanEnvironment = false)
   const developerDirectory = await realpath(await command("/usr/bin/xcode-select", ["-p"]));
   const tools = {};
   for (const name of ["clang", "dsymutil", "ld", "swift", "swift-build", "swift-frontend", "swiftc"]) {
-    tools[name] = await resolvedTool(name);
+    tools[name] = await resolvedTool(name, developerDirectory, hostedDeveloperTreeOwnerUID);
   }
   for (const [name, path] of Object.entries({
     codesign: "/usr/bin/codesign",
@@ -145,7 +189,7 @@ export async function captureToolchainInventory(requireCleanEnvironment = false)
     sips: "/usr/bin/sips",
     strip: "/usr/bin/strip",
     xcrun: "/usr/bin/xcrun"
-  })) tools[name] = await descriptor(path);
+  })) tools[name] = await descriptor(path, developerDirectory, hostedDeveloperTreeOwnerUID);
   return {
     schemaVersion: 4,
     architecture: await command("/usr/bin/uname", ["-m"]),
@@ -158,8 +202,16 @@ export async function captureToolchainInventory(requireCleanEnvironment = false)
       path: canonicalDeclaredSDK,
       version: await command("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-version"]),
       buildVersion: await command("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-build-version"]),
-      settings: await descriptor(join(canonicalDeclaredSDK, "SDKSettings.json")),
-      systemVersion: await descriptor(join(canonicalDeclaredSDK, "System/Library/CoreServices/SystemVersion.plist"))
+      settings: await descriptor(
+        join(canonicalDeclaredSDK, "SDKSettings.json"),
+        developerDirectory,
+        hostedDeveloperTreeOwnerUID
+      ),
+      systemVersion: await descriptor(
+        join(canonicalDeclaredSDK, "System/Library/CoreServices/SystemVersion.plist"),
+        developerDirectory,
+        hostedDeveloperTreeOwnerUID
+      )
     },
     versions: {
       swiftc: await command(tools.swiftc.path, ["--version"]),
