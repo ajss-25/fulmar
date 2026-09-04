@@ -1083,9 +1083,11 @@ static void fulmar_hostile_dylib_fixture(void) {
       ENV: shellHook,
       BASH_ENV: shellHook,
       ZDOTDIR: root,
-      // dyld consumes this variable before a script launcher can execute. A
-      // valid marker library lets the launcher reach its builtin-unset
-      // boundary and proves that no later external process reloads the hook.
+      // dyld consumes this variable before a script launcher can execute.
+      // Darwin 26's /bin/sh selector may load it once before selecting and
+      // once while starting the real shell. A valid marker library lets the
+      // launcher reach its builtin-unset boundary and proves that no later
+      // external process reloads the hook.
       DYLD_INSERT_LIBRARIES: hostileDylib,
       DYLD_LIBRARY_PATH: root,
       "BASH_FUNC_fulmar_hostile%%": `() { echo loaded >> ${shellMarker}; }`
@@ -1100,8 +1102,8 @@ static void fulmar_hostile_dylib_fixture(void) {
     const direct = run(["/usr/bin/perl", "-e", forbiddenCheck], { env: hostile });
     assert.equal(direct.status, 0, direct.stderr || direct.error?.message);
     const directDylibLoads = await dyldLoadCount();
-    assert.ok(directDylibLoads === 0 || directDylibLoads === 1,
-      `the direct launcher crossed its builtin DYLD boundary ${directDylibLoads} times`);
+    assert.ok(directDylibLoads >= 0 && directDylibLoads <= 2,
+      `the direct launcher exceeded its two pre-script DYLD loads with ${directDylibLoads}`);
 
     const nested = spawnSync(watchdog, [
       "--seconds", "10", "--max-rss-bytes", String(128 * MiB),
@@ -1120,8 +1122,8 @@ static void fulmar_hostile_dylib_fixture(void) {
     ], { encoding: "utf8", timeout: 15_000 });
     assert.equal(nested.status, 0, nested.stderr || nested.error?.message);
     const nestedDylibLoads = (await dyldLoadCount()) - directDylibLoads;
-    assert.ok(nestedDylibLoads === 0 || nestedDylibLoads === 1,
-      `the inherited launcher crossed its builtin DYLD boundary ${nestedDylibLoads} times`);
+    assert.ok(nestedDylibLoads >= 0 && nestedDylibLoads <= 2,
+      `the inherited launcher exceeded its two pre-script DYLD loads with ${nestedDylibLoads}`);
     for (const marker of [perlMarker, nodeMarker, shellMarker, zshMarker]) {
       assert.equal(existsSync(marker), false, `hostile preload created ${marker}`);
     }
