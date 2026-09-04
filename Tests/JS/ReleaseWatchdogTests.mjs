@@ -19,10 +19,13 @@ const signingACLHelperSource = join(process.cwd(), "scripts", "set-signing-key-p
 const MiB = 1024 * 1024;
 const inheritedReleaseRoot = Boolean(process.env.FULMAR_ROOT_WATCHDOG_PGID_V1);
 const supervisorFixture = inheritedReleaseRoot ? test.skip : test;
+const capabilityJanitorFixtureEpochSeconds = 1_700_000_000;
 
 const capabilityJanitorProbe = String.raw`
   use strict;
   use warnings;
+  # Bind the age clock before loading the janitor; its monotonic deadline stays real.
+  BEGIN { *CORE::GLOBAL::time = sub () { ${capabilityJanitorFixtureEpochSeconds} }; }
   use Fcntl qw(O_WRONLY O_CREAT O_EXCL O_NOFOLLOW);
   use FulmarWatchdogCapabilityJanitor qw(janitor_capabilities);
   my ($directory, $pid_state, $group_state, $race, $maximum_entries,
@@ -104,7 +107,8 @@ async function publishCapabilityFixture(fixture, {
 } = {}) {
   await writeFile(fixture.path, bytes, { flag: "wx", mode });
   await chmod(fixture.path, mode);
-  const timestamp = new Date(Date.now() - ageSeconds * 1_000);
+  // A real-clock second rollover must not turn the zero-age fixture into an old record.
+  const timestamp = new Date((capabilityJanitorFixtureEpochSeconds - ageSeconds) * 1_000);
   await utimes(fixture.path, timestamp, timestamp);
 }
 
