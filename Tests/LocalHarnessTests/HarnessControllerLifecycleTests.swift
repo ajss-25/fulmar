@@ -32,6 +32,22 @@ private final class StartupPhaseRecorder: @unchecked Sendable {
     }
 }
 
+private func runHarnessControllerFixtureChmod(_ arguments: [String]) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/chmod")
+    process.arguments = arguments
+    process.environment = ["PATH": "/usr/bin:/bin"]
+    process.standardInput = FileHandle.nullDevice
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    guard boundedTestWaitForExit(process, timeout: 5),
+          process.terminationReason == .exit,
+          process.terminationStatus == 0 else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+}
+
 private func makeHarnessControllerSecureSupportRoot(prefix: String) throws -> URL {
     guard !prefix.isEmpty, prefix.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }),
           let account = getpwuid(geteuid()),
@@ -698,10 +714,32 @@ func harnessHomeDetectionPreflightRunsOffMainAndStopAwaitsItsExactSettlement() a
 
 @Test @MainActor
 func cleanStateUndersizedHostEntersZeroInferenceProviderRecoveryBeforeOllama() async throws {
-    let support = try makeHarnessControllerSecureSupportRoot(
+    let root = try makeHarnessControllerSecureSupportRoot(
         prefix: "fulmar-controller-undersized-host"
     )
-    defer { try? FileManager.default.removeItem(at: support) }
+    let support = root.appendingPathComponent("support", isDirectory: true)
+    do {
+        try FileManager.default.createDirectory(
+            at: support,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: support.path
+        )
+        try runHarnessControllerFixtureChmod([
+            "+a", "group:everyone deny delete", root.path
+        ])
+    } catch {
+        try? runHarnessControllerFixtureChmod(["-N", root.path])
+        try? FileManager.default.removeItem(at: root)
+        throw error
+    }
+    defer {
+        try? runHarnessControllerFixtureChmod(["-N", root.path])
+        try? FileManager.default.removeItem(at: root)
+    }
     let suite = "FulmarLifecycle.UndersizedHost.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defaults.removePersistentDomain(forName: suite)

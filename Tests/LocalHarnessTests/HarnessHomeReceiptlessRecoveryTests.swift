@@ -314,6 +314,44 @@ private func makeReceiptlessFixture(prefix: String = "receiptless-home") throws 
     return (parent, home, parent.appendingPathComponent("missing-legacy", isDirectory: true))
 }
 
+private func makeReceiptlessAncestorACLFixture(prefix: String) throws -> (
+    container: URL,
+    ancestor: URL,
+    support: URL,
+    home: URL,
+    missingLegacy: URL
+) {
+    let container = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "\(prefix)-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    let ancestor = container.appendingPathComponent("ancestor", isDirectory: true)
+    let support = ancestor.appendingPathComponent("support", isDirectory: true)
+    do {
+        try FileManager.default.createDirectory(
+            at: support,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        for directory in [container, ancestor, support] {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: directory.path
+            )
+        }
+    } catch {
+        try? FileManager.default.removeItem(at: container)
+        throw error
+    }
+    return (
+        container,
+        ancestor,
+        support,
+        support.appendingPathComponent("HarnessHome", isDirectory: true),
+        support.appendingPathComponent("missing-legacy", isDirectory: true)
+    )
+}
+
 @Test func directoryBindingIdentityIgnoresUnrelatedChildNamespaceChurn() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "directory-binding-\(UUID().uuidString)",
@@ -412,14 +450,10 @@ private func rewriteCurrentRecoveryJournalAsAuthenticatedLegacyV1(
     return operationID
 }
 
-private func addReceiptlessRecoveryReadACL(to url: URL) throws {
-    guard let passwordEntry = getpwuid(geteuid()) else {
-        throw HarnessHomeError.receiptlessRecoveryStateChanged
-    }
-    let userName = String(cString: passwordEntry.pointee.pw_name)
+private func runReceiptlessRecoveryChmod(_ arguments: [String]) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/chmod")
-    process.arguments = ["+a", "\(userName) allow read", url.path]
+    process.arguments = arguments
     process.environment = ["PATH": "/usr/bin:/bin"]
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
@@ -429,6 +463,17 @@ private func addReceiptlessRecoveryReadACL(to url: URL) throws {
           process.terminationReason == .exit, process.terminationStatus == 0 else {
         throw HarnessHomeError.receiptlessRecoveryStateChanged
     }
+}
+
+private func addReceiptlessRecoveryReadACL(to url: URL) throws {
+    guard let passwordEntry = getpwuid(geteuid()) else {
+        throw HarnessHomeError.receiptlessRecoveryStateChanged
+    }
+    try runReceiptlessRecoveryChmod([
+        "+a",
+        "\(String(cString: passwordEntry.pointee.pw_name)) allow read",
+        url.path
+    ])
 }
 
 @Test func receiptlessDetectionAndCancelPerformNoKeyAccessOrMutation() throws {
@@ -495,6 +540,89 @@ private func addReceiptlessRecoveryReadACL(to url: URL) throws {
         _ = try manager.preflightHarnessHomeRecovery()
         #expect(keyAccess.count == 0)
         #expect(try receiptlessTreeSnapshot(at: fixture.parent) == before)
+    }
+
+    do {
+        let fixture = try makeReceiptlessAncestorACLFixture(
+            prefix: "receiptless-preflight-canonical-ancestor"
+        )
+        defer {
+            try? runReceiptlessRecoveryChmod(["-N", fixture.ancestor.path])
+            try? FileManager.default.removeItem(at: fixture.container)
+        }
+        try runReceiptlessRecoveryChmod([
+            "+a", "group:everyone deny delete", fixture.ancestor.path
+        ])
+        let keyAccess = RecoveryKeyAccessCounter()
+        let manager = HarnessHomeManager(
+            root: fixture.home,
+            legacyRoot: fixture.missingLegacy,
+            recoveryAuthenticationKeyProvider: { keyAccess.key() }
+        )
+        try manager.prepare()
+        let before = try receiptlessTreeSnapshot(at: fixture.container)
+        _ = try manager.preflightHarnessHomeRecovery()
+        _ = try manager.preflightHarnessHomeRecovery()
+        #expect(keyAccess.count == 0)
+        #expect(try receiptlessTreeSnapshot(at: fixture.container) == before)
+    }
+
+    let rejectedAncestorACLs: [(label: String, entries: [(mode: String, value: String)])] = [
+        ("noncanonical", [("+a", "group:everyone deny writeattr")]),
+        ("granting", [("+a", "group:everyone allow readsecurity")]),
+        ("mixed", [
+            ("+a", "group:everyone deny delete"),
+            ("+a", "group:everyone allow readsecurity")
+        ]),
+        ("extra-permission", [("+a", "group:everyone deny delete,writeattr")]),
+        ("inheritable", [(
+            "+a", "group:everyone deny delete,file_inherit,directory_inherit"
+        )])
+    ]
+    for rejected in rejectedAncestorACLs {
+        let fixture = try makeReceiptlessAncestorACLFixture(
+            prefix: "receiptless-preflight-\(rejected.label)"
+        )
+        defer {
+            try? runReceiptlessRecoveryChmod(["-N", fixture.ancestor.path])
+            try? FileManager.default.removeItem(at: fixture.container)
+        }
+        for entry in rejected.entries {
+            try runReceiptlessRecoveryChmod([
+                entry.mode, entry.value, fixture.ancestor.path
+            ])
+        }
+        let manager = HarnessHomeManager(
+            root: fixture.home,
+            legacyRoot: fixture.missingLegacy,
+            recoveryAuthenticationKey: Data(repeating: 0x5b, count: 32)
+        )
+        #expect(throws: HarnessHomeError.receiptlessRecoveryStateChanged) {
+            try manager.prepare()
+        }
+        #expect(!FileManager.default.fileExists(atPath: fixture.home.path))
+    }
+
+    do {
+        let fixture = try makeReceiptlessAncestorACLFixture(
+            prefix: "receiptless-preflight-private-parent-acl"
+        )
+        defer {
+            try? runReceiptlessRecoveryChmod(["-N", fixture.support.path])
+            try? FileManager.default.removeItem(at: fixture.container)
+        }
+        try runReceiptlessRecoveryChmod([
+            "+a", "group:everyone deny delete", fixture.support.path
+        ])
+        let manager = HarnessHomeManager(
+            root: fixture.home,
+            legacyRoot: fixture.missingLegacy,
+            recoveryAuthenticationKey: Data(repeating: 0x5c, count: 32)
+        )
+        #expect(throws: HarnessHomeError.receiptlessRecoveryStateChanged) {
+            try manager.prepare()
+        }
+        #expect(!FileManager.default.fileExists(atPath: fixture.home.path))
     }
 }
 

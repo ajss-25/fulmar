@@ -1465,7 +1465,7 @@ final class HarnessHomeManager {
               Darwin.lstat(grandparent.path, &reboundGrandparent) == 0,
               Self.sameDirectoryBindingIdentity(openedGrandparent, reboundGrandparent),
               secureHarnessHomeParentAncestor(openedGrandparent),
-              try Self.descriptorHasNoExtendedACL(grandparentDescriptor),
+              Self.descriptorHasSafeAncestorACL(grandparentDescriptor),
               Darwin.fstat(parentDescriptor, &openedParent) == 0,
               Self.sameDirectoryBindingIdentity(declaredParent, openedParent),
               secureDirectory(openedParent),
@@ -1498,7 +1498,7 @@ final class HarnessHomeManager {
         guard Darwin.fstat(descriptor, &opened) == 0,
               Self.sameDirectoryBindingIdentity(declared, opened),
               secureHarnessHomeParentAncestor(opened),
-              try Self.descriptorHasNoExtendedACL(descriptor) else {
+              Self.descriptorHasSafeAncestorACL(descriptor) else {
             Darwin.close(descriptor)
             throw HarnessHomeError.receiptlessRecoveryStateChanged
         }
@@ -4596,6 +4596,25 @@ final class HarnessHomeManager {
             value.st_uid == geteuid() &&
             value.st_nlink == 1 &&
             (Int(value.st_mode) & 0o777) == 0o600
+    }
+
+    private static func descriptorHasSafeAncestorACL(_ descriptor: Int32) -> Bool {
+        errno = 0
+        guard let list = acl_get_fd_np(descriptor, ACL_TYPE_EXTENDED) else {
+            return errno == ENOENT
+        }
+        defer { _ = acl_free(UnsafeMutableRawPointer(list)) }
+        // Standard macOS home/Library/Application Support ancestors carry this
+        // one deny-only entry. It grants no access. Match the established
+        // credential/device-attestation ancestor policy exactly; private parent
+        // and child directories still require no extended ACL at all.
+        let standardDeleteDeny =
+            "!#acl 1\ngroup:ABCDEFAB-CDEF-ABCD-EFAB-CDEF0000000C:everyone:12:deny:delete\n"
+        var length: ssize_t = 0
+        guard let text = acl_to_text(list, &length) else { return false }
+        defer { _ = acl_free(UnsafeMutableRawPointer(text)) }
+        return length == standardDeleteDeny.utf8.count
+            && String(cString: text) == standardDeleteDeny
     }
 
     private static func descriptorHasNoExtendedACL(_ descriptor: Int32) throws -> Bool {
