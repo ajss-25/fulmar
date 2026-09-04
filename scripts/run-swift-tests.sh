@@ -273,12 +273,15 @@ validate_absolute_path selected-SDKROOT "$SDKROOT"
 
 DEVELOPER_ROOT="$(/usr/bin/env -i PATH="$SAFE_PATH" /usr/bin/xcode-select -p)"
 TESTING_FRAMEWORKS="$DEVELOPER_ROOT/Library/Developer/Frameworks"
+XCODE_TESTING_RUNTIME="$DEVELOPER_ROOT/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx/testing"
+XCODE_TESTING_LIBRARY="$XCODE_TESTING_RUNTIME/libTesting.dylib"
 TESTING_INTEROP=""
 SWIFT_TEST_HOST_SOURCE="$PROJECT_DIR/Tests/Support/SwiftTestingHost.swift"
 SWIFT_TEST_HOST_COMPILER="/usr/bin/swiftc"
 MINIMUM_MACOS="$(/usr/bin/plutil -extract minimumMacOS raw -o - "$PROJECT_DIR/Config/ReleaseIdentity.json")"
 validate_absolute_path Swift-test-host-source "$SWIFT_TEST_HOST_SOURCE"
 validate_absolute_path Swift-test-host-compiler "$SWIFT_TEST_HOST_COMPILER"
+validate_absolute_path Xcode-Swift-Testing-runtime "$XCODE_TESTING_RUNTIME"
 
 for candidate in \
   "$DEVELOPER_ROOT/Library/Developer/usr/lib" \
@@ -290,7 +293,9 @@ for candidate in \
 done
 
 typeset -a testing_arguments
+typeset -a required_testing_rpaths
 testing_arguments=()
+required_testing_rpaths=()
 if [[ -d "$TESTING_FRAMEWORKS/Testing.framework" ]]; then
   # Some standalone Command Line Tools releases expose Swift Testing outside
   # the compiler's default framework and runtime search paths. Add both the
@@ -303,12 +308,58 @@ if [[ -d "$TESTING_FRAMEWORKS/Testing.framework" ]]; then
     -Xlinker -rpath
     -Xlinker "$TESTING_FRAMEWORKS"
   )
+  required_testing_rpaths+=("$TESTING_FRAMEWORKS")
   if [[ -n "$TESTING_INTEROP" ]]; then
     testing_arguments+=(
       -Xlinker -rpath
       -Xlinker "$TESTING_INTEROP"
     )
+    required_testing_rpaths+=("$TESTING_INTEROP")
   fi
+fi
+if [[ -e "$XCODE_TESTING_RUNTIME" || -L "$XCODE_TESTING_RUNTIME" \
+   || -e "$XCODE_TESTING_LIBRARY" || -L "$XCODE_TESTING_LIBRARY" ]]; then
+  [[ -d "$XCODE_TESTING_RUNTIME" && ! -L "$XCODE_TESTING_RUNTIME" \
+     && "${XCODE_TESTING_RUNTIME:A}" == "$XCODE_TESTING_RUNTIME" \
+     && -f "$XCODE_TESTING_LIBRARY" && ! -L "$XCODE_TESTING_LIBRARY" \
+     && -x "$XCODE_TESTING_LIBRARY" \
+     && "${XCODE_TESTING_LIBRARY:A}" == "$XCODE_TESTING_LIBRARY" ]] || {
+    print -u2 "The selected Xcode Swift Testing runtime is unsafe."
+    exit 126
+  }
+  XCODE_DEVELOPER_OWNER="$(/usr/bin/stat -f '%u' "$DEVELOPER_ROOT")"
+  XCODE_TESTING_RUNTIME_OWNER="$(/usr/bin/stat -f '%u' "$XCODE_TESTING_RUNTIME")"
+  XCODE_TESTING_RUNTIME_MODE="$(/usr/bin/stat -f '%Lp' "$XCODE_TESTING_RUNTIME")"
+  XCODE_TESTING_LIBRARY_OWNER="$(/usr/bin/stat -f '%u' "$XCODE_TESTING_LIBRARY")"
+  XCODE_TESTING_LIBRARY_MODE="$(/usr/bin/stat -f '%Lp' "$XCODE_TESTING_LIBRARY")"
+  XCODE_TESTING_LIBRARY_LINKS="$(/usr/bin/stat -f '%l' "$XCODE_TESTING_LIBRARY")"
+  XCODE_TESTING_LIBRARY_SIZE="$(/usr/bin/stat -f '%z' "$XCODE_TESTING_LIBRARY")"
+  [[ "$XCODE_DEVELOPER_OWNER" == <-> \
+     && "$XCODE_TESTING_RUNTIME_OWNER" == "$XCODE_DEVELOPER_OWNER" \
+     && "$XCODE_TESTING_LIBRARY_OWNER" == "$XCODE_DEVELOPER_OWNER" \
+     && "$XCODE_TESTING_RUNTIME_MODE" == [0-7][0145][0145] \
+     && "$XCODE_TESTING_LIBRARY_MODE" == [0-7][0145][0145] \
+     && "$XCODE_TESTING_LIBRARY_LINKS" == 1 \
+     && "$XCODE_TESTING_LIBRARY_SIZE" == <-> \
+     && "$XCODE_TESTING_LIBRARY_SIZE" -gt 0 ]] || {
+    print -u2 "The selected Xcode Swift Testing runtime is not owner-controlled."
+    exit 126
+  }
+  /usr/bin/codesign --verify --strict --test-requirement '=anchor apple' \
+    "$XCODE_TESTING_LIBRARY" >/dev/null 2>&1 || {
+    print -u2 "The selected Xcode Swift Testing runtime is not Apple-signed."
+    exit 126
+  }
+  # Xcode ships Swift Testing as a dylib beside its swiftmodule rather than as
+  # the Command Line Tools framework above. SwiftPM supplies -I/-L and a
+  # temporary loader search path for its own launcher, but Fulmar deliberately
+  # executes the attested bundle under env -i. Embed the selected Xcode runtime
+  # directory as a durable bundle rpath so the private host needs no loader hook.
+  testing_arguments+=(
+    -Xlinker -rpath
+    -Xlinker "$XCODE_TESTING_RUNTIME"
+  )
+  required_testing_rpaths+=("$XCODE_TESTING_RUNTIME")
 fi
 
 CLANG_CACHE="$TEST_CACHE/clang"
@@ -394,6 +445,35 @@ TEST_BUNDLE_EXECUTABLE="$SWIFTPM_BIN_PATH/LocalHarnessPackageTests.xctest/Conten
   print -u2 "The just-built Swift Testing bundle executable is unsafe or missing."
   exit 126
 }
+if (( ${#required_testing_rpaths[@]} > 0 )); then
+  TEST_BUNDLE_LOAD_COMMANDS="$ISOLATION_ROOT/swift-test-bundle-load-commands.txt"
+  TEST_BUNDLE_RPATHS="$ISOLATION_ROOT/swift-test-bundle-rpaths.txt"
+  run_guarded "Swift Testing bundle load-command inspection" 120 1073741824 2 2147483648 -- \
+    /usr/bin/otool -l "$TEST_BUNDLE_EXECUTABLE" > "$TEST_BUNDLE_LOAD_COMMANDS"
+  /usr/bin/awk '
+    $1 == "cmd" && $2 == "LC_RPATH" { expect_path = 1; next }
+    expect_path && $1 == "path" {
+      value = $0
+      sub(/^[[:space:]]*path[[:space:]]+/, "", value)
+      sub(/[[:space:]]+\(offset[[:space:]][0-9]+\)$/, "", value)
+      print value
+      expect_path = 0
+    }
+  ' "$TEST_BUNDLE_LOAD_COMMANDS" > "$TEST_BUNDLE_RPATHS"
+  [[ -f "$TEST_BUNDLE_LOAD_COMMANDS" && ! -L "$TEST_BUNDLE_LOAD_COMMANDS" \
+     && -f "$TEST_BUNDLE_RPATHS" && ! -L "$TEST_BUNDLE_RPATHS" ]] || {
+    print -u2 "The Swift Testing bundle rpath evidence is unsafe."
+    exit 126
+  }
+  for required_testing_rpath in "${required_testing_rpaths[@]}"; do
+    embedded_count="$(/usr/bin/awk -v required="$required_testing_rpath" \
+      '$0 == required { count += 1 } END { print count + 0 }' "$TEST_BUNDLE_RPATHS")"
+    [[ "$embedded_count" == 1 ]] || {
+      print -u2 "The Swift Testing bundle does not contain its exact selected runtime rpath."
+      exit 126
+    }
+  done
+fi
 
 # The device-attestation suite is an executable qualification target because it
 # must run without importing or touching the app's private Swift Testing host.

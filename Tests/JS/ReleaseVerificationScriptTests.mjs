@@ -240,6 +240,20 @@ test("native qualification uses the portable warning-clean Swift Testing runner"
   );
   assert.match(runner, /Testing\.framework/u);
   assert.match(runner, /lib_TestingInterop\.dylib/u);
+  assert.match(
+    runner,
+    /XCODE_TESTING_RUNTIME="\$DEVELOPER_ROOT\/Toolchains\/XcodeDefault\.xctoolchain\/usr\/lib\/swift\/macosx\/testing"/u
+  );
+  assert.match(runner, /XCODE_TESTING_LIBRARY="\$XCODE_TESTING_RUNTIME\/libTesting\.dylib"/u);
+  assert.match(
+    runner,
+    /if \[\[ -e "\$XCODE_TESTING_RUNTIME"[\s\S]*?codesign --verify --strict --test-requirement '=anchor apple'[\s\S]*?testing_arguments\+=\([\s\S]*?-Xlinker -rpath[\s\S]*?-Xlinker "\$XCODE_TESTING_RUNTIME"/u,
+    "the Xcode Swift Testing layout must become a durable test-bundle rpath"
+  );
+  assert.match(runner, /required_testing_rpaths\+=\("\$XCODE_TESTING_RUNTIME"\)/u);
+  assert.match(runner, /Swift Testing bundle load-command inspection[\s\S]*?\/usr\/bin\/otool -l "\$TEST_BUNDLE_EXECUTABLE"/u);
+  assert.match(runner, /\$1 == "cmd" && \$2 == "LC_RPATH"/u);
+  assert.match(runner, /The Swift Testing bundle does not contain its exact selected runtime rpath\./u);
   assert.match(runner, /-Xlinker -rpath/u);
   assert.match(runner, /"\$\{test_selection_arguments\[@\]\}" \\\n\s+--no-parallel \\/u);
   assert.doesNotMatch(runner, /SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH/u);
