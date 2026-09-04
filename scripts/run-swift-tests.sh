@@ -581,8 +581,9 @@ fi
 # silently replace Apple's identity. Compile the reviewed loader as the signed
 # executable of a private LSUIElement app instead. The app explicitly opts out
 # of automatic termination and the loader also holds both ProcessInfo counters
-# before dlopen. There is deliberately no bare-helper, LaunchServices, or
-# activation-policy fallback.
+# before dlopen. Its synchronous run loop calls the test bundle's reviewed
+# starter instead of Swift's generated async-main drain. There is deliberately
+# no bare-helper, LaunchServices, or activation-policy fallback.
 TEST_HOST_APP="$ISOLATION_ROOT/FulmarSwiftTestingHost.app"
 EXPECTED_TEST_HOST_EXECUTABLE="$TEST_HOST_APP/Contents/MacOS/FulmarSwiftTestingHost"
 TEST_HOST_EXECUTABLE="$(run_guarded "private Swift Testing host assembly" 120 1073741824 2 2147483648 -- \
@@ -604,9 +605,9 @@ HOST_MAJOR="$(/usr/bin/sw_vers -productVersion | /usr/bin/awk -F. '{print $1}')"
 test_status=0
 event_status=0
 if [[ "$SWIFT_TEST_PROFILE" == "full" ]]; then
-  # Swift Testing 1902 can terminate its async-main drain with status zero after
-  # several sequential MainActor/AppKit functions while omitting runEnded. Run
-  # every independently enumerated function in a fresh signed host instead.
+  # Run every independently enumerated function in a fresh signed host. Its
+  # owned main loop survives AppKit stop events until Testing finishes, and
+  # process isolation prevents one function's in-memory state affecting another.
   # The shard driver proves selector uniqueness, exact discovery, complete event
   # accounting, and unchanged host/bundle/plan authority for all 1,000+ shards.
   run_guarded "Swift isolated full test suite" "$SWIFT_WATCHDOG_SECONDS" \

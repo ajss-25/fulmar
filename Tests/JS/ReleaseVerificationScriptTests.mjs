@@ -415,12 +415,30 @@ test("native qualification isolates every full-suite function behind complete ev
     "the automatic-termination hold must begin before the test image is loaded");
   assert.match(hostSource, /disableSuddenTermination\(\)/u);
   assert.doesNotMatch(hostSource, /enableAutomaticTermination|enableSuddenTermination/u);
-  assert.match(hostSource, /dlsym\(image, "main"\)/u);
+  assert.match(hostSource, /typealias TestingStart = @convention\(c\) \(\) -> Void/u);
+  assert.match(hostSource, /dlsym\(image, "fulmar_swift_testing_start"\)/u);
+  assert.doesNotMatch(hostSource, /dlsym\(image, "main"\)/u,
+    "the private host must not enter Swift's generated async main");
   assert.match(hostSource, /test bundle load failed/u);
   assert.match(hostSource, /test entry point missing/u);
   assert.match(hostSource, /strnlen\(pointer, 2_048\)/u);
   assert.match(hostSource, /\(0x20\.\.\.0x7E\)\.contains\(byte\) \? byte : 0x3F/u);
-  assert.match(hostSource, /testingMain\(CommandLine\.argc, CommandLine\.unsafeArgv\)/u);
+  const runLoopAnchorIndex = hostSource.indexOf("CFRunLoopAddSource(CFRunLoopGetMain(), keepAlive, .commonModes)");
+  const starterIndex = hostSource.indexOf("startTesting()");
+  const runLoopIndex = hostSource.indexOf("while true { CFRunLoopRun() }");
+  assert.ok(runLoopAnchorIndex >= 0 && starterIndex > runLoopAnchorIndex && runLoopIndex > starterIndex,
+    "the permanent main-run-loop source must precede one starter invocation and a re-entering loop");
+  assert.match(hostSource, /perform: \{ _ in \}/u,
+    "the permanent run-loop source must have a valid no-op version-zero callback");
+  assert.equal((hostSource.match(/startTesting\(\)/gu) ?? []).length, 1,
+    "the private host must invoke the test starter exactly once");
+  assert.doesNotMatch(hostSource, /testingMain\(|Darwin\.exit\(0\)/u,
+    "the host must have no generated-main call or status-zero fallback");
+  assert.match(appKitLifetime, /@_cdecl\("fulmar_swift_testing_start"\)/u);
+  assert.match(appKitLifetime,
+    /Task \{[\s\S]*let status: CInt = await Testing\.__swiftPMEntryPoint\(\)[\s\S]*Darwin\.exit\(status\)/u);
+  assert.doesNotMatch(appKitLifetime, /__swiftPMEntryPoint\(\) as Never/u,
+    "the exported starter must select Testing's returning CInt entry point");
   assert.doesNotMatch(`${runner}\n${assembler}\n${hostSource}\n${shardDriver}`,
     /\.prohibited|NSApplicationDelegate|NSWindow|NSPanel|swiftpm-testing-helper/u);
   assert.doesNotMatch(appKitLifetime,
@@ -517,6 +535,8 @@ test("native qualification isolates every full-suite function behind complete ev
   const bashMarker = join(hostileRoot, "bash-env-ran");
   const zshMarker = join(hostileRoot, "zsh-env-ran");
   const functionMarker = join(hostileRoot, "exported-function-ran");
+  const runLoopStarterSource = join(hostileRoot, "RunLoopStarter.swift");
+  const runLoopStarterLibrary = join(hostileRoot, "libRunLoopStarter.dylib");
   try {
     await chmod(root, 0o700);
     await writeFile(join(hostileRoot, "bash-env"), `printf injected > ${JSON.stringify(bashMarker)}\n`, { mode: 0o600 });
@@ -555,6 +575,38 @@ test("native qualification isolates every full-suite function behind complete ev
     assert.equal(firstProcess.status, 126, firstProcess.stderr);
     assert.match(firstProcess.stderr, /^The private Swift Testing host could not start: test entry point missing\./u,
       "the signed app executable must reach its reviewed entry point without a policy prompt");
+
+    await writeFile(runLoopStarterSource, `import CoreFoundation
+import Darwin
+import Dispatch
+
+@_cdecl("fulmar_swift_testing_start")
+public func startRunLoopProbe() {
+    DispatchQueue.main.async {
+        CFRunLoopStop(CFRunLoopGetMain())
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            Darwin.exit(23)
+        }
+    }
+}
+`, { mode: 0o600 });
+    const compiledStarter = spawnSync("/usr/bin/swiftc", [
+      "-parse-as-library", "-warnings-as-errors", "-O", "-sdk", sdk.stdout.trim(),
+      "-emit-library", runLoopStarterSource, "-o", runLoopStarterLibrary
+    ], {
+      encoding: "utf8", timeout: 20_000,
+      env: { HOME: hostileRoot, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
+    });
+    assert.equal(compiledStarter.status, 0, compiledStarter.stderr);
+    const stoppedThenCompleted = spawnSync(executable, [
+      "--test-bundle-path", runLoopStarterLibrary
+    ], {
+      encoding: "utf8", timeout: 2_000,
+      env: { HOME: hostileRoot, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
+    });
+    assert.equal(stoppedThenCompleted.error, undefined, stoppedThenCompleted.error?.message);
+    assert.equal(stoppedThenCompleted.status, 23,
+      `the host did not re-enter its stopped main run loop: ${stoppedThenCompleted.stderr}`);
 
     const hostileMissingPath = join(hostileRoot, `missing-\n-\u001b-\u202e-${"x".repeat(4_000)}`);
     const loadFailure = spawnSync(executable, ["--test-bundle-path", hostileMissingPath], {

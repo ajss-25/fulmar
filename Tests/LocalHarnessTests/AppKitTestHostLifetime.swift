@@ -1,5 +1,18 @@
 import AppKit
+import Darwin
 import Testing
+
+// The private host owns the main run loop. Bypass Swift's generated async-main
+// drain, which can exit zero when an AppKit window transition stops that loop
+// before a suspended test has completed. The CInt overload returns only after
+// Testing has emitted its terminal events; preserve its actual exit status.
+@_cdecl("fulmar_swift_testing_start")
+public func startFulmarSwiftTesting() {
+    Task {
+        let status: CInt = await Testing.__swiftPMEntryPoint()
+        Darwin.exit(status)
+    }
+}
 
 @MainActor
 private enum AppKitTestHostLifetime {
