@@ -87,14 +87,18 @@ Updated: 2026-09-03 (Europe/London)
   materialization reproduced the checked inventory exactly, and its 32,632-entry
   `node_modules` prefix (209,438,418 file bytes) was byte-identical to the tree in
   place.
-- The read-only DSH watcher passed on 2026-09-02: npm `latest`/`next` remain
-  `0.1.1-rc.2`, `alpha` remains `0.1.2-alpha.5`, and every observed official GitHub
-  tag/release plus the promoted `0.1.1-rc.1` provenance matched its acknowledgement.
+- The read-only DSH watcher passed on 2026-09-04 after acknowledging the new upstream
+  state: npm `latest`/`next` now point to observed-not-promoted `0.1.2-rc.1` (official
+  prerelease 381777538, tag `dsh-v0.1.2-rc.1`, commit
+  `a66e4702047846cdaa10c66c9d3df3951f5ea70d`, published 2026-09-03), `alpha` remains
+  `0.1.2-alpha.5`, and every observed official GitHub tag/release plus the promoted
+  `0.1.1-rc.1` provenance matched its acknowledgement. Fulmar stays pinned to
+  `0.1.1-rc.1`; no DSH upgrade is part of this release.
 
 ## Frozen test topology
 
-- JavaScript: 653 exact lifecycle tests, 628 top-level tests; expected source result
-  606 passed plus 47 reviewed skips, and expected candidate result 607 passed plus
+- JavaScript: 666 exact lifecycle tests, 641 top-level tests; expected source result
+  619 passed plus 47 reviewed skips, and expected candidate result 620 passed plus
   46 reviewed skips.
 - Swift: 1,445 exact function specifiers; sorted-specifier SHA-256
   `242833714f5486eb52adf376427c95f8f7c3a5e306b101bed0f3b29db2fc4dea`.

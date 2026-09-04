@@ -7,7 +7,6 @@ import {
   constants,
   existsSync,
   fchmodSync,
-  fstatSync,
   fsyncSync,
   lstatSync,
   mkdirSync,
@@ -28,6 +27,7 @@ import {
   loadPinnedRuleManifest,
   materializePinnedSemgrepRules
 } from "./pinned-semgrep-rules.mjs";
+import { readAttestedRegularFileSync, withAttestedDirectorySync } from "./attested-regular-file.mjs";
 
 const expectedNodeVersion = "v22.23.1";
 const maximumReportBytes = 64 * 1_024 * 1_024;
@@ -67,12 +67,6 @@ function safeRelativePath(value) {
     && !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
-function sameFile(left, right) {
-  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode
-    && left.uid === right.uid && left.nlink === right.nlink && left.size === right.size
-    && left.mtimeNs === right.mtimeNs;
-}
-
 function validateOwnerAndMode(details, relativePath) {
   const effectiveUID = typeof process.geteuid === "function" ? BigInt(process.geteuid()) : details.uid;
   if (details.uid !== effectiveUID || (details.mode & 0o022n) !== 0n) {
@@ -81,28 +75,27 @@ function validateOwnerAndMode(details, relativePath) {
 }
 
 function readStableRegularFile(path, relativePath, maximumBytes) {
-  const before = lstatSync(path, { bigint: true });
-  validateOwnerAndMode(before, relativePath);
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n
-      || before.size > BigInt(maximumBytes)) {
+  // Open-first through the synchronous attested reader: the no-follow
+  // descriptor's metadata is the reviewed shape (owner-controlled, single
+  // link, bounded) and the pathname is re-attested around the read.
+  let input;
+  try {
+    input = readAttestedRegularFileSync(path, {
+      label: `secret-scan input ${relativePath}`,
+      minimumBytes: 0,
+      maximumBytes,
+      requireCurrentUser: true,
+      requireOwnerControlledMode: true,
+      requireSingleLink: true
+    });
+  } catch (error) {
+    if (error?.code === "ENOENT") throw error;
+    if (/not owned by the current user|group- or world-writable/u.test(error?.message ?? "")) {
+      failure(`secret-scan input is not owner-controlled: ${relativePath}`);
+    }
     failure(`secret-scan input is unsafe or exceeds its byte limit: ${relativePath}`);
   }
-  // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-  const descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); // codeql[js/file-system-race]
-  try {
-    const opened = fstatSync(descriptor, { bigint: true });
-    if (!opened.isFile() || !sameFile(before, opened)) {
-      failure(`secret-scan input changed while opening: ${relativePath}`);
-    }
-    const bytes = readFileSync(descriptor);
-    const after = fstatSync(descriptor, { bigint: true });
-    if (!sameFile(opened, after) || BigInt(bytes.length) !== opened.size) {
-      failure(`secret-scan input changed while reading: ${relativePath}`);
-    }
-    return bytes;
-  } finally {
-    closeSync(descriptor);
-  }
+  return input.bytes;
 }
 
 function isText(bytes) {
@@ -491,41 +484,47 @@ export function removeStaleSummary(summaryPath) {
 export function writeCanonicalSummary(projectRoot, summary) {
   const directory = join(projectRoot, "build");
   if (!existsSync(directory)) mkdirSync(directory, { mode: 0o700 });
-  const directoryDetails = lstatSync(directory, { bigint: true });
-  validateOwnerAndMode(directoryDetails, "build");
-  if (!directoryDetails.isDirectory() || directoryDetails.isSymbolicLink()) {
-    failure("canonical static-security summary directory is unsafe");
-  }
   const destination = join(directory, "static-security-summary.json");
   const payload = Buffer.from(`${JSON.stringify(summary, null, 2)}\n`, "utf8");
   if (payload.length < 2 || payload.length > maximumSummaryBytes) {
     failure("canonical static-security summary exceeds its byte limit");
   }
   const temporary = join(directory, `.static-security-summary.${process.pid}.tmp`);
-  // O_EXCL makes the descriptor creation itself the non-racy existence check.
-  // codeql[js/file-system-race]
-  const descriptor = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+  // The whole create/write/sync/rename sequence runs inside one already-open,
+  // no-follow, owner-controlled directory descriptor; that same descriptor
+  // performs the final directory fsync, so no checked path is reopened.
+  let publishing = false;
   try {
-    let offset = 0;
-    while (offset < payload.length) offset += writeSync(descriptor, payload, offset);
-    fsyncSync(descriptor);
-    fchmodSync(descriptor, 0o644);
-  } finally {
-    closeSync(descriptor);
-  }
-  try {
-    renameSync(temporary, destination);
-    // The directory descriptor only fsyncs the completed rename; the O_EXCL
-    // create above is the non-racy authority for the file itself.
-    const directoryDescriptor = openSync(directory, constants.O_RDONLY); // codeql[js/file-system-race]
-    try {
+    withAttestedDirectorySync(directory, {
+      label: "canonical static-security summary directory",
+      allowContentMutation: true,
+      requireCurrentUser: true,
+      requireOwnerControlledMode: true
+    }, ({ descriptor: directoryDescriptor }) => {
+      publishing = true;
+      // O_EXCL makes the descriptor creation itself the non-racy existence check.
+      const descriptor = openSync(
+        temporary,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
+        0o600
+      );
+      try {
+        let offset = 0;
+        while (offset < payload.length) offset += writeSync(descriptor, payload, offset);
+        fsyncSync(descriptor);
+        fchmodSync(descriptor, 0o644);
+      } finally {
+        closeSync(descriptor);
+      }
+      renameSync(temporary, destination);
       fsyncSync(directoryDescriptor);
-    } finally {
-      closeSync(directoryDescriptor);
-    }
+    });
   } catch (error) {
-    rmSync(temporary, { force: true });
-    throw error;
+    if (publishing) {
+      rmSync(temporary, { force: true });
+      throw error;
+    }
+    failure(`canonical static-security summary directory is unsafe: ${error?.message ?? error}`);
   }
   return { bytes: payload.length, sha256: sha256(payload), path: "build/static-security-summary.json" };
 }

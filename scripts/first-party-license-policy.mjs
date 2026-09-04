@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { lstat, open } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 export const firstPartyLicensePaths = Object.freeze({
   license: "LICENSE",
@@ -32,12 +33,6 @@ function effectiveUID(fallback) {
   return typeof process.geteuid === "function" ? process.geteuid() : fallback;
 }
 
-function sameIdentity(left, right) {
-  return left.dev === right.dev && left.ino === right.ino && left.size === right.size
-    && left.mode === right.mode && left.uid === right.uid && left.nlink === right.nlink
-    && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
-}
-
 async function assertPrivateDirectory(path, label) {
   const details = await lstat(path);
   if (!details.isDirectory() || details.isSymbolicLink() || details.uid !== effectiveUID(details.uid)
@@ -57,29 +52,23 @@ async function pathPresence(path) {
 }
 
 async function readPrivateRegularFile(path, maximumBytes, label) {
-  const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1
-      || before.uid !== effectiveUID(before.uid) || (before.mode & 0o022) !== 0
-      || before.size <= 0 || before.size > maximumBytes) {
-    throw new Error(`${label} must be one bounded, owner-controlled regular file with no links`);
-  }
-  let handle;
+  // Open-first: the no-follow descriptor's own metadata is the reviewed shape
+  // (regular, single link, owner-controlled, bounded) and the pathname is
+  // re-attested around the read, so no path-based check precedes the open.
+  let input;
   try {
-    // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); // codeql[js/file-system-race]
-    const opened = await handle.stat();
-    if (!opened.isFile() || opened.nlink !== 1 || !sameIdentity(before, opened)) {
-      throw new Error(`${label} changed identity before it was read`);
-    }
-    const bytes = await handle.readFile();
-    const after = await handle.stat();
-    if (!sameIdentity(opened, after) || bytes.length !== opened.size) {
-      throw new Error(`${label} changed while it was read`);
-    }
-    return bytes;
-  } finally {
-    await handle?.close();
+    input = await readAttestedRegularFile(path, {
+      label,
+      minimumBytes: 1,
+      maximumBytes,
+      requireCurrentUser: true,
+      requireOwnerControlledMode: true,
+      requireSingleLink: true
+    });
+  } catch (error) {
+    throw new Error(`${label} must be one bounded, owner-controlled regular file with no links`, { cause: error });
   }
+  return input.bytes;
 }
 
 function decodeUTF8(bytes, label) {

@@ -9,14 +9,14 @@
       "note": "Observed from npm alpha on 2026-09-02T08:41:57Z; published 2026-09-02T08:38:34.797Z with root integrity sha512-MrD2rPhmjz+8Phs+d9lD9xL1qswCYjcSHMd96fF8NTdDm7FRRsU5QhLDR0x6U4JwGxEvee1pccuvbZY6NyEQhA==. Official GitHub release 381145530 and tag dsh-v0.1.2-alpha.5 were subsequently published at commit db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5. The release fixes upgrade failures and missing session-list titles when upgrading from 0.1.1-rc.2 or 0.1.2-alpha.3. This is an observation, not an exact-cohort assessment or promotion; it is not part of Fulmar."
     },
     "latest": {
-      "version": "0.1.1-rc.2",
-      "disposition": "assessed-not-promoted",
-      "note": "The 2026-08-29 assessor found privacy-patch and guarded-MCP contract blockers."
+      "version": "0.1.2-rc.1",
+      "disposition": "observed-not-promoted",
+      "note": "Observed from npm on 2026-09-04T08:26Z as both latest and next; published 2026-09-03T06:21:52.107Z with root integrity sha512-RPq48TzxvwpdT9/7W1tbhZDBMmeK+bxDrX9cqQC27Wx/LqtgJF8PSa3b3xriU8oxtvhwYmk21w2cej3uMQrnVA==. Official GitHub prerelease 381777538 and tag dsh-v0.1.2-rc.1 were published 2026-09-03T06:06:07Z at commit a66e4702047846cdaa10c66c9d3df3951f5ea70d as the first 0.1.2 release candidate, cumulating the alpha-series user and developer changes since 0.1.1-rc.2. This is an observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
     },
     "next": {
-      "version": "0.1.1-rc.2",
-      "disposition": "assessed-not-promoted",
-      "note": "The 2026-08-29 assessor found privacy-patch and guarded-MCP contract blockers."
+      "version": "0.1.2-rc.1",
+      "disposition": "observed-not-promoted",
+      "note": "Observed from npm on 2026-09-04T08:26Z as both latest and next; published 2026-09-03T06:21:52.107Z with root integrity sha512-RPq48TzxvwpdT9/7W1tbhZDBMmeK+bxDrX9cqQC27Wx/LqtgJF8PSa3b3xriU8oxtvhwYmk21w2cej3uMQrnVA==. Official GitHub prerelease 381777538 and tag dsh-v0.1.2-rc.1 were published 2026-09-03T06:06:07Z at commit a66e4702047846cdaa10c66c9d3df3951f5ea70d as the first 0.1.2 release candidate, cumulating the alpha-series user and developer changes since 0.1.1-rc.2. This is an observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
     }
   },
   "officialGitHub": {
@@ -96,6 +96,14 @@
         "commitSHA": "db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5",
         "disposition": "observed-not-promoted",
         "note": "Official GitHub release/tag published 2026-09-02T10:02:56Z and observed after the earlier npm-only sighting. It fixes upgrade startup failures and missing session-list titles from 0.1.1-rc.2 or 0.1.2-alpha.3; it still requires cumulative exact-cohort requalification and is not promoted or shipped."
+      },
+      "0.1.2-rc.1": {
+        "tag": "dsh-v0.1.2-rc.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/381777538",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-rc.1",
+        "commitSHA": "a66e4702047846cdaa10c66c9d3df3951f5ea70d",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published 2026-09-03T06:06:07Z and observed on 2026-09-04 as the first 0.1.2 release candidate, now also npm latest and next. It cumulates the alpha-series changes since 0.1.1-rc.2 and requires a full exact-cohort requalification before any promotion; it is not promoted or shipped."
       }
     }
   }

@@ -40,7 +40,7 @@ source tree; this document does not pre-claim an unrun result.
 | DSH promotion provenance, source product contract, DeepSeek runtime contract | must pass |
 | Production dependency audit (npm 10.9.8, credential-free) | must report zero findings |
 | Static security scan | must report zero unreviewed findings using the content-pinned Semgrep 1.135.0 closure and pinned rules |
-| JavaScript gate | must complete 653 exact tests: 606 passed, 47 reviewed intentional skips, 0 failures |
+| JavaScript gate | must complete 666 exact tests: 619 passed, 47 reviewed intentional skips, 0 failures |
 | Swift gate | must complete 1,445/1,445 isolated functions, DeviceAttestationAuthorityTests 10/10, warning-clean, with deployment target 15.0 verified |
 | GitHub-hosted source checks | `static-analysis`, `codeql-javascript`, `macos`, and `minimum-macos-candidate` must all pass on the exact source commit |
 

@@ -1,9 +1,9 @@
-import { constants } from "node:fs";
 import { createHash } from "node:crypto";
-import { lstat, open, readdir } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifyBundledFirstPartyLicense } from "./first-party-license-policy.mjs";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const [sbomArgument, runtimeArgument, projectRootArgument, ...localPackagePaths] = process.argv.slice(2);
 if (!sbomArgument || !runtimeArgument || !projectRootArgument || localPackagePaths.length === 0) {
@@ -104,26 +104,29 @@ function validatePinnedCycloneDXProfile(sbom) {
 }
 
 async function readOpenedRegularFile(absolutePath, maximumBytes, label) {
-  const before = await lstat(absolutePath);
-  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`${label} must be a regular non-symbolic file`);
-  if (before.size > maximumBytes) throw new Error(`${label} exceeds its byte limit`);
-  let handle;
+  // Open-first through the attested reader: O_NOFOLLOW refuses a symbolic leaf,
+  // the descriptor's metadata is the reviewed shape, and the pathname is
+  // re-attested before and after the bytes are read.
+  let input;
   try {
-    // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-    handle = await open(absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); // codeql[js/file-system-race]
-    const opened = await handle.stat();
-    if (!opened.isFile() || opened.size > maximumBytes || opened.dev !== before.dev || opened.ino !== before.ino) {
-      throw new Error(`${label} changed while it was being verified`);
+    input = await readAttestedRegularFile(absolutePath, {
+      label,
+      minimumBytes: 0,
+      maximumBytes,
+      requireCurrentUser: false,
+      requireSingleLink: false
+    });
+  } catch (error) {
+    if (error?.code === "ENOENT") throw error;
+    if (error?.code === "ELOOP" || /is not one regular file/u.test(error?.message ?? "")) {
+      throw new Error(`${label} must be a regular non-symbolic file`, { cause: error });
     }
-    const bytes = await handle.readFile();
-    const after = await handle.stat();
-    if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || bytes.length !== opened.size) {
-      throw new Error(`${label} changed while it was being read`);
+    if (/permitted byte bounds/u.test(error?.message ?? "")) {
+      throw new Error(`${label} exceeds its byte limit`, { cause: error });
     }
-    return bytes;
-  } finally {
-    await handle?.close();
+    throw error;
   }
+  return input.bytes;
 }
 
 async function assertRuntimeRoot() {

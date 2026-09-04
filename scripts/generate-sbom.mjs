@@ -1,5 +1,4 @@
-import { constants } from "node:fs";
-import { lstat, open, readdir, writeFile } from "node:fs/promises";
+import { lstat, readdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { verifyBundledFirstPartyLicense } from "./first-party-license-policy.mjs";
@@ -70,32 +69,29 @@ async function readRuntimeFile(relativePath, maximumBytes, { optional = false, l
     if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`${label} has a symbolic or non-directory ancestor`);
   }
   const absolute = join(runtimeRoot, safe);
-  let before;
+  // Open-first through the attested reader: O_NOFOLLOW refuses a symbolic leaf,
+  // the descriptor's metadata is the reviewed shape, and the pathname is
+  // re-attested before and after the bytes are read.
+  let input;
   try {
-    before = await lstat(absolute);
+    input = await readAttestedRegularFile(absolute, {
+      label,
+      minimumBytes: 0,
+      maximumBytes,
+      requireCurrentUser: false,
+      requireSingleLink: false
+    });
   } catch (error) {
     if (optional && error?.code === "ENOENT") return null;
+    if (error?.code === "ELOOP" || /is not one regular file/u.test(error?.message ?? "")) {
+      throw new Error(`${label} must be a regular non-symbolic file`, { cause: error });
+    }
+    if (/permitted byte bounds/u.test(error?.message ?? "")) {
+      throw new Error(`${label} exceeds its byte limit`, { cause: error });
+    }
     throw error;
   }
-  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`${label} must be a regular non-symbolic file`);
-  if (before.size > maximumBytes) throw new Error(`${label} exceeds its byte limit`);
-  let handle;
-  try {
-    // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-    handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); // codeql[js/file-system-race]
-    const opened = await handle.stat();
-    if (!opened.isFile() || opened.size > maximumBytes || opened.dev !== before.dev || opened.ino !== before.ino) {
-      throw new Error(`${label} changed while it was being verified`);
-    }
-    const bytes = await handle.readFile();
-    const after = await handle.stat();
-    if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || bytes.length !== opened.size) {
-      throw new Error(`${label} changed while it was being read`);
-    }
-    return bytes;
-  } finally {
-    await handle?.close();
-  }
+  return input.bytes;
 }
 
 function installedPackagePath(lockPath) {

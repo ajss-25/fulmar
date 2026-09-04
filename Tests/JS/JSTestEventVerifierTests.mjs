@@ -75,10 +75,10 @@ function exactFullRecords(candidate) {
       descriptors.push({ file, name: `synthetic topology ${descriptors.length}` });
     }
   }
-  while (descriptors.length < 653) descriptors.push({
+  while (descriptors.length < 666) descriptors.push({
     file: fixtureFile, name: `synthetic exact lifecycle ${descriptors.length}`
   });
-  assert.equal(descriptors.length, 653);
+  assert.equal(descriptors.length, 666);
   for (let index = descriptors.length - 25; index < descriptors.length; index += 1) {
     descriptors[index].nesting = 1;
   }
@@ -95,9 +95,9 @@ function exactFullRecords(candidate) {
   });
   const skipped = descriptors.filter((descriptor) => descriptor.skip).length;
   events.push(
-    { type: "test:plan", nesting: 0, count: 628 },
+    { type: "test:plan", nesting: 0, count: 641 },
     { type: "test:summary", success: true,
-      counts: { tests: 653, passed: 653 - skipped, failed: 0, cancelled: 0, skipped, todo: 0 } }
+      counts: { tests: 666, passed: 666 - skipped, failed: 0, cancelled: 0, skipped, todo: 0 } }
   );
   return events;
 }

@@ -2,9 +2,10 @@
 
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, lstat, open } from "node:fs/promises";
+import { chmod, open } from "node:fs/promises";
 import https from "node:https";
 import { join, resolve } from "node:path";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const MANIFEST_MAXIMUM_BYTES = 64 * 1024;
 const RULE_MAXIMUM_BYTES = 4 * 1024 * 1024;
@@ -93,23 +94,23 @@ function sha256(bytes) {
 }
 
 async function readBoundedRegular(path, maximumBytes) {
-  const before = await lstat(path, { bigint: true });
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n
-      || before.size < 1n || before.size > BigInt(maximumBytes)) {
+  // Open-first: the no-follow descriptor is opened before any shape decision,
+  // its metadata is the reviewed shape, and the pathname is re-attested around
+  // the read so a swapped file cannot be substituted for the reviewed inode.
+  let input;
+  try {
+    input = await readAttestedRegularFile(path, {
+      label: "pinned Semgrep rule input",
+      minimumBytes: 1,
+      maximumBytes,
+      requireCurrentUser: false,
+      requireSingleLink: true
+    });
+  } catch (error) {
+    if (error?.code === "ENOENT") throw error;
     fail(`unsafe input file: ${path}`);
   }
-  // O_NOFOLLOW and descriptor fstat bind the read to the reviewed inode.
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); // codeql[js/file-system-race]
-  try {
-    const opened = await handle.stat({ bigint: true });
-    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino
-        || opened.size !== before.size || opened.mtimeNs !== before.mtimeNs) {
-      fail(`input changed while opening: ${path}`);
-    }
-    return await handle.readFile();
-  } finally {
-    await handle.close();
-  }
+  return input.bytes;
 }
 
 function validateRuleDescriptor(value) {

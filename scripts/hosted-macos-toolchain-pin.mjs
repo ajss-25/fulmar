@@ -1,24 +1,15 @@
-import { constants, createReadStream } from "node:fs";
-import { createHash } from "node:crypto";
+import { constants } from "node:fs";
 import { execFile } from "node:child_process";
-import {
-  chmod,
-  lstat,
-  open,
-  realpath,
-  rename,
-  stat,
-  unlink
-} from "node:fs/promises";
+import { link, open, realpath, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
+  attestedToolDescriptor,
   captureToolchainInventory,
-  toolchainInputOwnerIsAccepted,
   validateToolchainInventory
 } from "./toolchain-inventory.mjs";
-import { readAttestedRegularFile } from "./attested-regular-file.mjs";
+import { readAttestedRegularFile, withAttestedDirectory } from "./attested-regular-file.mjs";
 
 const execFileAsync = promisify(execFile);
 const safePath = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -319,21 +310,13 @@ async function command(path, arguments_) {
 async function systemFileDescriptor(pathArgument, developerDirectory, hostedDeveloperTreeOwnerUID) {
   const path = await realpath(pathArgument);
   safeAbsoluteSystemPath(path, "hosted system executable");
-  const details = await stat(path);
-  if (!details.isFile()
-      || !toolchainInputOwnerIsAccepted(
-        path,
-        developerDirectory,
-        details.uid,
-        hostedDeveloperTreeOwnerUID
-      )
-      || (details.mode & 0o022) !== 0
-      || details.size < 1 || details.size > maximumSystemFileBytes) {
-    throw new Error("hosted system executable is not one bounded controlled regular file");
+  // Descriptor-attested, no-follow hashing with the same owner rule as the
+  // toolchain capture (root anywhere, the hosted uid only inside the tree).
+  try {
+    return await attestedToolDescriptor(path, developerDirectory, hostedDeveloperTreeOwnerUID);
+  } catch (error) {
+    throw new Error("hosted system executable is not one bounded controlled regular file", { cause: error });
   }
-  const digest = createHash("sha256");
-  for await (const chunk of createReadStream(path)) digest.update(chunk);
-  return { path, bytes: details.size, sha256: digest.digest("hex") };
 }
 
 export async function discoverHostedMacOSToolchainIdentity(
@@ -431,41 +414,54 @@ export async function writeHostedMacOSToolchainProposal(pathArgument, value) {
   const leaf = basename(destination);
   safeToken(leaf, /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u, "proposal filename", 128);
   const parent = dirname(destination);
-  if (await realpath(parent) !== parent) {
-    throw new Error("hosted discovery proposal parent is linked or non-canonical");
-  }
-  const parentDetails = await lstat(parent);
-  if (!parentDetails.isDirectory() || parentDetails.isSymbolicLink()
-      || parentDetails.uid !== process.getuid() || (parentDetails.mode & 0o022) !== 0) {
-    throw new Error("hosted discovery proposal parent is not owner-controlled");
-  }
-  try {
-    await lstat(destination);
-    throw new Error("hosted discovery proposal destination already exists");
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
   const payload = canonicalPinJSON(value);
   const temporary = join(parent, `.${leaf}.${process.pid}.tmp`);
-  let handle;
+  // The complete create/write/sync/publish sequence runs inside one already-open,
+  // no-follow, canonical, owner-controlled directory descriptor, which also
+  // performs the final directory fsync; no checked path is reopened. The
+  // destination is published with link(2), whose EEXIST is the non-racy
+  // "must not already exist" check.
+  let publishing = false;
   try {
-    // O_EXCL makes the descriptor creation itself the non-racy existence check.
-    // codeql[js/file-system-race]
-    handle = await open(temporary, "wx", 0o600);
-    await handle.writeFile(payload, "utf8");
-    await handle.sync();
-    await handle.chmod(0o644);
-    await handle.close();
-    handle = undefined;
-    await rename(temporary, destination);
-    // The directory handle only fsyncs the completed rename; the O_EXCL create
-    // above is the non-racy authority for the file itself.
-    const directory = await open(parent, constants.O_RDONLY); // codeql[js/file-system-race]
-    try { await directory.sync(); } finally { await directory.close(); }
+    await withAttestedDirectory(parent, {
+      label: "hosted discovery proposal parent",
+      allowContentMutation: true,
+      requireCurrentUser: true,
+      requireOwnerControlledMode: true,
+      requireCanonicalPath: true
+    }, async ({ handle: directory }) => {
+      publishing = true;
+      let handle;
+      try {
+        // O_EXCL makes the descriptor creation itself the non-racy existence check.
+        handle = await open(
+          temporary,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600
+        );
+        await handle.writeFile(payload, "utf8");
+        await handle.sync();
+        await handle.chmod(0o644);
+        await handle.close();
+        handle = undefined;
+        try {
+          await link(temporary, destination);
+        } catch (error) {
+          if (error?.code === "EEXIST") throw new Error("hosted discovery proposal destination already exists");
+          throw error;
+        }
+        await directory.sync();
+      } finally {
+        await handle?.close().catch(() => {});
+        await unlink(temporary).catch(() => {});
+      }
+    });
   } catch (error) {
-    await handle?.close().catch(() => {});
-    await unlink(temporary).catch(() => {});
-    throw error;
+    if (publishing) throw error;
+    if (/not owned by the current user|group- or world-writable/u.test(error?.message ?? "")) {
+      throw new Error("hosted discovery proposal parent is not owner-controlled", { cause: error });
+    }
+    throw new Error("hosted discovery proposal parent is linked or non-canonical", { cause: error });
   }
 }
 

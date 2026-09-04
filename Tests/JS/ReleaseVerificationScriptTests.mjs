@@ -65,7 +65,8 @@ test("build, archive verification, and public packaging enforce one fail-closed 
   assert.match(publicVerifier, /Public package must contain exactly the nine reviewed release assets/u);
   assert.doesNotMatch(policy, /process\.env/u);
   assert.match(policy, /LICENSE and Config\/ProjectLicense\.json must either both exist or both be absent/u);
-  assert.match(policy, /nlink !== 1/u);
+  assert.match(policy, /readAttestedRegularFile\(path, \{[\s\S]*?requireCurrentUser: true,[\s\S]*?requireOwnerControlledMode: true,[\s\S]*?requireSingleLink: true[\s\S]*?\}\)/u);
+  assert.doesNotMatch(policy, /await lstat\(path\)[\s\S]{0,400}await open\(path/u);
   assert.match(policy, /mode & 0o022/u);
   assert.match(policy, /licenseSHA256 !== licenseDigest/u);
   assert.match(policy, /first-party-spdx-v1\.json/u);
@@ -665,7 +666,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
   assert.match(runner, /exit 126/u);
   assert.match(eventVerifier, /full JavaScript qualification skip topology changed/u);
   assert.match(eventVerifier, /full JavaScript qualification count drift/u);
-  assert.match(eventVerifier, /profile === "full-candidate" \? 607 : 606/u);
+  assert.match(eventVerifier, /profile === "full-candidate" \? 620 : 619/u);
   assert.match(eventVerifier, /profile === "full-source"/u);
   assert.match(eventVerifier, /RootWatchdogChildProcess\.mjs/u);
   assert.match(runner, /\/usr\/bin\/env -i/u);
@@ -704,7 +705,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
     "VendorRuntimeBootstrapTests.mjs": 3
   }));
   const testNames = (await readdir(testRoot)).filter((name) => name.endsWith(".mjs")).sort();
-  assert.equal(testNames.length, 64, "the zsh launch audit must cover every reviewed JavaScript source");
+  assert.equal(testNames.length, 66, "the zsh launch audit must cover every reviewed JavaScript source");
   const zshExecutable = ["/bin/", "zsh"].join("");
   const zshLiterals = [`"${zshExecutable}"`, `'${zshExecutable}'`];
   let auditedZshCommands = 0;

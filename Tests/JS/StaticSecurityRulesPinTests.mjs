@@ -8,6 +8,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   symlink,
   writeFile
@@ -633,6 +634,21 @@ test("canonical static-security summary is bounded, deterministic, and link-safe
     assert.throws(
       () => writeCanonicalSummary(root, { payload: "x".repeat(512 * 1_024) }),
       /summary exceeds its byte limit/u
+    );
+
+    // The writer publishes only inside an owner-controlled, no-follow build
+    // directory: a group-writable or symbolically linked directory is refused
+    // before any temporary file exists, and no temporary is left behind.
+    await chmod(build, 0o775);
+    assert.throws(() => writeCanonicalSummary(root, summary), /summary directory is unsafe/u);
+    await chmod(build, 0o700);
+    const linkedProject = join(root, "linked-project");
+    await mkdir(linkedProject, { mode: 0o700 });
+    await symlink(build, join(linkedProject, "build"));
+    assert.throws(() => writeCanonicalSummary(linkedProject, summary), /summary directory is unsafe/u);
+    assert.deepEqual(
+      (await readdir(build)).filter((name) => name.startsWith(".static-security-summary.")),
+      []
     );
   } finally {
     await rm(root, { recursive: true, force: true });

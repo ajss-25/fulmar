@@ -186,7 +186,7 @@ make runtime-inventory-verify
 make dependency-audit                 # contacts the public npm registry, credential-free
 make static-security-scan
 FULMAR_SWIFT_BUILD_JOBS=2 /usr/bin/caffeinate -dimsu zsh scripts/run-swift-tests.sh   # 1,445 isolated functions
-zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # 653 tests (606 pass, 47 reviewed skips)
+zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # 666 tests (619 pass, 47 reviewed skips)
 LOCAL_HARNESS_REQUIRE_STABLE_SIGNING=0 LOCAL_HARNESS_SIGN_IDENTITY=- LOCAL_HARNESS_SIGN_TIMESTAMP=0 make build
 ./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
   --emergency-rss-bytes 17179869184 --label "Fulmar frozen-candidate check" -- /usr/bin/make frozen-candidate-check

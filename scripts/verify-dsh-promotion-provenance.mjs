@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
-import { constants } from "node:fs";
 import { createHash } from "node:crypto";
-import { lstat, open } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = resolve(scriptDirectory, "..");
@@ -53,29 +52,23 @@ function validateSHA512Integrity(value, label) {
 }
 
 async function readBoundedRegularFile(path, maximumBytes = maximumJSONBytes) {
-  const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1
-      || before.size < 2 || before.size > maximumBytes) {
-    throw new Error(`expected one bounded regular file: ${path}`);
-  }
-  // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-  const descriptor = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); // codeql[js/file-system-race]
+  // Open-first through the attested reader: the no-follow descriptor's own
+  // metadata is the reviewed shape (regular, single link, bounded) and the
+  // pathname is re-attested before and after the bytes are read.
+  let input;
   try {
-    const opened = await descriptor.stat();
-    if (opened.dev !== before.dev || opened.ino !== before.ino || opened.size !== before.size
-        || opened.nlink !== 1 || !opened.isFile()) {
-      throw new Error(`file identity changed before read: ${path}`);
-    }
-    const bytes = await descriptor.readFile();
-    const after = await descriptor.stat();
-    if (after.dev !== opened.dev || after.ino !== opened.ino || after.size !== opened.size
-        || after.nlink !== 1 || bytes.length !== opened.size) {
-      throw new Error(`file identity changed while read: ${path}`);
-    }
-    return bytes;
-  } finally {
-    await descriptor.close();
+    input = await readAttestedRegularFile(path, {
+      label: "DSH promotion provenance input",
+      minimumBytes: 2,
+      maximumBytes,
+      requireCurrentUser: false,
+      requireSingleLink: true
+    });
+  } catch (error) {
+    if (error?.code === "ENOENT") throw error;
+    throw new Error(`expected one bounded regular file: ${path}`, { cause: error });
   }
+  return input.bytes;
 }
 
 async function readBoundedRegularJSON(path, maximumBytes = maximumJSONBytes) {

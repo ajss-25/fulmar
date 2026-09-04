@@ -15,6 +15,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { TextDecoder } from "node:util";
+import { readAttestedRegularFile, withAttestedDirectory } from "./attested-regular-file.mjs";
 
 export const NATIVE_PRODUCTS = Object.freeze([
   Object.freeze({
@@ -472,65 +473,76 @@ async function writeCanonical(destinationArgument, value) {
   const destination = path.resolve(destinationArgument);
   const parent = path.dirname(destination);
   await mkdir(parent, { recursive: true, mode: 0o700 });
-  const parentInfo = await lstat(parent, { bigint: true });
-  requireOwnerControlled(parentInfo, "reproducibility evidence directory");
-  if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink() || await realpath(parent) !== parent) {
-    fail("the reproducibility evidence directory is not a canonical real directory");
-  }
   const payload = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8");
   if (payload.length > TREE_LIMITS.maximumInventoryBytes) {
     fail("reproducibility evidence exceeds its byte limit");
   }
   const temporary = path.join(parent, `.${path.basename(destination)}.${process.pid}.${randomUUID()}.tmp`);
-  let handle;
+  // The complete create/write/sync/rename sequence runs inside one already-open,
+  // no-follow, canonical, owner-controlled directory descriptor, and that same
+  // descriptor performs the final directory fsync; no checked path is reopened.
+  let publishing = false;
   try {
-    // O_EXCL makes the descriptor creation itself the non-racy existence check.
-    // codeql[js/file-system-race]
-    handle = await open(temporary, "wx", 0o600);
-    await handle.writeFile(payload);
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await rename(temporary, destination);
-    // The directory handle only fsyncs the completed rename; the O_EXCL create
-    // above is the non-racy authority for the file itself.
-    const directory = await open(parent, fsConstants.O_RDONLY); // codeql[js/file-system-race]
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
+    await withAttestedDirectory(parent, {
+      label: "reproducibility evidence directory",
+      allowContentMutation: true,
+      requireCurrentUser: true,
+      requireOwnerControlledMode: true,
+      requireCanonicalPath: true
+    }, async ({ handle: directory }) => {
+      publishing = true;
+      let handle;
+      try {
+        // O_EXCL makes the descriptor creation itself the non-racy existence check.
+        handle = await open(
+          temporary,
+          fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+          0o600
+        );
+        await handle.writeFile(payload);
+        await handle.sync();
+        await handle.close();
+        handle = undefined;
+        await rename(temporary, destination);
+        await directory.sync();
+      } finally {
+        await handle?.close().catch(() => {});
+        await rm(temporary, { force: true }).catch(() => {});
+      }
+    });
+  } catch (error) {
+    if (publishing) throw error;
+    if (/not owned by the current user|group- or world-writable/u.test(error?.message ?? "")) {
+      fail("reproducibility evidence directory is not owner-controlled");
     }
-  } finally {
-    await handle?.close().catch(() => {});
-    await rm(temporary, { force: true }).catch(() => {});
+    fail("the reproducibility evidence directory is not a canonical real directory");
   }
 }
 
 async function readBoundedCapture(sourceArgument) {
   const source = path.resolve(sourceArgument);
-  const info = await lstat(source, { bigint: true });
-  requireOwnerControlled(info, "reproducibility inventory");
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n || info.size < 1n
-      || info.size > BigInt(TREE_LIMITS.maximumInventoryBytes)) {
+  if (!Number.isInteger(fsConstants.O_NOFOLLOW)) fail("the host does not expose O_NOFOLLOW");
+  // Open-first through the attested reader: the no-follow descriptor's own
+  // metadata is the reviewed shape (owner-controlled, single link, bounded)
+  // and the pathname is re-attested before and after the bytes are read.
+  let input;
+  try {
+    input = await readAttestedRegularFile(source, {
+      label: "reproducibility inventory",
+      minimumBytes: 1,
+      maximumBytes: TREE_LIMITS.maximumInventoryBytes,
+      requireCurrentUser: true,
+      requireOwnerControlledMode: true,
+      requireSingleLink: true
+    });
+  } catch (error) {
+    if (error?.code === "ENOENT") throw error;
+    if (/not owned by the current user|group- or world-writable/u.test(error?.message ?? "")) {
+      fail("reproducibility inventory is not owner-controlled");
+    }
     fail("a reproducibility inventory is not a bounded single-link regular file");
   }
-  if (!Number.isInteger(fsConstants.O_NOFOLLOW)) fail("the host does not expose O_NOFOLLOW");
-  // O_NOFOLLOW plus descriptor fstat before/after binds every consumed byte.
-  const handle = await open(source, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW); // codeql[js/file-system-race]
-  try {
-    const opened = await handle.stat({ bigint: true });
-    if (!opened.isFile() || opened.nlink !== 1n || !sameIdentity(info, opened)) {
-      fail("a reproducibility inventory changed while opening");
-    }
-    const bytes = await handle.readFile();
-    const finished = await handle.stat({ bigint: true });
-    if (!sameIdentity(opened, finished) || BigInt(bytes.length) !== opened.size) {
-      fail("a reproducibility inventory changed while reading");
-    }
-    return JSON.parse(UTF8_DECODER.decode(bytes));
-  } finally {
-    await handle.close();
-  }
+  return JSON.parse(UTF8_DECODER.decode(input.bytes));
 }
 
 async function runCLI() {

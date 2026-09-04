@@ -16,10 +16,13 @@ unacknowledged GitHub version, promoted tag target, or promoted release-note bod
 fails the observation job. The watcher never edits the runtime pin, opens a pull
 request, or publishes an app.
 
-As observed on 2026-09-02, Fulmar remains pinned to reviewed `0.1.1-rc.1`;
-npm `latest`/`next` point to assessed-but-not-promoted `0.1.1-rc.2`, while
-npm `alpha` advanced on 2026-09-02 to observed-but-not-promoted
-`0.1.2-alpha.5`. Its official GitHub release was subsequently published on
+As observed on 2026-09-04, Fulmar remains pinned to reviewed `0.1.1-rc.1`;
+npm `latest`/`next` advanced on 2026-09-03 to observed-but-not-promoted
+`0.1.2-rc.1`, the first 0.1.2 release candidate (official GitHub prerelease
+381777538, tag `dsh-v0.1.2-rc.1`, commit
+`a66e4702047846cdaa10c66c9d3df3951f5ea70d`), which cumulates the alpha-series
+changes since `0.1.1-rc.2` and has not been staged or assessed; npm `alpha`
+advanced on 2026-09-02 to observed-but-not-promoted `0.1.2-alpha.5`. Its official GitHub release was subsequently published on
 2026-09-02 at commit `db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5` and fixes an
 upgrade bug that could prevent startup or remove session titles from the list when
 upgrading from `0.1.1-rc.2` or `0.1.2-alpha.3`. Fulmar records that upstream fact but
@@ -27,7 +30,7 @@ has not staged or assessed the exact alpha.5 cohort, and it makes no compatibili
 promotion inference. The latest completed exact-cohort assessment remains the separate
 `0.1.2-alpha.3` cohort. A dist-tag or GitHub-release observation is deliberately not a
 compatibility claim. GitHub marks every current DSH release, including
-`0.1.1-rc.2`, as a prerelease; npm's `latest` tag therefore identifies its default
+`0.1.2-rc.1`, as a prerelease; npm's `latest` tag therefore identifies its default
 package channel, not a stable Fulmar dependency.
 
 Official upstream records:
@@ -37,6 +40,7 @@ Official upstream records:
 - [`dsh-v0.1.2-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1)
 - [`dsh-v0.1.2-alpha.4`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.4)
 - [`dsh-v0.1.2-alpha.5`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.5)
+- [`dsh-v0.1.2-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-rc.1)
 - [DeepSeek Harness safety notice](https://github.com/deepseek-ai/deepseek-harness/blob/main/SAFETY.md)
 
 The upstream safety notice describes Harness as experimental developer-preview

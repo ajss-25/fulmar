@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { constants } from "node:fs";
-import { chmod, lstat, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const RELEASE_IDENTITY = JSON.parse(await readFile(
   new URL("../Config/ReleaseIdentity.json", import.meta.url), "utf8"
@@ -23,23 +23,23 @@ function fail(message) {
 }
 
 async function readRegular(path, maximumBytes = 2 * 1024 * 1024) {
-  const before = await lstat(path, { bigint: true });
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n
-      || before.size < 1n || before.size > BigInt(maximumBytes)) {
+  // Open-first: the no-follow descriptor is opened before any shape decision,
+  // its metadata is the reviewed shape, and the pathname is re-attested around
+  // the read so a swapped file cannot be substituted for the reviewed inode.
+  let input;
+  try {
+    input = await readAttestedRegularFile(path, {
+      label: "runtime manifest input",
+      minimumBytes: 1,
+      maximumBytes,
+      requireCurrentUser: false,
+      requireSingleLink: true
+    });
+  } catch (error) {
+    if (error?.code === "ENOENT") throw error;
     fail(`unsafe regular file: ${path}`);
   }
-  // O_NOFOLLOW and descriptor fstat bind the read to the reviewed inode.
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); // codeql[js/file-system-race]
-  try {
-    const opened = await handle.stat({ bigint: true });
-    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino
-        || opened.size !== before.size || opened.mtimeNs !== before.mtimeNs) {
-      fail(`file changed while opening: ${path}`);
-    }
-    return { bytes: await handle.readFile(), mode: Number(before.mode & 0o777n) };
-  } finally {
-    await handle.close();
-  }
+  return { bytes: input.bytes, mode: Number(input.metadata.mode & 0o777n) };
 }
 
 function decode(bytes, label) {

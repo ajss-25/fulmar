@@ -4,9 +4,10 @@ import {
   fstatSync,
   lstatSync,
   openSync,
-  readSync
+  readSync,
+  realpathSync
 } from "node:fs";
-import { lstat, open } from "node:fs/promises";
+import { lstat, open, realpath } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { createHash } from "node:crypto";
 
@@ -35,56 +36,122 @@ function boundedInteger(value, label) {
   return BigInt(value);
 }
 
-function validateShape(details, options, canonical) {
-  const {
-    label,
-    minimumBytes,
-    maximumBytes,
-    requireCurrentUser,
-    requirePrivateMode,
-    requireSingleLink
-  } = options;
-  if (!details.isFile()) throw new Error(`${label} is not one regular file: ${basename(canonical)}`);
-  if (requireSingleLink && details.nlink !== 1n) {
-    throw new Error(`${label} must not be hard linked: ${basename(canonical)}`);
+function acceptedOwnerSet(value) {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 8
+      || value.some((uid) => !Number.isSafeInteger(uid) || uid < 0)) {
+    throw new TypeError("acceptedOwnerUIDs must be one bounded array of non-negative safe integers");
   }
-  if (details.nlink < 1n) throw new Error(`${label} is no longer linked at its reviewed path: ${basename(canonical)}`);
-  if (requireCurrentUser && typeof process.getuid === "function"
+  return Object.freeze(new Set(value.map((uid) => BigInt(uid))));
+}
+
+function optionalLinkBound(value) {
+  if (value === undefined || value === null) return null;
+  const bound = boundedInteger(value, "maximumLinks");
+  if (bound < 1n) throw new TypeError("maximumLinks must be at least one");
+  return bound;
+}
+
+// Shared ownership/mode predicates for files and directories. `acceptedOwnerUIDs`
+// is an exact reviewed owner set (for example root plus one pinned hosted uid)
+// and replaces the current-user rule when present.
+function validateOwnership(details, options, canonical) {
+  const { label, requireCurrentUser, acceptedOwnerUIDs, requirePrivateMode, requireOwnerControlledMode } = options;
+  if (acceptedOwnerUIDs) {
+    if (!acceptedOwnerUIDs.has(details.uid)) {
+      throw new Error(`${label} is not owned by one accepted reviewed owner: ${basename(canonical)}`);
+    }
+  } else if (requireCurrentUser && typeof process.getuid === "function"
       && details.uid !== BigInt(process.getuid())) {
     throw new Error(`${label} is not owned by the current user: ${basename(canonical)}`);
   }
   if (requirePrivateMode && (details.mode & 0o077n) !== 0n) {
     throw new Error(`${label} is not owner-private: ${basename(canonical)}`);
   }
+  if (requireOwnerControlledMode && (details.mode & 0o022n) !== 0n) {
+    throw new Error(`${label} is group- or world-writable: ${basename(canonical)}`);
+  }
+}
+
+function validateShape(details, options, canonical) {
+  const { label, minimumBytes, maximumBytes, requireSingleLink, maximumLinks } = options;
+  if (!details.isFile()) throw new Error(`${label} is not one regular file: ${basename(canonical)}`);
+  if (requireSingleLink && details.nlink !== 1n) {
+    throw new Error(`${label} must not be hard linked: ${basename(canonical)}`);
+  }
+  if (maximumLinks !== null && details.nlink > maximumLinks) {
+    throw new Error(`${label} exceeds its permitted link count: ${basename(canonical)}`);
+  }
+  if (details.nlink < 1n) throw new Error(`${label} is no longer linked at its reviewed path: ${basename(canonical)}`);
+  validateOwnership(details, options, canonical);
   if (details.size < minimumBytes || details.size > maximumBytes || details.size > maximumSafeFileSize) {
     throw new Error(`${label} exceeds its permitted byte bounds: ${basename(canonical)}`);
   }
 }
 
 function validateDirectoryShape(details, options, canonical) {
-  const { label, requireCurrentUser, requirePrivateMode } = options;
+  const { label } = options;
   if (!details.isDirectory()) throw new Error(`${label} is not one directory: ${basename(canonical)}`);
   if (details.nlink < 1n) throw new Error(`${label} is no longer linked at its reviewed path: ${basename(canonical)}`);
-  if (requireCurrentUser && typeof process.getuid === "function"
-      && details.uid !== BigInt(process.getuid())) {
-    throw new Error(`${label} is not owned by the current user: ${basename(canonical)}`);
-  }
-  if (requirePrivateMode && (details.mode & 0o077n) !== 0n) {
-    throw new Error(`${label} is not owner-private: ${basename(canonical)}`);
-  }
+  validateOwnership(details, options, canonical);
 }
 
-export async function withAttestedDirectory(path, options = {}, operation = async () => undefined) {
-  const canonical = resolve(path);
+function normalizeFileOptions(options) {
   const normalized = Object.freeze({
+    label: options.label ?? "attested artifact",
+    minimumBytes: boundedInteger(options.minimumBytes ?? 1, "minimumBytes"),
+    maximumBytes: boundedInteger(options.maximumBytes ?? 64 * 1024 * 1024, "maximumBytes"),
+    requireCurrentUser: options.requireCurrentUser !== false,
+    acceptedOwnerUIDs: acceptedOwnerSet(options.acceptedOwnerUIDs),
+    requirePrivateMode: options.requirePrivateMode === true,
+    requireOwnerControlledMode: options.requireOwnerControlledMode === true,
+    requireSingleLink: options.requireSingleLink !== false,
+    maximumLinks: optionalLinkBound(options.maximumLinks),
+    requireCanonicalPath: options.requireCanonicalPath === true
+  });
+  if (normalized.minimumBytes > normalized.maximumBytes) {
+    throw new TypeError("minimumBytes must not exceed maximumBytes");
+  }
+  return normalized;
+}
+
+function normalizeDirectoryOptions(options) {
+  return Object.freeze({
     label: options.label ?? "attested directory",
     allowContentMutation: options.allowContentMutation === true,
     requireCurrentUser: options.requireCurrentUser !== false,
-    requirePrivateMode: options.requirePrivateMode === true
+    acceptedOwnerUIDs: acceptedOwnerSet(options.acceptedOwnerUIDs),
+    requirePrivateMode: options.requirePrivateMode === true,
+    requireOwnerControlledMode: options.requireOwnerControlledMode === true,
+    requireCanonicalPath: options.requireCanonicalPath === true
   });
-  const flags = fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW
-    | (fsConstants.O_CLOEXEC ?? 0);
-  const handle = await open(canonical, flags);
+}
+
+function requireCanonical(actual, canonical, label) {
+  if (actual !== canonical) {
+    throw new Error(`${label} is not one canonical real path: ${basename(canonical)}`);
+  }
+}
+
+const directoryFlags = fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW
+  | (fsConstants.O_CLOEXEC ?? 0);
+// O_NONBLOCK only matters if the leaf is a FIFO: it makes the open return so the
+// descriptor shape check can reject it instead of blocking for a writer.
+const fileFlags = fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_CLOEXEC ?? 0)
+  | (fsConstants.O_NONBLOCK ?? 0);
+
+/**
+ * Run one operation inside an already-open, no-follow directory descriptor whose
+ * metadata was bound to the pathname before descent and re-attested afterwards.
+ * With `allowContentMutation` the operation may publish expected children (the
+ * directory object, owner, group and mode stay bound); without it the directory
+ * must not change at all. The descriptor is handed to the operation so callers
+ * can fsync through it instead of reopening a path they already checked.
+ */
+export async function withAttestedDirectory(path, options = {}, operation = async () => undefined) {
+  const canonical = resolve(path);
+  const normalized = normalizeDirectoryOptions(options);
+  const handle = await open(canonical, directoryFlags);
   try {
     const before = await handle.stat({ bigint: true });
     validateDirectoryShape(before, normalized, canonical);
@@ -92,6 +159,7 @@ export async function withAttestedDirectory(path, options = {}, operation = asyn
     if (!sameDirectoryIdentity(before, openedPath, normalized.allowContentMutation)) {
       throw new Error(`${normalized.label} path changed while its descriptor was opened: ${basename(canonical)}`);
     }
+    if (normalized.requireCanonicalPath) requireCanonical(await realpath(canonical), canonical, normalized.label);
 
     await options.afterOpen?.(Object.freeze({ canonical, handle, before }));
     const beforeOperationPath = await lstat(canonical, { bigint: true });
@@ -133,6 +201,60 @@ export async function withAttestedDirectory(path, options = {}, operation = asyn
   }
 }
 
+/** Synchronous twin of withAttestedDirectory for the synchronous release scripts. */
+export function withAttestedDirectorySync(path, options = {}, operation = () => undefined) {
+  const canonical = resolve(path);
+  const normalized = normalizeDirectoryOptions(options);
+  const descriptor = openSync(canonical, directoryFlags);
+  try {
+    const before = fstatSync(descriptor, { bigint: true });
+    validateDirectoryShape(before, normalized, canonical);
+    const openedPath = lstatSync(canonical, { bigint: true });
+    if (!sameDirectoryIdentity(before, openedPath, normalized.allowContentMutation)) {
+      throw new Error(`${normalized.label} path changed while its descriptor was opened: ${basename(canonical)}`);
+    }
+    if (normalized.requireCanonicalPath) requireCanonical(realpathSync(canonical), canonical, normalized.label);
+
+    options.afterOpen?.(Object.freeze({ canonical, descriptor, before }));
+    const beforeOperationPath = lstatSync(canonical, { bigint: true });
+    if (!sameDirectoryIdentity(before, beforeOperationPath, normalized.allowContentMutation)) {
+      throw new Error(`${normalized.label} path changed before traversal: ${basename(canonical)}`);
+    }
+
+    let value;
+    let operationError;
+    try {
+      value = operation(Object.freeze({ canonical, descriptor, metadata: before }));
+    } catch (error) {
+      operationError = error;
+    }
+    let attestationError;
+    try {
+      options.afterOperation?.(Object.freeze({ canonical, descriptor, before }));
+      const after = fstatSync(descriptor, { bigint: true });
+      const finalPath = lstatSync(canonical, { bigint: true });
+      if (!sameDirectoryIdentity(before, after, normalized.allowContentMutation)
+          || !sameDirectoryIdentity(before, finalPath, normalized.allowContentMutation)) {
+        throw new Error(`${normalized.label} changed during traversal: ${basename(canonical)}`);
+      }
+      validateDirectoryShape(after, normalized, canonical);
+    } catch (error) {
+      attestationError = error;
+    }
+    if (operationError && attestationError) {
+      throw new AggregateError(
+        [operationError, attestationError],
+        `${normalized.label} operation failed and its directory identity also changed`
+      );
+    }
+    if (attestationError) throw attestationError;
+    if (operationError) throw operationError;
+    return value;
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 export async function withAttestedDirectories(paths, options = {}, operation = async () => undefined) {
   const directories = [...new Set(paths.map((path) => resolve(path)))].sort();
   async function visit(index) {
@@ -156,20 +278,8 @@ export async function withAttestedDirectories(paths, options = {}, operation = a
  */
 export async function consumeAttestedRegularFile(path, options = {}, consumeChunk = async () => {}) {
   const canonical = resolve(path);
-  const normalized = Object.freeze({
-    label: options.label ?? "attested artifact",
-    minimumBytes: boundedInteger(options.minimumBytes ?? 1, "minimumBytes"),
-    maximumBytes: boundedInteger(options.maximumBytes ?? 64 * 1024 * 1024, "maximumBytes"),
-    requireCurrentUser: options.requireCurrentUser !== false,
-    requirePrivateMode: options.requirePrivateMode === true,
-    requireSingleLink: options.requireSingleLink !== false
-  });
-  if (normalized.minimumBytes > normalized.maximumBytes) {
-    throw new TypeError("minimumBytes must not exceed maximumBytes");
-  }
-
-  const flags = fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_CLOEXEC ?? 0);
-  const handle = await open(canonical, flags);
+  const normalized = normalizeFileOptions(options);
+  const handle = await open(canonical, fileFlags);
   try {
     const before = await handle.stat({ bigint: true });
     validateShape(before, normalized, canonical);
@@ -177,6 +287,7 @@ export async function consumeAttestedRegularFile(path, options = {}, consumeChun
     if (!sameIdentity(before, openedPath)) {
       throw new Error(`${normalized.label} path changed while its descriptor was opened: ${basename(canonical)}`);
     }
+    if (normalized.requireCanonicalPath) requireCanonical(await realpath(canonical), canonical, normalized.label);
 
     await options.afterOpen?.(Object.freeze({ canonical, handle, before }));
     const beforeReadPath = await lstat(canonical, { bigint: true });
@@ -212,6 +323,7 @@ export async function consumeAttestedRegularFile(path, options = {}, consumeChun
       throw new Error(`${normalized.label} changed while its bytes were read: ${basename(canonical)}`);
     }
     validateShape(after, normalized, canonical);
+    if (normalized.requireCanonicalPath) requireCanonical(await realpath(canonical), canonical, normalized.label);
     return Object.freeze({ bytes: expectedBytes, metadata: before, path: canonical });
   } finally {
     await handle.close();
@@ -228,26 +340,21 @@ export async function readAttestedRegularFile(path, options = {}) {
 
 export function readAttestedRegularFileSync(path, options = {}) {
   const canonical = resolve(path);
-  const normalized = Object.freeze({
-    label: options.label ?? "attested artifact",
-    minimumBytes: boundedInteger(options.minimumBytes ?? 1, "minimumBytes"),
-    maximumBytes: boundedInteger(options.maximumBytes ?? 64 * 1024 * 1024, "maximumBytes"),
-    requireCurrentUser: options.requireCurrentUser !== false,
-    requirePrivateMode: options.requirePrivateMode === true,
-    requireSingleLink: options.requireSingleLink !== false
-  });
-  if (normalized.minimumBytes > normalized.maximumBytes) {
-    throw new TypeError("minimumBytes must not exceed maximumBytes");
-  }
-
-  const flags = fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | (fsConstants.O_CLOEXEC ?? 0);
-  const descriptor = openSync(canonical, flags);
+  const normalized = normalizeFileOptions(options);
+  const descriptor = openSync(canonical, fileFlags);
   try {
     const before = fstatSync(descriptor, { bigint: true });
     validateShape(before, normalized, canonical);
     const openedPath = lstatSync(canonical, { bigint: true });
     if (!sameIdentity(before, openedPath)) {
       throw new Error(`${normalized.label} path changed while its descriptor was opened: ${basename(canonical)}`);
+    }
+    if (normalized.requireCanonicalPath) requireCanonical(realpathSync(canonical), canonical, normalized.label);
+
+    options.afterOpen?.(Object.freeze({ canonical, descriptor, before }));
+    const beforeReadPath = lstatSync(canonical, { bigint: true });
+    if (!sameIdentity(before, beforeReadPath)) {
+      throw new Error(`${normalized.label} path changed before its bytes were read: ${basename(canonical)}`);
     }
 
     const expectedBytes = Number(before.size);
@@ -271,6 +378,7 @@ export function readAttestedRegularFileSync(path, options = {}) {
       throw new Error(`${normalized.label} changed while its bytes were read: ${basename(canonical)}`);
     }
     validateShape(after, normalized, canonical);
+    if (normalized.requireCanonicalPath) requireCanonical(realpathSync(canonical), canonical, normalized.label);
     return Object.freeze({ bytes, metadata: before, path: canonical });
   } finally {
     closeSync(descriptor);

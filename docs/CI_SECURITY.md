@@ -98,6 +98,24 @@ evidence transport.
    `discovery-required` state uploads a bounded proposal and deliberately fails before
    compilation. A maintainer must review and commit the exact active pin, after which
    a fresh hosted run must verify it.
+   The clean release toolchain capture inside `scripts/build-app.sh` stays root-only
+   except for one pin-bound admission: GitHub's hosted image owns Xcode as the
+   `runner` user, so `scripts/toolchain-inventory.mjs` admits a non-root-owned
+   developer tree only through the literal tracked active pin — never through an
+   environment variable, a caller-supplied uid, or a hosted-mode switch — and only
+   when the effective uid, the canonical `xcode-select` developer directory, the SDK
+   path, every tool's canonical path, byte count and SHA-256, the OS and tool
+   versions and the build controls all equal the pinned inventory, every file is
+   owned by root or exactly the pinned uid with no group/world write, and the
+   canonical developer-directory, SDK and tool-parent directory chain is attested
+   through no-follow descriptors. Tools are hashed through descriptor-attested
+   O_NOFOLLOW reads with pathname identity rechecked around the hash, and every
+   admitted executable matches its pinned bytes before it is run. This is exact
+   reviewed-image provenance with persistent-mutation detection: it detects a
+   replaced or drifted image tree, not malicious same-uid or passwordless-sudo
+   workflow code on the same runner, and the live GitHub Actions context and image
+   identity are bound by the workflow's earlier pin verification step rather than by
+   the environment-free build capture.
 2. **Exact minimum-macOS consumption.** The `macos-15` ARM job downloads the five
    producer artifacts by immutable artifact ID, requires GitHub's artifact digest,
    revalidates the source/manifest/archive/transport binding, checks every Mach-O

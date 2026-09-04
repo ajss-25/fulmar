@@ -171,6 +171,9 @@ STATIC_SECURITY_VERIFIER="$PROJECT_DIR/scripts/verify-static-security-summary.mj
 FIRST_PARTY_LICENSE_POLICY="$PROJECT_DIR/scripts/first-party-license-policy.mjs"
 TOOLCHAIN_INVENTORY="$BUILD_OUTPUT_DIR/toolchain-inventory.json"
 TOOLCHAIN_TOOL="$PROJECT_DIR/scripts/toolchain-inventory.mjs"
+# The only file that may admit a non-root-owned (GitHub-hosted) Xcode tree into
+# the clean release toolchain capture: the literal tracked active pin.
+HOSTED_TOOLCHAIN_PIN="$PROJECT_DIR/Config/HostedMacOSToolchainPin.json"
 CI_EVIDENCE_SUMMARY="$BUILD_OUTPUT_DIR/ci-evidence-summary.json"
 NOTARY_SUBMISSION_EVIDENCE="$BUILD_OUTPUT_DIR/notarization-submission.json"
 NOTARY_LOG_EVIDENCE="$BUILD_OUTPUT_DIR/notarization-log.json"
@@ -361,7 +364,7 @@ SWIFTPM_CONFIG_DIR="$BUILD_SCRATCH/swiftpm-config"
 SWIFTPM_SECURITY_DIR="$BUILD_SCRATCH/swiftpm-security"
 CLANG_CACHE_DIR="$BUILD_SCRATCH/clang-module-cache"
 ICONSET_DIR="$BUILD_SCRATCH/AppIcon.iconset"
-"$NODE_BIN" "$TOOLCHAIN_TOOL" create "$TOOLCHAIN_INVENTORY"
+"$NODE_BIN" "$TOOLCHAIN_TOOL" create "$TOOLCHAIN_INVENTORY" "$HOSTED_TOOLCHAIN_PIN"
 
 /bin/mkdir -m 0700 "$SWIFT_SOURCE_ROOT" "$SWIFTPM_CACHE_DIR" "$SWIFTPM_CONFIG_DIR" \
   "$SWIFTPM_SECURITY_DIR" "$CLANG_CACHE_DIR"
@@ -470,7 +473,7 @@ automatic_dsym="$(/usr/bin/find "$BUILD_SCRATCH" -type d -name '*.dSYM' -print -
 "$NODE_BIN" "$SOURCE_INPUT_TOOL" verify "$PROJECT_DIR" "$SOURCE_INPUT_INVENTORY"
 "$NODE_BIN" "$STATIC_SECURITY_VERIFIER" \
   "$STATIC_SECURITY_SUMMARY" "$SOURCE_INPUT_INVENTORY" "$PROJECT_DIR/Config/SemgrepRules.json"
-"$NODE_BIN" "$TOOLCHAIN_TOOL" verify "$TOOLCHAIN_INVENTORY"
+"$NODE_BIN" "$TOOLCHAIN_TOOL" verify "$TOOLCHAIN_INVENTORY" "$HOSTED_TOOLCHAIN_PIN"
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$RUNTIME_DIR" "$LAUNCH_AGENTS_DIR" \
@@ -753,7 +756,7 @@ if [[ "$BUILD_MODE" == "unsigned-reproducibility" ]]; then
   "$NODE_BIN" "$SOURCE_INPUT_TOOL" verify "$PROJECT_DIR" "$SOURCE_INPUT_INVENTORY"
   "$NODE_BIN" "$STATIC_SECURITY_VERIFIER" \
     "$STATIC_SECURITY_SUMMARY" "$SOURCE_INPUT_INVENTORY" "$PROJECT_DIR/Config/SemgrepRules.json"
-  "$NODE_BIN" "$TOOLCHAIN_TOOL" verify "$TOOLCHAIN_INVENTORY"
+  "$NODE_BIN" "$TOOLCHAIN_TOOL" verify "$TOOLCHAIN_INVENTORY" "$HOSTED_TOOLCHAIN_PIN"
   print -r -- "$OUTPUT_ROOT"
   exit 0
 fi
@@ -970,7 +973,7 @@ if [[ -n "${LOCAL_HARNESS_NOTARY_PROFILE:-}" ]]; then
 fi
 
 "$NODE_BIN" "$SOURCE_INPUT_TOOL" verify "$PROJECT_DIR" "$SOURCE_INPUT_INVENTORY"
-"$NODE_BIN" "$TOOLCHAIN_TOOL" verify "$TOOLCHAIN_INVENTORY"
+"$NODE_BIN" "$TOOLCHAIN_TOOL" verify "$TOOLCHAIN_INVENTORY" "$HOSTED_TOOLCHAIN_PIN"
 plutil -convert json -o "$OUTPUT_ROOT/Info.json" "$CONTENTS_DIR/Info.plist"
 "$NODE_BIN" "$STATIC_SECURITY_VERIFIER" \
   "$STATIC_SECURITY_SUMMARY" "$SOURCE_INPUT_INVENTORY" "$PROJECT_DIR/Config/SemgrepRules.json"
