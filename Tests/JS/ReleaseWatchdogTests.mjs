@@ -1038,8 +1038,11 @@ supervisorFixture("the public launcher strips hostile language and shell preload
   const nodeMarker = join(root, "node.marker");
   const shellMarker = join(root, "shell.marker");
   const zshMarker = join(root, "zsh.marker");
+  const dyldMarker = join(root, "dyld.marker");
   const nodeLoader = join(root, "hostile-loader.cjs");
   const shellHook = join(root, "hostile-shell-hook.sh");
+  const dylibSource = join(root, "hostile-dylib.c");
+  const hostileDylib = join(root, "hostile.dylib");
   try {
     await mkdir(perlModuleRoot, { recursive: true, mode: 0o700 });
     await writeFile(join(perlModuleRoot, "Watchdog.pm"),
@@ -1050,6 +1053,25 @@ supervisorFixture("the public launcher strips hostile language and shell preload
       { mode: 0o600 });
     await writeFile(shellHook, `echo loaded >> ${JSON.stringify(shellMarker)}\n`, { mode: 0o600 });
     await writeFile(join(root, ".zshenv"), `echo loaded >> ${JSON.stringify(zshMarker)}\n`, { mode: 0o600 });
+    await writeFile(dylibSource, `#include <stdio.h>
+__attribute__((constructor))
+static void fulmar_hostile_dylib_fixture(void) {
+  FILE *marker = fopen(${JSON.stringify(dyldMarker)}, "a");
+  if (marker != NULL) {
+    (void)fputs("loaded\\n", marker);
+    (void)fclose(marker);
+  }
+}
+`, { mode: 0o600 });
+    const compiled = spawnSync("/usr/bin/xcrun", [
+      "--sdk", "macosx", "clang", "-dynamiclib", "-std=c17", "-Os",
+      "-Wall", "-Wextra", "-Werror", dylibSource, "-o", hostileDylib
+    ], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(compiled.status, 0, compiled.stderr || compiled.error?.message);
+    const signed = spawnSync("/usr/bin/codesign", [
+      "--force", "--sign", "-", "--timestamp=none", hostileDylib
+    ], { encoding: "utf8", timeout: 5_000 });
+    assert.equal(signed.status, 0, signed.stderr || signed.error?.message);
     const hostile = {
       ...process.env,
       HOME: "/Users/forbidden-live-home",
@@ -1061,12 +1083,25 @@ supervisorFixture("the public launcher strips hostile language and shell preload
       ENV: shellHook,
       BASH_ENV: shellHook,
       ZDOTDIR: root,
-      DYLD_INSERT_LIBRARIES: join(root, "hostile.dylib"),
+      // dyld consumes this variable before a script launcher can execute. A
+      // valid marker library lets the launcher reach its builtin-unset
+      // boundary and proves that no later external process reloads the hook.
+      DYLD_INSERT_LIBRARIES: hostileDylib,
+      DYLD_LIBRARY_PATH: root,
       "BASH_FUNC_fulmar_hostile%%": `() { echo loaded >> ${shellMarker}; }`
     };
-    const forbiddenCheck = "for my $key (qw(PERL5OPT PERL5LIB NODE_OPTIONS NODE_PATH ENV BASH_ENV ZDOTDIR DYLD_INSERT_LIBRARIES)) { exit 91 if exists $ENV{$key}; } exit 0";
+    const forbiddenCheck = "for my $key (qw(PERL5OPT PERL5LIB NODE_OPTIONS NODE_PATH ENV BASH_ENV ZDOTDIR DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH)) { exit 91 if exists $ENV{$key}; } exit 0";
+    const dyldLoadCount = async () => {
+      if (!existsSync(dyldMarker)) return 0;
+      const bytes = await readFile(dyldMarker, "utf8");
+      assert.match(bytes, /^(?:loaded\n)+$/u, "DYLD fixture emitted malformed evidence");
+      return bytes.split("\n").length - 1;
+    };
     const direct = run(["/usr/bin/perl", "-e", forbiddenCheck], { env: hostile });
     assert.equal(direct.status, 0, direct.stderr || direct.error?.message);
+    const directDylibLoads = await dyldLoadCount();
+    assert.ok(directDylibLoads === 0 || directDylibLoads === 1,
+      `the direct launcher crossed its builtin DYLD boundary ${directDylibLoads} times`);
 
     const nested = spawnSync(watchdog, [
       "--seconds", "10", "--max-rss-bytes", String(128 * MiB),
@@ -1077,12 +1112,16 @@ supervisorFixture("the public launcher strips hostile language and shell preload
       `NODE_OPTIONS=${hostile.NODE_OPTIONS}`, `NODE_PATH=${hostile.NODE_PATH}`,
       `ENV=${hostile.ENV}`, `BASH_ENV=${hostile.BASH_ENV}`, `ZDOTDIR=${hostile.ZDOTDIR}`,
       `DYLD_INSERT_LIBRARIES=${hostile.DYLD_INSERT_LIBRARIES}`,
+      `DYLD_LIBRARY_PATH=${hostile.DYLD_LIBRARY_PATH}`,
       watchdog, "--inherit-root",
       "--seconds", "5", "--max-rss-bytes", String(64 * MiB),
       "--rss-grace-seconds", "1", "--emergency-rss-bytes", String(128 * MiB),
       "--label", "clean inherited launcher fixture", "--", "/usr/bin/perl", "-e", forbiddenCheck
     ], { encoding: "utf8", timeout: 15_000 });
     assert.equal(nested.status, 0, nested.stderr || nested.error?.message);
+    const nestedDylibLoads = (await dyldLoadCount()) - directDylibLoads;
+    assert.ok(nestedDylibLoads === 0 || nestedDylibLoads === 1,
+      `the inherited launcher crossed its builtin DYLD boundary ${nestedDylibLoads} times`);
     for (const marker of [perlMarker, nodeMarker, shellMarker, zshMarker]) {
       assert.equal(existsSync(marker), false, `hostile preload created ${marker}`);
     }

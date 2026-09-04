@@ -121,7 +121,7 @@
       "level": "warn",
       "code": 3,
       "reason": "Semgrep 1.135 only partially parses the reviewed POSIX literal-newline case pattern and descriptor here-document used by the clean watchdog bootstrap; the exact source SHA requires review after any edit.",
-      "sourceSha256": "ba2ec894410855d5e93007cdb3f20967fa303472ed12321028f78d270e0c9b13"
+      "sourceSha256": "1192957ab8907f592cc1d7add0698496ad331d497bd8de73a7ee404ae1b81abf"
     },
     {
       "scan": "default",

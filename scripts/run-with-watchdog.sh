@@ -1,6 +1,11 @@
 #!/bin/sh -p
 set -eu
 unset IFS
+# dyld may consume caller-provided hooks while starting this script's
+# interpreter on a host where SIP does not suppress them. The script cannot
+# undo that pre-interpreter event, but shell builtins can remove both hooks
+# before the first external executable crosses the clean bootstrap boundary.
+unset DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH
 CDPATH=
 export CDPATH
 

@@ -760,6 +760,10 @@ test("every production watchdog and privileged shell callsite suppresses ambient
     "the internal watchdog must not be group- or world-writable");
   assert.match(launcher, /^#!\/bin\/sh -p\n/u);
   assert.match(launcher, /exec \/usr\/bin\/env -i/u);
+  const dyldStrip = launcher.indexOf("unset DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH");
+  const cleanBootstrap = launcher.indexOf("exec /usr/bin/env -i");
+  assert.ok(dyldStrip > 0 && cleanBootstrap > dyldStrip,
+    "the public launcher must strip both DYLD hooks by builtin before its first external exec");
   assert.match(launcher, /FULMAR_WATCHDOG_CLEAN_LAUNCH_V1=1/u);
   assert.match(internal, /run-with-watchdog\.pl is internal/u);
   assert.match(trackedIndex, /scripts\/run-with-watchdog\.sh/u);
