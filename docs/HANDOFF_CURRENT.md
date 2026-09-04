@@ -104,9 +104,11 @@ Updated: 2026-09-03 (Europe/London)
   state: npm `latest`/`next` now point to observed-not-promoted `0.1.2-rc.1` (official
   prerelease 381777538, tag `dsh-v0.1.2-rc.1`, commit
   `a66e4702047846cdaa10c66c9d3df3951f5ea70d`, published 2026-09-03), `alpha` remains
-  `0.1.2-alpha.5`, and every observed official GitHub tag/release plus the promoted
-  `0.1.1-rc.1` provenance matched its acknowledgement. Fulmar stays pinned to
-  `0.1.1-rc.1`; no DSH upgrade is part of this release.
+  `0.1.2-alpha.5`, and GitHub-only prerelease 382677748 (tag `dsh-v0.1.3-alpha.1`,
+  commit `d347e703908d0406b7a7ef80e3a0e594d86b2215`, published 2026-09-04) is
+  acknowledged as observed-not-promoted. Every observed official GitHub tag/release
+  plus the promoted `0.1.1-rc.1` provenance matched its acknowledgement. Fulmar stays
+  pinned to `0.1.1-rc.1`; no DSH upgrade is part of this release.
 
 ## Frozen test topology
 

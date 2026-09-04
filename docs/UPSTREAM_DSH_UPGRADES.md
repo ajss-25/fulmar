@@ -30,8 +30,14 @@ has not staged or assessed the exact alpha.5 cohort, and it makes no compatibili
 promotion inference. The latest completed exact-cohort assessment remains the separate
 `0.1.2-alpha.3` cohort. A dist-tag or GitHub-release observation is deliberately not a
 compatibility claim. GitHub marks every current DSH release, including
-`0.1.2-rc.1`, as a prerelease; npm's `latest` tag therefore identifies its default
-package channel, not a stable Fulmar dependency.
+`0.1.3-alpha.1`, as a prerelease; npm's `latest` tag therefore identifies its default
+package channel, not a stable Fulmar dependency. GitHub-only prerelease 382677748,
+tag `dsh-v0.1.3-alpha.1` at commit
+`d347e703908d0406b7a7ef80e3a0e594d86b2215`, was published on 2026-09-04 while
+all three watched npm tags remained unchanged. Its stated breaking SessionHandle,
+session-lock and Session format v2 changes, along with its known performance
+regression, require a separate cumulative assessment; this acknowledgement is not
+that assessment.
 
 Official upstream records:
 
@@ -41,6 +47,7 @@ Official upstream records:
 - [`dsh-v0.1.2-alpha.4`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.4)
 - [`dsh-v0.1.2-alpha.5`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.5)
 - [`dsh-v0.1.2-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-rc.1)
+- [`dsh-v0.1.3-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.1)
 - [DeepSeek Harness safety notice](https://github.com/deepseek-ai/deepseek-harness/blob/main/SAFETY.md)
 
 The upstream safety notice describes Harness as experimental developer-preview
