@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, link, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -253,6 +253,10 @@ test("native qualification uses the portable warning-clean Swift Testing runner"
   assert.match(runner, /XCODE_PLATFORM_LIBRARIES="\$XCODE_PLATFORM_DEVELOPER\/usr\/lib"/u);
   assert.match(runner, /XCODE_TESTING_INTEROP="\$XCODE_PLATFORM_LIBRARIES\/lib_TestingInterop\.dylib"/u);
   assert.match(runner, /XCODE_TESTING_INTEROP_OWNER" == 0[\s\S]*?XCODE_TESTING_INTEROP_OWNER" == "\$XCODE_DEVELOPER_OWNER"/u);
+  assert.match(runner, /XCODE_TESTING_INTEROP_LINKS" == <->[\s\S]*?XCODE_TESTING_INTEROP_LINKS" -ge 1[\s\S]*?XCODE_TESTING_INTEROP_LINKS" -le 16/u);
+  assert.match(await readFile(join(process.cwd(), "scripts", "toolchain-inventory.mjs"), "utf8"),
+    /const maximumDeveloperToolLinks = 16;/u,
+    "the Testing interop link bound must match the reviewed developer-tool bound");
   assert.match(
     runner,
     /if \[\[ -e "\$XCODE_TESTING_RUNTIME"[\s\S]*?codesign --verify --strict --test-requirement '=anchor apple'[\s\S]*?testing_arguments\+=\([\s\S]*?-Xlinker -rpath[\s\S]*?-Xlinker "\$XCODE_TESTING_RUNTIME"[\s\S]*?required_testing_rpaths\+=\("\$XCODE_TESTING_RUNTIME"\)\nfi\nif \[\[ -e "\$XCODE_PLATFORM_DEVELOPER"/u,
@@ -304,6 +308,9 @@ test("native qualification uses the portable warning-clean Swift Testing runner"
     assert.ok(testingInteropSource, "an installed Apple Swift Testing interop image is required for the layout probe");
     await copyFile(testingInteropSource, join(fakePlatformLibraries, "lib_TestingInterop.dylib"));
     await chmod(join(fakePlatformLibraries, "lib_TestingInterop.dylib"), 0o755);
+    await link(join(fakePlatformLibraries, "lib_TestingInterop.dylib"), join(platformProbeRoot, "interop-link-2"));
+    assert.equal((await stat(join(fakePlatformLibraries, "lib_TestingInterop.dylib"))).nlink, 2,
+      "the fixture must reproduce the two hard links observed on the reviewed hosted Xcode image");
 
     const selectionProbe = join(platformProbeRoot, "probe.zsh");
     await writeFile(selectionProbe, `#!/bin/zsh -f
@@ -315,12 +322,13 @@ ${runner.slice(pathValidatorStart, pathValidatorEnd)}
 ${runner.slice(runtimeSelectionStart, runtimeSelectionEnd)}
 print -rl -- "\${required_testing_rpaths[@]}"
 `, { mode: 0o700 });
-    const selectedPaths = spawnSync("/bin/zsh", [
+    const selectPaths = () => spawnSync("/bin/zsh", [
       "-f", selectionProbe, process.cwd(), fakeDeveloperRoot, fakeSDK
     ], {
       encoding: "utf8", timeout: 5_000,
       env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
     });
+    const selectedPaths = selectPaths();
     assert.equal(selectedPaths.status, 0, selectedPaths.stderr);
     assert.equal(existsSync(join(fakeDeveloperRoot,
       "Toolchains", "XcodeDefault.xctoolchain", "usr", "lib", "swift", "macosx", "testing")), false);
@@ -331,17 +339,28 @@ print -rl -- "\${required_testing_rpaths[@]}"
     ], "a framework-only Xcode layout must select the complete platform runtime without an optional toolchain dylib");
 
     await chmod(join(fakePlatformLibraries, "lib_TestingInterop.dylib"), 0o775);
-    const rejectedPaths = spawnSync("/bin/zsh", [
-      "-f", selectionProbe, process.cwd(), fakeDeveloperRoot, fakeSDK
-    ], {
-      encoding: "utf8", timeout: 5_000,
-      env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
-    });
+    const rejectedPaths = selectPaths();
     assert.equal(rejectedPaths.status, 126, "group-writable runtime metadata must still fail closed");
     assert.equal(rejectedPaths.stdout, "", "a rejected runtime must not publish loader paths");
     assert.match(rejectedPaths.stderr,
-      /not owner-controlled \(developer UID=\d+; runtime UID=\d+; mode=775; links=1; bytes=\d+\)\./u,
+      /not owner-controlled \(developer UID=\d+; runtime UID=\d+; mode=775; links=2; bytes=\d+\)\./u,
       "a rejected runtime must report the exact non-secret metadata needed to diagnose the gate");
+
+    await chmod(join(fakePlatformLibraries, "lib_TestingInterop.dylib"), 0o755);
+    for (let count = 3; count <= 16; count += 1) {
+      await link(join(fakePlatformLibraries, "lib_TestingInterop.dylib"), join(platformProbeRoot, `interop-link-${count}`));
+    }
+    assert.equal((await stat(join(fakePlatformLibraries, "lib_TestingInterop.dylib"))).nlink, 16);
+    const boundedPaths = selectPaths();
+    assert.equal(boundedPaths.status, 0, boundedPaths.stderr);
+    assert.equal(boundedPaths.stdout, selectedPaths.stdout, "the exact link bound must retain the same loader closure");
+
+    await link(join(fakePlatformLibraries, "lib_TestingInterop.dylib"), join(platformProbeRoot, "interop-link-17"));
+    assert.equal((await stat(join(fakePlatformLibraries, "lib_TestingInterop.dylib"))).nlink, 17);
+    const excessLinks = selectPaths();
+    assert.equal(excessLinks.status, 126, "a runtime beyond the reviewed hard-link bound must fail closed");
+    assert.equal(excessLinks.stdout, "", "an over-linked runtime must not publish loader paths");
+    assert.match(excessLinks.stderr, /mode=755; links=17; bytes=\d+/u);
   } finally {
     await rm(platformProbeRoot, { recursive: true, force: true });
   }
@@ -892,7 +911,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
     "OllamaFixtureIsolationTests.mjs": 1,
     "PublicDistributionScriptsTests.mjs": 8,
     "ReleaseEvidenceRetentionTests.mjs": 3,
-    "ReleaseVerificationScriptTests.mjs": 9,
+    "ReleaseVerificationScriptTests.mjs": 8,
     "ReleaseWatchdogTests.mjs": 3,
     "SignalCleanupTrapTests.mjs": 6,
     "SourceBuildInputInventoryTests.mjs": 2,
@@ -932,7 +951,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
       `${name} changed the reviewed literal zsh command topology`);
     auditedZshCommands += fileCommands;
   }
-  assert.equal(auditedZshCommands, 45, "the literal zsh command audit must remain complete");
+  assert.equal(auditedZshCommands, 44, "the literal zsh command audit must remain complete");
 });
 
 test("every production watchdog and privileged shell callsite suppresses ambient startup injection", async () => {

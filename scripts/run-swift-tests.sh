@@ -379,10 +379,14 @@ if [[ -e "$XCODE_PLATFORM_DEVELOPER" || -L "$XCODE_PLATFORM_DEVELOPER" ]]; then
   XCODE_TESTING_INTEROP_MODE="$(/usr/bin/stat -f '%Lp' "$XCODE_TESTING_INTEROP")"
   XCODE_TESTING_INTEROP_LINKS="$(/usr/bin/stat -f '%l' "$XCODE_TESTING_INTEROP")"
   XCODE_TESTING_INTEROP_SIZE="$(/usr/bin/stat -f '%z' "$XCODE_TESTING_INTEROP")"
+  # Reviewed Xcode images hard-link this Apple runtime. Retain the same finite
+  # 16-link developer-tree bound used by toolchain-inventory.mjs.
   [[ ( "$XCODE_TESTING_INTEROP_OWNER" == 0 \
        || "$XCODE_TESTING_INTEROP_OWNER" == "$XCODE_DEVELOPER_OWNER" ) \
      && "$XCODE_TESTING_INTEROP_MODE" == [0-7][0145][0145] \
-     && "$XCODE_TESTING_INTEROP_LINKS" == 1 \
+     && "$XCODE_TESTING_INTEROP_LINKS" == <-> \
+     && "$XCODE_TESTING_INTEROP_LINKS" -ge 1 \
+     && "$XCODE_TESTING_INTEROP_LINKS" -le 16 \
      && "$XCODE_TESTING_INTEROP_SIZE" == <-> \
      && "$XCODE_TESTING_INTEROP_SIZE" -gt 0 ]] || {
     print -u2 "The selected Xcode platform testing runtime is not owner-controlled (developer UID=$XCODE_DEVELOPER_OWNER; runtime UID=$XCODE_TESTING_INTEROP_OWNER; mode=$XCODE_TESTING_INTEROP_MODE; links=$XCODE_TESTING_INTEROP_LINKS; bytes=$XCODE_TESTING_INTEROP_SIZE)."
