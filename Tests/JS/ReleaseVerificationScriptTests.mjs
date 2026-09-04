@@ -329,6 +329,19 @@ print -rl -- "\${required_testing_rpaths[@]}"
       fakePlatformPrivateFrameworks,
       fakePlatformLibraries
     ], "a framework-only Xcode layout must select the complete platform runtime without an optional toolchain dylib");
+
+    await chmod(join(fakePlatformLibraries, "lib_TestingInterop.dylib"), 0o775);
+    const rejectedPaths = spawnSync("/bin/zsh", [
+      "-f", selectionProbe, process.cwd(), fakeDeveloperRoot, fakeSDK
+    ], {
+      encoding: "utf8", timeout: 5_000,
+      env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
+    });
+    assert.equal(rejectedPaths.status, 126, "group-writable runtime metadata must still fail closed");
+    assert.equal(rejectedPaths.stdout, "", "a rejected runtime must not publish loader paths");
+    assert.match(rejectedPaths.stderr,
+      /not owner-controlled \(developer UID=\d+; runtime UID=\d+; mode=775; links=1; bytes=\d+\)\./u,
+      "a rejected runtime must report the exact non-secret metadata needed to diagnose the gate");
   } finally {
     await rm(platformProbeRoot, { recursive: true, force: true });
   }
@@ -879,7 +892,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
     "OllamaFixtureIsolationTests.mjs": 1,
     "PublicDistributionScriptsTests.mjs": 8,
     "ReleaseEvidenceRetentionTests.mjs": 3,
-    "ReleaseVerificationScriptTests.mjs": 8,
+    "ReleaseVerificationScriptTests.mjs": 9,
     "ReleaseWatchdogTests.mjs": 3,
     "SignalCleanupTrapTests.mjs": 6,
     "SourceBuildInputInventoryTests.mjs": 2,
@@ -919,7 +932,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
       `${name} changed the reviewed literal zsh command topology`);
     auditedZshCommands += fileCommands;
   }
-  assert.equal(auditedZshCommands, 44, "the literal zsh command audit must remain complete");
+  assert.equal(auditedZshCommands, 45, "the literal zsh command audit must remain complete");
 });
 
 test("every production watchdog and privileged shell callsite suppresses ambient startup injection", async () => {

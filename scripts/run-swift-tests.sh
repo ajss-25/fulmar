@@ -385,7 +385,7 @@ if [[ -e "$XCODE_PLATFORM_DEVELOPER" || -L "$XCODE_PLATFORM_DEVELOPER" ]]; then
      && "$XCODE_TESTING_INTEROP_LINKS" == 1 \
      && "$XCODE_TESTING_INTEROP_SIZE" == <-> \
      && "$XCODE_TESTING_INTEROP_SIZE" -gt 0 ]] || {
-    print -u2 "The selected Xcode platform testing runtime is not owner-controlled."
+    print -u2 "The selected Xcode platform testing runtime is not owner-controlled (developer UID=$XCODE_DEVELOPER_OWNER; runtime UID=$XCODE_TESTING_INTEROP_OWNER; mode=$XCODE_TESTING_INTEROP_MODE; links=$XCODE_TESTING_INTEROP_LINKS; bytes=$XCODE_TESTING_INTEROP_SIZE)."
     exit 126
   }
   /usr/bin/codesign --verify --strict --test-requirement '=anchor apple' \

@@ -140,6 +140,13 @@ jobs:
             scripts/hosted-macos-toolchain-pin.mjs verify \
             macos-26 Config/HostedMacOSToolchainPin.json
 
+      - name: Record Swift Testing runtime metadata for qualification diagnostics
+        run: |
+          developer_dir="$(/usr/bin/xcode-select -p)"
+          /usr/bin/stat -f 'Swift Testing metadata: %N uid=%u mode=%Lp links=%l bytes=%z' \
+            "$developer_dir" \
+            "$developer_dir/Platforms/MacOSX.platform/Developer/usr/lib/lib_TestingInterop.dylib"
+
       - name: Verify source contracts and runtime inventory
         run: |
           make source-contract-test
