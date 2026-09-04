@@ -7,8 +7,10 @@ import {
   readSync,
   realpathSync
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { lstat, open, realpath } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
 const identityFields = Object.freeze([
@@ -19,6 +21,7 @@ const identityFields = Object.freeze([
 // owner, group, and mode while separately validating nlink remains positive.
 const stableDirectoryFields = Object.freeze(["dev", "ino", "mode", "uid", "gid"]);
 const maximumSafeFileSize = BigInt(Number.MAX_SAFE_INTEGER);
+const publicationWorker = fileURLToPath(new URL("./attested-publication-worker.mjs", import.meta.url));
 
 function sameIdentity(left, right) {
   return identityFields.every((field) => left[field] === right[field]);
@@ -255,6 +258,105 @@ export function withAttestedDirectorySync(path, options = {}, operation = () => 
   }
 }
 
+function safePublicationLeaf(value, label) {
+  if (typeof value !== "string" || value.length < 1 || value.length > 128
+      || value === "." || value === ".." || basename(value) !== value
+      || value.includes("/") || value.includes("\\")
+      || /[\u0000-\u001f\u007f]/u.test(value)
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value)) {
+    throw new TypeError(`${label} must be one bounded safe leaf name`);
+  }
+  return value;
+}
+
+/**
+ * Publish one bounded regular file without reopening a checked directory
+ * pathname for a child operation. The transaction runs in one synchronous
+ * isolated Node worker whose cwd is the reviewed directory vnode. The parent's
+ * retained directory descriptor is inherited as fd 3 and must match the worker
+ * cwd before any leaf-relative side effect is attempted.
+ *
+ * `publishMode: "create"` uses descriptor-level O_EXCL and refuses an existing
+ * destination. `"upsert"` opens an existing safe single-link file without
+ * truncation, binds its descriptor to the reviewed leaf, and only then rewrites
+ * that descriptor. The parent process never changes its cwd, and neither mode
+ * performs pathname-based cleanup.
+ */
+export function publishAttestedRegularFileSync(
+  directoryPath,
+  destinationLeafArgument,
+  payloadArgument,
+  options = {}
+) {
+  const destinationLeaf = safePublicationLeaf(destinationLeafArgument, "publication destination");
+  const payload = Buffer.isBuffer(payloadArgument) ? payloadArgument : Buffer.from(payloadArgument);
+  const maximumBytes = Number(boundedInteger(options.maximumBytes ?? 64 * 1024 * 1024, "maximumBytes"));
+  if (payload.length < 1 || payload.length > maximumBytes) {
+    throw new Error("publication payload exceeds its permitted byte bounds");
+  }
+  const publishMode = options.publishMode ?? "create";
+  if (publishMode !== "create" && publishMode !== "upsert") {
+    throw new TypeError("publishMode must be create or upsert");
+  }
+  const fileMode = options.fileMode ?? 0o644;
+  if (!Number.isSafeInteger(fileMode) || fileMode < 0 || fileMode > 0o777
+      || (fileMode & 0o022) !== 0) {
+    throw new TypeError("fileMode must be one owner-controlled POSIX mode");
+  }
+
+  const canonical = resolve(directoryPath);
+  return withAttestedDirectorySync(canonical, {
+    label: options.label ?? "attested publication directory",
+    allowContentMutation: true,
+    requireCurrentUser: options.requireCurrentUser !== false,
+    acceptedOwnerUIDs: options.acceptedOwnerUIDs,
+    requirePrivateMode: options.requirePrivateMode === true,
+    requireOwnerControlledMode: options.requireOwnerControlledMode !== false,
+    requireCanonicalPath: options.requireCanonicalPath !== false
+  }, ({ descriptor, metadata }) => {
+    const specification = Object.freeze({
+      schemaVersion: 1,
+      canonicalDirectory: canonical,
+      destinationLeaf,
+      publishMode,
+      fileMode,
+      maximumBytes,
+      label: options.label ?? "attested publication artifact",
+      directoryIdentity: Object.fromEntries(
+        stableDirectoryFields.map((field) => [field, metadata[field].toString()])
+      )
+    });
+    const encoded = Buffer.from(JSON.stringify(specification), "utf8").toString("base64url");
+    const result = spawnSync(process.execPath, [publicationWorker, encoded], {
+      cwd: canonical,
+      env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LANG: "C", LC_ALL: "C" },
+      input: payload,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+      timeout: 30_000,
+      stdio: ["pipe", "pipe", "pipe", descriptor]
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0 || result.signal !== null) {
+      const detail = (result.stderr ?? "").trim().slice(0, 4_096);
+      throw new Error(detail || `attested publication worker failed with status ${result.status}`);
+    }
+    let evidence;
+    try {
+      evidence = JSON.parse(result.stdout);
+    } catch (error) {
+      throw new Error("attested publication worker returned malformed evidence", { cause: error });
+    }
+    if (!evidence || Object.getPrototypeOf(evidence) !== Object.prototype
+        || JSON.stringify(Object.keys(evidence).sort())
+          !== JSON.stringify(["bytes", "destinationLeaf", "schemaVersion"].sort())
+        || evidence.schemaVersion !== 1 || evidence.bytes !== payload.length
+        || evidence.destinationLeaf !== destinationLeaf) {
+      throw new Error("attested publication worker returned mismatched evidence");
+    }
+    return Object.freeze({ bytes: payload.length, destinationLeaf, directory: canonical });
+  });
+}
 export async function withAttestedDirectories(paths, options = {}, operation = async () => undefined) {
   const directories = [...new Set(paths.map((path) => resolve(path)))].sort();
   async function visit(index) {

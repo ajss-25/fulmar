@@ -1,26 +1,125 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
-  closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmdirSync, symlinkSync, truncateSync, writeFileSync, writeSync
+  closeSync, constants, existsSync, fstatSync, fsyncSync, mkdirSync, openSync,
+  readFileSync, readdirSync, renameSync, rmdirSync, symlinkSync, truncateSync, writeFileSync, writeSync
 } from "node:fs";
 import {
   chmod, link, mkdir, mkdtemp, open, realpath, rename, rm, rmdir, symlink, truncate, utimes, writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   readAttestedRegularFile,
   readAttestedRegularFileSync,
+  publishAttestedRegularFileSync,
   sha256AttestedRegularFile,
   withAttestedDirectory,
   withAttestedDirectorySync
 } from "../../scripts/attested-regular-file.mjs";
+import { publishFromAnchoredWorkingDirectorySync } from "../../scripts/attested-publication-worker.mjs";
 
 const currentUID = process.getuid();
 
 async function fixtureRoot(prefix) {
   return realpath(await mkdtemp(join(tmpdir(), prefix)));
 }
+
+function probeRead(path) {
+  try { return readFileSync(path, "utf8"); } catch (error) { if (error?.code === "ENOENT") return null; throw error; }
+}
+
+function probeErrorText(error) {
+  if (!(error instanceof Error)) return String(error);
+  const nested = error instanceof AggregateError ? error.errors.map(probeErrorText) : [];
+  return [error.message, ...nested].join(" | ");
+}
+
+function runPublicationWorkerProbe() {
+  if (process.argv[2] !== "--publication-worker-probe") return false;
+  const phase = process.argv[3];
+  const directory = resolve(process.argv[4]);
+  const publishMode = process.argv[5];
+  const displaced = `${directory}.displaced`;
+  const destinationLeaf = "result";
+  const descriptor = openSync(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  const metadata = fstatSync(descriptor, { bigint: true });
+  const specification = {
+    schemaVersion: 1,
+    canonicalDirectory: directory,
+    destinationLeaf,
+    publishMode,
+    fileMode: 0o600,
+    maximumBytes: 64,
+    label: "publication probe",
+    directoryIdentity: Object.fromEntries(
+      ["dev", "ino", "mode", "uid", "gid"].map((field) => [field, metadata[field].toString()])
+    )
+  };
+  const swapDirectory = () => {
+    renameSync(directory, displaced);
+    mkdirSync(directory, { mode: 0o700 });
+  };
+  const hooks = {};
+  if (phase === "after-anchor-directory-swap") hooks.afterAnchor = swapDirectory;
+  if (phase === "after-write-directory-swap") hooks.afterWrite = swapDirectory;
+  if (phase === "after-commit-directory-swap") hooks.afterCommit = swapDirectory;
+  if (phase === "after-commit-aba") {
+    hooks.afterCommit = () => {
+      swapDirectory();
+      rmdirSync(directory);
+      renameSync(displaced, directory);
+    };
+  }
+  if (phase === "destination-substitute") {
+    hooks.afterWrite = ({ destinationLeaf: leaf }) => {
+      renameSync(leaf, "owned-aside");
+      writeFileSync(leaf, "attacker", { mode: 0o600 });
+    };
+  }
+  if (phase === "destination-same-inode-mutate") {
+    hooks.afterWrite = ({ destinationLeaf: leaf }) => {
+      const writer = openSync(leaf, "r+");
+      try { writeSync(writer, Buffer.from("attacker"), 0, 8, 0); fsyncSync(writer); } finally { closeSync(writer); }
+    };
+  }
+  if (phase === "committed-same-inode-mutate") {
+    hooks.afterCommit = ({ destinationLeaf: leaf }) => {
+      const writer = openSync(leaf, "r+");
+      try { writeSync(writer, Buffer.from("attacker"), 0, 8, 0); fsyncSync(writer); } finally { closeSync(writer); }
+    };
+  }
+  process.chdir(directory);
+  if (phase === "existing-destination" || phase === "upsert-existing") {
+    writeFileSync(destinationLeaf, "original", { mode: 0o600 });
+  }
+  let error = null;
+  try {
+    publishFromAnchoredWorkingDirectorySync(specification, Buffer.from("reviewed"), {
+      directoryDescriptor: descriptor,
+      hooks
+    });
+  } catch (caught) {
+    error = probeErrorText(caught);
+  } finally {
+    closeSync(descriptor);
+  }
+  const result = {
+    error,
+    canonicalEntries: existsSync(directory) ? readdirSync(directory).sort() : null,
+    displacedEntries: existsSync(displaced) ? readdirSync(displaced).sort() : null,
+    canonicalDestination: probeRead(join(directory, destinationLeaf)),
+    displacedDestination: probeRead(join(displaced, destinationLeaf)),
+    canonicalAside: probeRead(join(directory, "owned-aside")),
+    displacedAside: probeRead(join(displaced, "owned-aside"))
+  };
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+  process.exit(0);
+}
+
+runPublicationWorkerProbe();
 
 test("owner-controlled mode accepts 0644 and rejects 0664/0666 for files and directories", async () => {
   const root = await fixtureRoot("fulmar-attested-owner-mode.");
@@ -256,27 +355,103 @@ test("file readers reject atomic replacement and rename-away-and-restore ABA sub
   }
 });
 
-test("directory guards publish an expected child through the retained descriptor only with content mutation enabled", async () => {
+test("directory guards and isolated publication bind every child side effect to the reviewed directory vnode", async () => {
   const root = await fixtureRoot("fulmar-attested-publish.");
   try {
     const directory = join(root, "output");
     await mkdir(directory, { mode: 0o700 });
-    await withAttestedDirectory(directory, {
-      allowContentMutation: true, requireOwnerControlledMode: true, requireCanonicalPath: true
-    }, async ({ handle }) => {
-      await writeFile(join(directory, ".published.tmp"), "reviewed", { mode: 0o600 });
-      await rename(join(directory, ".published.tmp"), join(directory, "published"));
-      await handle.sync();
+    const originalWorkingDirectory = process.cwd();
+    publishAttestedRegularFileSync(directory, "published", "reviewed", {
+      publishMode: "upsert", fileMode: 0o600, maximumBytes: 64
     });
-    withAttestedDirectorySync(directory, {
-      allowContentMutation: true, requireOwnerControlledMode: true, requireCanonicalPath: true
-    }, ({ descriptor }) => {
-      writeFileSync(join(directory, ".second.tmp"), "reviewed", { mode: 0o600 });
-      renameSync(join(directory, ".second.tmp"), join(directory, "second"));
-      fsyncSync(descriptor);
+    publishAttestedRegularFileSync(directory, "second", "reviewed", {
+      publishMode: "create", fileMode: 0o600, maximumBytes: 64
     });
-    assert.equal((await readAttestedRegularFile(join(directory, "published"), { maximumBytes: 64 })).bytes.toString("utf8"), "reviewed");
-    assert.equal(readAttestedRegularFileSync(join(directory, "second"), { maximumBytes: 64 }).bytes.toString("utf8"), "reviewed");
+    assert.equal(process.cwd(), originalWorkingDirectory);
+    assert.equal(
+      (await readAttestedRegularFile(join(directory, "published"), { maximumBytes: 64 })).bytes.toString("utf8"),
+      "reviewed"
+    );
+    assert.equal(
+      readAttestedRegularFileSync(join(directory, "second"), { maximumBytes: 64 }).bytes.toString("utf8"),
+      "reviewed"
+    );
+    assert.throws(
+      () => publishAttestedRegularFileSync(directory, "second", "replacement", {
+        publishMode: "create", maximumBytes: 64
+      }),
+      /destination already exists/u
+    );
+    assert.equal(
+      readAttestedRegularFileSync(join(directory, "second"), { maximumBytes: 64 }).bytes.toString("utf8"),
+      "reviewed"
+    );
+    assert.throws(
+      () => publishAttestedRegularFileSync(directory, "../escape", "blocked", { maximumBytes: 64 }),
+      /safe leaf name/u
+    );
+
+    const testFile = fileURLToPath(import.meta.url);
+    const runProbe = async (phase, publishMode = "create") => {
+      const probeDirectory = join(root, `probe-${phase}`);
+      await mkdir(probeDirectory, { mode: 0o700 });
+      const child = spawnSync(process.execPath, [
+        testFile, "--publication-worker-probe", phase, probeDirectory, publishMode
+      ], {
+        cwd: originalWorkingDirectory,
+        env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LANG: "C", LC_ALL: "C" },
+        encoding: "utf8",
+        timeout: 10_000,
+        maxBuffer: 1024 * 1024
+      });
+      assert.equal(child.status, 0, child.stderr);
+      assert.equal(child.signal, null);
+      assert.equal(child.stderr, "");
+      assert.equal(process.cwd(), originalWorkingDirectory);
+      return JSON.parse(child.stdout);
+    };
+
+    let probe = await runProbe("after-anchor-directory-swap");
+    assert.match(probe.error, /exact reviewed publication directory/u);
+    assert.deepEqual(probe.canonicalEntries, []);
+    assert.deepEqual(probe.displacedEntries, []);
+
+    probe = await runProbe("after-write-directory-swap");
+    assert.match(probe.error, /exact reviewed publication directory/u);
+    assert.deepEqual(probe.canonicalEntries, []);
+    assert.equal(probe.displacedDestination, "reviewed");
+
+    probe = await runProbe("after-commit-directory-swap");
+    assert.match(probe.error, /exact reviewed publication directory/u);
+    assert.deepEqual(probe.canonicalEntries, []);
+    assert.equal(probe.displacedDestination, "reviewed");
+
+    probe = await runProbe("after-commit-aba");
+    assert.equal(probe.error, null);
+    assert.equal(probe.canonicalDestination, "reviewed");
+    assert.equal(probe.displacedEntries, null);
+
+    probe = await runProbe("destination-substitute");
+    assert.match(probe.error, /exact publication file/u);
+    assert.equal(probe.canonicalDestination, "attacker");
+    assert.equal(probe.canonicalAside, "reviewed");
+
+    probe = await runProbe("destination-same-inode-mutate");
+    assert.match(probe.error, /unexpected published bytes/u);
+    assert.equal(probe.canonicalDestination, "attacker");
+
+    probe = await runProbe("committed-same-inode-mutate");
+    assert.match(probe.error, /unexpected published bytes/u);
+    assert.equal(probe.canonicalDestination, "attacker");
+
+    probe = await runProbe("existing-destination", "create");
+    assert.match(probe.error, /destination already exists/u);
+    assert.equal(probe.canonicalDestination, "original");
+
+    probe = await runProbe("upsert-existing", "upsert");
+    assert.equal(probe.error, null);
+    assert.equal(probe.canonicalDestination, "reviewed");
+    assert.equal(process.cwd(), originalWorkingDirectory);
 
     assert.throws(
       () => withAttestedDirectorySync(directory, {}, () => {
@@ -288,7 +463,6 @@ test("directory guards publish an expected child through the retained descriptor
     await rm(root, { recursive: true, force: true });
   }
 });
-
 test("synchronous directory guard rejects symbolic, replaced, swapped and ABA directories", async () => {
   const root = await fixtureRoot("fulmar-attested-sync-directory.");
   try {

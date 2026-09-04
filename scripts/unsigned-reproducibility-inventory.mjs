@@ -7,15 +7,13 @@ import {
   open,
   readdir,
   readlink,
-  realpath,
-  rename,
-  rm
+  realpath
 } from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { TextDecoder } from "node:util";
-import { readAttestedRegularFile, withAttestedDirectory } from "./attested-regular-file.mjs";
+import { publishAttestedRegularFileSync, readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 export const NATIVE_PRODUCTS = Object.freeze([
   Object.freeze({
@@ -477,45 +475,26 @@ async function writeCanonical(destinationArgument, value) {
   if (payload.length > TREE_LIMITS.maximumInventoryBytes) {
     fail("reproducibility evidence exceeds its byte limit");
   }
-  const temporary = path.join(parent, `.${path.basename(destination)}.${process.pid}.${randomUUID()}.tmp`);
-  // The complete create/write/sync/rename sequence runs inside one already-open,
-  // no-follow, canonical, owner-controlled directory descriptor, and that same
-  // descriptor performs the final directory fsync; no checked path is reopened.
-  let publishing = false;
+  // The isolated synchronous worker creates the evidence through one retained,
+  // no-follow O_EXCL descriptor inside the already-attested directory vnode.
   try {
-    await withAttestedDirectory(parent, {
+    publishAttestedRegularFileSync(parent, path.basename(destination), payload, {
       label: "reproducibility evidence directory",
-      allowContentMutation: true,
+      publishMode: "create",
+      fileMode: 0o600,
+      maximumBytes: TREE_LIMITS.maximumInventoryBytes,
       requireCurrentUser: true,
       requireOwnerControlledMode: true,
       requireCanonicalPath: true
-    }, async ({ handle: directory }) => {
-      publishing = true;
-      let handle;
-      try {
-        // O_EXCL makes the descriptor creation itself the non-racy existence check.
-        handle = await open(
-          temporary,
-          fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
-          0o600
-        );
-        await handle.writeFile(payload);
-        await handle.sync();
-        await handle.close();
-        handle = undefined;
-        await rename(temporary, destination);
-        await directory.sync();
-      } finally {
-        await handle?.close().catch(() => {});
-        await rm(temporary, { force: true }).catch(() => {});
-      }
     });
   } catch (error) {
-    if (publishing) throw error;
     if (/not owned by the current user|group- or world-writable/u.test(error?.message ?? "")) {
       fail("reproducibility evidence directory is not owner-controlled");
     }
-    fail("the reproducibility evidence directory is not a canonical real directory");
+    if (/canonical|symbolic|ELOOP|ENOTDIR|not one directory/iu.test(error?.message ?? "")) {
+      fail("the reproducibility evidence directory is not a canonical real directory");
+    }
+    throw error;
   }
 }
 

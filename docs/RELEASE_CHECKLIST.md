@@ -328,10 +328,11 @@ No unchecked provider item may be summarized as passed.
   contexts, and immutable `v*` tags are configured.
 - [ ] After the exact candidate commit exists, run Gitleaks and TruffleHog across every
   reachable branch/tag and retain both reports plus the manual index/history review.
-- [ ] Review the hosted toolchain discovery proposal into an active source pin, bind
-  the expected GitHub App/repository identity, and pass both hosted workflows on their
-  real GitHub runners, including all four required `Verify source` job contexts. A
-  configured required check is not a passing check.
+- [x] The reviewed hosted toolchain identity is an active source pin and the expected
+  GitHub App/repository identity is bound by source and repository controls.
+- [ ] Pass both hosted workflows on their real GitHub runners for the exact candidate,
+  including all four required `Verify source` job contexts and the separate GitHub
+  CodeQL app check. A configured required check is not a passing check.
 
 ## Public binary distribution gates
 

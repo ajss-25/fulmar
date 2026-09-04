@@ -142,10 +142,11 @@ evidence transport.
    Artifact IDs, service digests, file digests, source revision, and release-manifest
    identity are checked by the independent consumer.
 
-The source implementation has focused contract coverage. The first real GitHub-hosted
-run, active hosted-toolchain pin, app-ID/source-revision binding, final all-ref secret
-scan, and retained hosted evidence are still pending and must not be described as
-passed.
+The source implementation includes an active reviewed hosted-toolchain pin and focused
+contract coverage. A public-source decision must still retain a real GitHub-hosted run
+for the exact candidate, app-ID/source-revision binding, a final all-ref secret scan,
+and the resulting hosted evidence; tracked source alone must never be described as that
+external evidence.
 
 The weekly schedule catches runner, registry-audit, runtime-bootstrap, toolchain, and
 rule-endpoint drift. The production dependency audit, Python/wheel installation, and
@@ -158,9 +159,9 @@ The public repository has private vulnerability reporting, secret scanning and p
 protection, Dependabot alerts and automated security updates, read-only default
 workflow permissions, SHA-pinned GitHub-owned Actions only, protected `main` with the
 four job contexts above required, and immutable `v*` tags. Branch rules do not make an
-unrun workflow green. The first real hosted run, final app-ID/revision check, final-
-history rescan, collaborator/app/webhook review, and retained settings evidence remain
-release operations rather than source-code assertions.
+unrun workflow green. The exact-candidate hosted run, final app-ID/revision check,
+final-history rescan, collaborator/app/webhook review, and retained settings evidence
+remain release operations rather than source-code assertions.
 
 ## Gates that cannot move to a standard hosted Mac
 

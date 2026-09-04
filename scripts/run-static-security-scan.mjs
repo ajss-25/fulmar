@@ -3,22 +3,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  closeSync,
-  constants,
   existsSync,
-  fchmodSync,
-  fsyncSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
   readFileSync,
   readdirSync,
   realpathSync,
-  renameSync,
-  rmSync,
-  unlinkSync,
-  writeSync
+  rmSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -27,7 +19,10 @@ import {
   loadPinnedRuleManifest,
   materializePinnedSemgrepRules
 } from "./pinned-semgrep-rules.mjs";
-import { readAttestedRegularFileSync, withAttestedDirectorySync } from "./attested-regular-file.mjs";
+import {
+  publishAttestedRegularFileSync,
+  readAttestedRegularFileSync
+} from "./attested-regular-file.mjs";
 
 const expectedNodeVersion = "v22.23.1";
 const maximumReportBytes = 64 * 1_024 * 1_024;
@@ -478,7 +473,9 @@ export function removeStaleSummary(summaryPath) {
       || details.uid !== effectiveUID || (details.mode & 0o022n) !== 0n) {
     failure("canonical static-security summary is unsafe");
   }
-  unlinkSync(summaryPath);
+  // Do not unlink after a pathname identity check: no portable Node API can make
+  // that check and deletion one operation. The publication worker safely upserts
+  // this admitted descriptor-bound file after the scan succeeds.
 }
 
 export function writeCanonicalSummary(projectRoot, summary) {
@@ -489,42 +486,25 @@ export function writeCanonicalSummary(projectRoot, summary) {
   if (payload.length < 2 || payload.length > maximumSummaryBytes) {
     failure("canonical static-security summary exceeds its byte limit");
   }
-  const temporary = join(directory, `.static-security-summary.${process.pid}.tmp`);
-  // The whole create/write/sync/rename sequence runs inside one already-open,
-  // no-follow, owner-controlled directory descriptor; that same descriptor
-  // performs the final directory fsync, so no checked path is reopened.
-  let publishing = false;
+  // The isolated synchronous worker binds an existing safe summary descriptor
+  // before rewriting it, or creates the destination with O_EXCL. It never
+  // performs pathname-based cleanup.
   try {
-    withAttestedDirectorySync(directory, {
+    publishAttestedRegularFileSync(directory, basename(destination), payload, {
       label: "canonical static-security summary directory",
-      allowContentMutation: true,
+      publishMode: "upsert",
+      fileMode: 0o644,
+      maximumBytes: maximumSummaryBytes,
       requireCurrentUser: true,
-      requireOwnerControlledMode: true
-    }, ({ descriptor: directoryDescriptor }) => {
-      publishing = true;
-      // O_EXCL makes the descriptor creation itself the non-racy existence check.
-      const descriptor = openSync(
-        temporary,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
-        0o600
-      );
-      try {
-        let offset = 0;
-        while (offset < payload.length) offset += writeSync(descriptor, payload, offset);
-        fsyncSync(descriptor);
-        fchmodSync(descriptor, 0o644);
-      } finally {
-        closeSync(descriptor);
-      }
-      renameSync(temporary, destination);
-      fsyncSync(directoryDescriptor);
+      requireOwnerControlledMode: true,
+      requireCanonicalPath: false
     });
   } catch (error) {
-    if (publishing) {
-      rmSync(temporary, { force: true });
-      throw error;
+    if (/not owned by the current user|group- or world-writable|canonical|symbolic|ELOOP|ENOTDIR|not one directory/iu
+      .test(error?.message ?? "")) {
+      failure(`canonical static-security summary directory is unsafe: ${error?.message ?? error}`);
     }
-    failure(`canonical static-security summary directory is unsafe: ${error?.message ?? error}`);
+    throw error;
   }
   return { bytes: payload.length, sha256: sha256(payload), path: "build/static-security-summary.json" };
 }

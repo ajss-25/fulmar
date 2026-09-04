@@ -26,12 +26,16 @@ Anthropic, Ollama, Alibaba or the Qwen project.
 - Public-preview documentation: README front matter, `docs/SUPPORT_MATRIX.md`,
   `docs/TROUBLESHOOTING.md`, `docs/PREVIEW_BINARY_GATEKEEPER.md`,
   `docs/BUG_REPORT_CHECKLIST.md`, these notes, and consistent unofficial-status wording.
+- Release-pipeline hardening: pin-bound hosted-Xcode admission, descriptor-attested
+  readers, and vnode-anchored synchronous publication for retained security,
+  toolchain and reproducibility evidence.
 
 ## Automated qualification required for this exact source
 
-The public source commit is releasable only after these exact local gates and all four
-required GitHub-hosted checks pass. Logs and hashes are retained outside the tracked
-source tree; this document does not pre-claim an unrun result.
+The public source commit is releasable only after these exact local gates, all four
+required workflow jobs, and the separate GitHub CodeQL app check pass. Logs and hashes
+are retained outside the tracked source tree; this document does not pre-claim an
+unrun result.
 
 | Gate | Result |
 | --- | --- |
@@ -42,7 +46,7 @@ source tree; this document does not pre-claim an unrun result.
 | Static security scan | must report zero unreviewed findings using the content-pinned Semgrep 1.135.0 closure and pinned rules |
 | JavaScript gate | must complete 666 exact tests: 619 passed, 47 reviewed intentional skips, 0 failures |
 | Swift gate | must complete 1,445/1,445 isolated functions, DeviceAttestationAuthorityTests 10/10, warning-clean, with deployment target 15.0 verified |
-| GitHub-hosted source checks | `static-analysis`, `codeql-javascript`, `macos`, and `minimum-macos-candidate` must all pass on the exact source commit |
+| GitHub-hosted source checks | Workflow jobs `static-analysis`, `codeql-javascript`, `macos`, and `minimum-macos-candidate`, plus the separate `CodeQL` app check, must all pass on the exact source commit |
 
 Automated results cover the exercised cases; they do not prove the absence of defects.
 The exact build-156 candidate has **not** yet had its own candidate-bound physical

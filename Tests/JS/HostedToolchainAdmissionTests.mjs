@@ -355,6 +355,16 @@ test("release scripts bind every toolchain capture to the literal tracked pin wi
   const build = await readFile(join(process.cwd(), "scripts", "build-app.sh"), "utf8");
   const inventoryTool = await readFile(join(process.cwd(), "scripts", "toolchain-inventory.mjs"), "utf8");
   const pinTool = await readFile(join(process.cwd(), "scripts", "hosted-macos-toolchain-pin.mjs"), "utf8");
+  const staticTool = await readFile(join(process.cwd(), "scripts", "run-static-security-scan.mjs"), "utf8");
+  const reproducibilityTool = await readFile(
+    join(process.cwd(), "scripts", "unsigned-reproducibility-inventory.mjs"),
+    "utf8"
+  );
+  const attestedFileTool = await readFile(join(process.cwd(), "scripts", "attested-regular-file.mjs"), "utf8");
+  const publicationWorker = await readFile(
+    join(process.cwd(), "scripts", "attested-publication-worker.mjs"),
+    "utf8"
+  );
   const workflow = await readFile(join(process.cwd(), ".github", "workflows", "verify-source.yml"), "utf8");
   assert.match(build, /^HOSTED_TOOLCHAIN_PIN="\$PROJECT_DIR\/Config\/HostedMacOSToolchainPin\.json"$/mu);
   assert.equal(build.match(/"\$TOOLCHAIN_TOOL" create "\$TOOLCHAIN_INVENTORY" "\$HOSTED_TOOLCHAIN_PIN"/gu)?.length, 1);
@@ -366,5 +376,23 @@ test("release scripts bind every toolchain capture to the literal tracked pin wi
   assert.match(inventoryTool, /clean release toolchain capture remains root-only/u);
   assert.match(inventoryTool, /resolve\(pinPath\) !== trackedPinPath/u);
   assert.doesNotMatch(pinTool, /createReadStream/u);
+  const publicationBodies = [
+    pinTool.match(/export async function writeHostedMacOSToolchainProposal[\s\S]*?\n\}\n\nasync function main/u)?.[0],
+    staticTool.match(/export function writeCanonicalSummary[\s\S]*?\n\}\n\nasync function main/u)?.[0],
+    reproducibilityTool.match(/async function writeCanonical[\s\S]*?\n\}\n\nasync function readBoundedCapture/u)?.[0]
+  ];
+  assert.equal(publicationBodies.every((body) => typeof body === "string"), true);
+  for (const body of publicationBodies) {
+    assert.match(body, /publishAttestedRegularFileSync/u);
+    assert.doesNotMatch(body.replaceAll(/\/\/.*$/gmu, ""), /\b(?:open|link|rename|unlink|rm)\s*\(/u);
+  }
+  assert.match(attestedFileTool, /spawnSync\(process\.execPath, \[publicationWorker, encoded\]/u);
+  assert.doesNotMatch(attestedFileTool, /process\.chdir/u);
+  assert.match(publicationWorker, /fstatSync\(directoryDescriptor, \{ bigint: true \}\)/u);
+  assert.match(publicationWorker, /lstatSync\("\."/u);
+  assert.match(publicationWorker, /lstatSync\(specification\.canonicalDirectory/u);
+  assert.match(publicationWorker, /constants\.O_CREAT \| constants\.O_EXCL/u);
+  assert.match(publicationWorker, /ftruncateSync\(descriptor, 0\)/u);
+  assert.doesNotMatch(publicationWorker, /\b(?:unlinkSync|renameSync|linkSync)\b/u);
   assert.doesNotMatch(workflow, /\b(?:sudo|chown)\b/u);
 });

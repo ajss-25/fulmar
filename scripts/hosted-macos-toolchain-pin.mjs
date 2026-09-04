@@ -1,7 +1,6 @@
-import { constants } from "node:fs";
 import { execFile } from "node:child_process";
-import { link, open, realpath, unlink } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { realpath } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
@@ -9,7 +8,7 @@ import {
   captureToolchainInventory,
   validateToolchainInventory
 } from "./toolchain-inventory.mjs";
-import { readAttestedRegularFile, withAttestedDirectory } from "./attested-regular-file.mjs";
+import { publishAttestedRegularFileSync, readAttestedRegularFile } from "./attested-regular-file.mjs";
 
 const execFileAsync = promisify(execFile);
 const safePath = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -415,53 +414,30 @@ export async function writeHostedMacOSToolchainProposal(pathArgument, value) {
   safeToken(leaf, /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u, "proposal filename", 128);
   const parent = dirname(destination);
   const payload = canonicalPinJSON(value);
-  const temporary = join(parent, `.${leaf}.${process.pid}.tmp`);
-  // The complete create/write/sync/publish sequence runs inside one already-open,
-  // no-follow, canonical, owner-controlled directory descriptor, which also
-  // performs the final directory fsync; no checked path is reopened. The
-  // destination is published with link(2), whose EEXIST is the non-racy
-  // "must not already exist" check.
-  let publishing = false;
+  // The isolated synchronous publication worker anchors every child operation
+  // to the already-attested directory vnode. O_EXCL supplies the non-racy
+  // "must not already exist" decision.
   try {
-    await withAttestedDirectory(parent, {
+    publishAttestedRegularFileSync(parent, leaf, payload, {
       label: "hosted discovery proposal parent",
-      allowContentMutation: true,
+      publishMode: "create",
+      fileMode: 0o644,
+      maximumBytes: maximumDocumentBytes,
       requireCurrentUser: true,
       requireOwnerControlledMode: true,
       requireCanonicalPath: true
-    }, async ({ handle: directory }) => {
-      publishing = true;
-      let handle;
-      try {
-        // O_EXCL makes the descriptor creation itself the non-racy existence check.
-        handle = await open(
-          temporary,
-          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-          0o600
-        );
-        await handle.writeFile(payload, "utf8");
-        await handle.sync();
-        await handle.chmod(0o644);
-        await handle.close();
-        handle = undefined;
-        try {
-          await link(temporary, destination);
-        } catch (error) {
-          if (error?.code === "EEXIST") throw new Error("hosted discovery proposal destination already exists");
-          throw error;
-        }
-        await directory.sync();
-      } finally {
-        await handle?.close().catch(() => {});
-        await unlink(temporary).catch(() => {});
-      }
     });
   } catch (error) {
-    if (publishing) throw error;
+    if (/attested publication destination already exists/u.test(error?.message ?? "")) {
+      throw new Error("hosted discovery proposal destination already exists", { cause: error });
+    }
     if (/not owned by the current user|group- or world-writable/u.test(error?.message ?? "")) {
       throw new Error("hosted discovery proposal parent is not owner-controlled", { cause: error });
     }
-    throw new Error("hosted discovery proposal parent is linked or non-canonical", { cause: error });
+    if (/canonical|symbolic|ELOOP|ENOTDIR|not one directory/iu.test(error?.message ?? "")) {
+      throw new Error("hosted discovery proposal parent is linked or non-canonical", { cause: error });
+    }
+    throw error;
   }
 }
 

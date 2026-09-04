@@ -108,9 +108,9 @@ Swift gates must execute after this source freeze. Any subsequent source, test,
 dependency, build-policy, licence, or tracked-document change invalidates the freeze
 and requires new topology plus full gates.
 
-This is an operational working-tree freeze only. A commit/tree identity, tracked-index
-proof, complete-history scans, and hosted CI remain pending until these exact intended
-files are imported into the clean public release branch.
+The public release branch supplies the eventual commit/tree identity. Each release
+decision must separately retain its exact tracked-index proof, complete-history scans,
+and hosted-CI evidence; this tracked handoff does not pre-claim those external results.
 
 ## DSH update and portability policy
 
