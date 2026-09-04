@@ -460,29 +460,10 @@ function runSemgrep({ semgrep, environment, projectRoot, reportPath, configPath,
   return readBoundedJSON(reportPath, `Semgrep report ${reportPath}`);
 }
 
-export function removeStaleSummary(summaryPath) {
-  let details;
-  try {
-    details = lstatSync(summaryPath, { bigint: true });
-  } catch (error) {
-    if (error?.code === "ENOENT") return;
-    throw error;
-  }
-  const effectiveUID = typeof process.geteuid === "function" ? BigInt(process.geteuid()) : details.uid;
-  if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1n
-      || details.uid !== effectiveUID || (details.mode & 0o022n) !== 0n) {
-    failure("canonical static-security summary is unsafe");
-  }
-  // Do not unlink after a pathname identity check: no portable Node API can make
-  // that check and deletion one operation. The publication worker safely upserts
-  // this admitted descriptor-bound file after the scan succeeds.
-}
-
-export function writeCanonicalSummary(projectRoot, summary) {
+function publishCanonicalSummaryBytes(projectRoot, payload) {
   const directory = join(projectRoot, "build");
   if (!existsSync(directory)) mkdirSync(directory, { mode: 0o700 });
   const destination = join(directory, "static-security-summary.json");
-  const payload = Buffer.from(`${JSON.stringify(summary, null, 2)}\n`, "utf8");
   if (payload.length < 2 || payload.length > maximumSummaryBytes) {
     failure("canonical static-security summary exceeds its byte limit");
   }
@@ -509,6 +490,25 @@ export function writeCanonicalSummary(projectRoot, summary) {
   return { bytes: payload.length, sha256: sha256(payload), path: "build/static-security-summary.json" };
 }
 
+export function invalidateCanonicalSummary(projectRoot) {
+  // A scan is not allowed to begin while a prior passing receipt remains
+  // consumable. Descriptor-bound upsert durably replaces it with verifier-
+  // rejected evidence. A crash or later scan failure therefore leaves failed
+  // or malformed bytes, never the earlier green result.
+  const payload = Buffer.from(
+    `${JSON.stringify({ schemaVersion: 1, passed: false, state: "scan-incomplete" })}\n`,
+    "utf8"
+  );
+  return publishCanonicalSummaryBytes(projectRoot, payload);
+}
+
+export function writeCanonicalSummary(projectRoot, summary) {
+  return publishCanonicalSummaryBytes(
+    projectRoot,
+    Buffer.from(`${JSON.stringify(summary, null, 2)}\n`, "utf8")
+  );
+}
+
 async function main() {
   if (process.version !== expectedNodeVersion) {
     failure(`expected Node ${expectedNodeVersion}, found ${process.version}`);
@@ -526,8 +526,7 @@ async function main() {
   if (typeof semgrep !== "string" || !semgrep.startsWith("/") || !existsSync(semgrep)) {
     failure("the clean launcher did not provide Semgrep");
   }
-  const summaryPath = join(projectRoot, "build", "static-security-summary.json");
-  removeStaleSummary(summaryPath);
+  invalidateCanonicalSummary(projectRoot);
   const temporary = mkdtempSync(join(tmpdir(), "fulmar-semgrep-"));
   const ruleManifestPath = join(projectRoot, "Config", "SemgrepRules.json");
   const semgrepEnvironment = {

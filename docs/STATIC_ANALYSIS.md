@@ -98,13 +98,17 @@ permanent baseline: the allowlist is consumed in full on every run, so a missing
 is stale evidence and an additional warning is unreviewed evidence; either condition
 fails the scan.
 
-Before scanning, the runner removes only a safe owner-controlled prior summary. After
-all three reports, input-stability checks, warning checks, and finding checks pass, it
-atomically writes `build/static-security-summary.json` (maximum 512 KiB). That canonical
-summary binds every scanned text path/size/SHA-256, exact exclusions, each report hash,
-reviewed warning/finding identities, engine version, and canonical/raw rule-material
-digests. It is fsynced and its final SHA-256 and byte count are printed; an unsafe
-directory/file topology or oversized summary fails closed.
+Before scanning, the runner synchronously replaces any safe owner-controlled prior
+summary with a durable verifier-rejected `scan-incomplete` marker. The scan cannot start
+unless that descriptor-bound invalidation succeeds. After all three reports,
+input-stability checks, warning checks, and finding checks pass, the same no-follow,
+single-link descriptor path rewrites and fsyncs `build/static-security-summary.json` (maximum 512 KiB).
+Every intermediate, interrupted, or failed state is rejected rather
+than preserving an earlier pass. The final canonical summary binds every scanned text path/size/SHA-256,
+exact exclusions, each report hash, reviewed warning/finding
+identities, engine version, and canonical/raw rule-material digests; its final SHA-256
+and byte count are printed. An unsafe directory/file topology or oversized summary
+fails closed.
 
 Release assembly cannot consume this as a free-standing or timestamp-based receipt.
 `verify-static-security-summary.mjs` derives the complete text-file set from the exact

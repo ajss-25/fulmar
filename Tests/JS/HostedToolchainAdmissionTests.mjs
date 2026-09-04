@@ -378,7 +378,7 @@ test("release scripts bind every toolchain capture to the literal tracked pin wi
   assert.doesNotMatch(pinTool, /createReadStream/u);
   const publicationBodies = [
     pinTool.match(/export async function writeHostedMacOSToolchainProposal[\s\S]*?\n\}\n\nasync function main/u)?.[0],
-    staticTool.match(/export function writeCanonicalSummary[\s\S]*?\n\}\n\nasync function main/u)?.[0],
+    staticTool.match(/function publishCanonicalSummaryBytes[\s\S]*?\n\}\n\nexport function invalidateCanonicalSummary/u)?.[0],
     reproducibilityTool.match(/async function writeCanonical[\s\S]*?\n\}\n\nasync function readBoundedCapture/u)?.[0]
   ];
   assert.equal(publicationBodies.every((body) => typeof body === "string"), true);
@@ -386,6 +386,9 @@ test("release scripts bind every toolchain capture to the literal tracked pin wi
     assert.match(body, /publishAttestedRegularFileSync/u);
     assert.doesNotMatch(body.replaceAll(/\/\/.*$/gmu, ""), /\b(?:open|link|rename|unlink|rm)\s*\(/u);
   }
+  assert.match(staticTool, /export function invalidateCanonicalSummary[\s\S]*publishCanonicalSummaryBytes/u);
+  assert.match(staticTool, /export function writeCanonicalSummary[\s\S]*publishCanonicalSummaryBytes/u);
+  assert.match(staticTool, /invalidateCanonicalSummary\(projectRoot\);[\s\S]*mkdtempSync/u);
   assert.match(attestedFileTool, /spawnSync\(process\.execPath, \[publicationWorker, encoded\]/u);
   assert.doesNotMatch(attestedFileTool, /process\.chdir/u);
   assert.match(publicationWorker, /fstatSync\(directoryDescriptor, \{ bigint: true \}\)/u);

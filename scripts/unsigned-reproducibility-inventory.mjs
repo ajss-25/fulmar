@@ -475,12 +475,12 @@ async function writeCanonical(destinationArgument, value) {
   if (payload.length > TREE_LIMITS.maximumInventoryBytes) {
     fail("reproducibility evidence exceeds its byte limit");
   }
-  // The isolated synchronous worker creates the evidence through one retained,
-  // no-follow O_EXCL descriptor inside the already-attested directory vnode.
+  // The isolated synchronous worker safely creates or descriptor-rewrites the
+  // persistent comparison evidence inside the already-attested directory vnode.
   try {
     publishAttestedRegularFileSync(parent, path.basename(destination), payload, {
       label: "reproducibility evidence directory",
-      publishMode: "create",
+      publishMode: "upsert",
       fileMode: 0o600,
       maximumBytes: TREE_LIMITS.maximumInventoryBytes,
       requireCurrentUser: true,

@@ -89,13 +89,20 @@ test("two different roots produce one path-free exact pre-sign summary", async (
     const report = path.join(value.temporary, "report.json");
     await writeFile(leftInventory, `${JSON.stringify(left)}\n`, { mode: 0o600 });
     await writeFile(rightInventory, `${JSON.stringify(right)}\n`, { mode: 0o600 });
-    const cli = spawnSync(process.execPath, [
+    let cli = spawnSync(process.execPath, [
       path.join(project, "scripts", "unsigned-reproducibility-inventory.mjs"),
       "compare-inventories", leftInventory, rightInventory, "a".repeat(40), "b".repeat(40), report
     ], { cwd: project, encoding: "utf8" });
     assert.equal(cli.status, 0, cli.stderr);
     assert.match(cli.stdout, /8 compiler products, 8 dSYMs/u);
     assert.equal((await lstat(report)).mode & 0o777, 0o600);
+    const firstReportBytes = await readFile(report);
+    cli = spawnSync(process.execPath, [
+      path.join(project, "scripts", "unsigned-reproducibility-inventory.mjs"),
+      "compare-inventories", leftInventory, rightInventory, "a".repeat(40), "b".repeat(40), report
+    ], { cwd: project, encoding: "utf8" });
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.deepEqual(await readFile(report), firstReportBytes);
     const reportInput = await readAttestedRegularFile(report, {
       label: "two-root comparison report",
       maximumBytes: 1024 * 1024,

@@ -27,7 +27,7 @@ import {
   enforceExactSecretCoverage,
   enforceReportWarnings,
   enforceTopLevelCoverage,
-  removeStaleSummary,
+  invalidateCanonicalSummary,
   resolvePresentSecretScanTargets,
   writeCanonicalSummary
 } from "../../scripts/run-static-security-scan.mjs";
@@ -523,7 +523,12 @@ test("canonical static-security summary is bounded, deterministic, and link-safe
     assert.equal(first.sha256, digest(firstBytes));
     assert.ok(first.bytes > 0 && first.bytes < 512 * 1_024);
 
-    removeStaleSummary(destination);
+    invalidateCanonicalSummary(root);
+    assert.deepEqual(JSON.parse(await readFile(destination, "utf8")), {
+      schemaVersion: 1,
+      passed: false,
+      state: "scan-incomplete"
+    });
     const second = writeCanonicalSummary(root, summary);
     const secondBytes = await readFile(destination);
     assert.equal(second.sha256, first.sha256);
@@ -585,12 +590,20 @@ test("canonical static-security summary is bounded, deterministic, and link-safe
     };
     await writeFile(inventoryPath, `${JSON.stringify(inventory)}\n`, { mode: 0o644 });
     await writeFile(policyPath, `${JSON.stringify(policy)}\n`, { mode: 0o644 });
-    removeStaleSummary(destination);
+    invalidateCanonicalSummary(root);
     writeCanonicalSummary(root, passingSummary);
     let verification = spawnSync(process.execPath, [verifierPath, destination, inventoryPath, policyPath], {
       cwd: root, encoding: "utf8"
     });
     assert.equal(verification.status, 0, verification.stderr);
+
+    invalidateCanonicalSummary(root);
+    verification = spawnSync(process.execPath, [verifierPath, destination, inventoryPath, policyPath], {
+      cwd: root, encoding: "utf8"
+    });
+    assert.notEqual(verification.status, 0);
+    assert.match(verification.stderr, /absent, failed, or uses an unreviewed schema/u);
+    writeCanonicalSummary(root, passingSummary);
 
     await writeFile(destination, `${JSON.stringify({ ...passingSummary, passed: false })}\n`, { mode: 0o644 });
     verification = spawnSync(process.execPath, [verifierPath, destination, inventoryPath, policyPath], {
@@ -616,18 +629,19 @@ test("canonical static-security summary is bounded, deterministic, and link-safe
     assert.notEqual(verification.status, 0);
     assert.match(verification.stderr, /ENOENT|no such file/u);
 
-    removeStaleSummary(destination);
+    invalidateCanonicalSummary(root);
+    await rm(destination);
     await writeFile(target, "target\n", "utf8");
     await symlink("target.json", destination);
-    assert.throws(() => removeStaleSummary(destination), /summary is unsafe/u);
+    assert.throws(() => invalidateCanonicalSummary(root), /ELOOP|symbolic|unsafe/u);
     await rm(destination, { force: true });
 
     await symlink("missing.json", destination);
-    assert.throws(() => removeStaleSummary(destination), /summary is unsafe/u);
+    assert.throws(() => invalidateCanonicalSummary(root), /ELOOP|symbolic|unsafe/u);
     await rm(destination, { force: true });
 
     await link(target, destination);
-    assert.throws(() => removeStaleSummary(destination), /summary is unsafe/u);
+    assert.throws(() => invalidateCanonicalSummary(root), /unsafe|descriptor-bound upsert/u);
     await rm(destination, { force: true });
     await rm(target, { force: true });
 
