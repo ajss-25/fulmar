@@ -356,6 +356,18 @@ if [[ -e "$XCODE_TESTING_RUNTIME" || -L "$XCODE_TESTING_RUNTIME" \
     print -u2 "The selected Xcode Swift Testing runtime is not Apple-signed."
     exit 126
   }
+  testing_arguments+=(
+    -Xlinker -rpath
+    -Xlinker "$XCODE_TESTING_RUNTIME"
+  )
+  required_testing_rpaths+=("$XCODE_TESTING_RUNTIME")
+fi
+if [[ -e "$XCODE_PLATFORM_DEVELOPER" || -L "$XCODE_PLATFORM_DEVELOPER" ]]; then
+  # Framework-based Xcode releases have no toolchain libTesting.dylib. Their
+  # platform runtime is still required, so discover it independently of the
+  # optional toolchain dylib above.
+  XCODE_DEVELOPER_OWNER="$(/usr/bin/stat -f '%u' "$DEVELOPER_ROOT")"
+  [[ "$XCODE_DEVELOPER_OWNER" == <-> ]] || exit 126
   [[ "$SDKROOT" == "$XCODE_PLATFORM_DEVELOPER/SDKs/"*.sdk \
      && -f "$XCODE_TESTING_INTEROP" && ! -L "$XCODE_TESTING_INTEROP" \
      && -x "$XCODE_TESTING_INTEROP" \
@@ -399,16 +411,13 @@ if [[ -e "$XCODE_TESTING_RUNTIME" || -L "$XCODE_TESTING_RUNTIME" \
       exit 126
     }
   done
-  # Xcode ships Swift Testing as a dylib beside its swiftmodule rather than as
-  # the Command Line Tools framework above. SwiftPM supplies -I/-L and a
-  # temporary loader search path for its own launcher, plus the SDK platform's
-  # public frameworks, private frameworks, and testing-library directory.
+  # SwiftPM supplies temporary loader paths for the SDK platform's public
+  # frameworks (including framework-based Swift Testing), private frameworks,
+  # and testing-library directory independently of its optional toolchain dylib.
   # Fulmar deliberately executes the attested bundle under env -i, so embed the
   # same reviewed closure as durable bundle rpaths rather than restoring a
   # process-wide DYLD hook.
-  for xcode_runtime_rpath in \
-    "$XCODE_TESTING_RUNTIME" \
-    "${xcode_platform_runtime_paths[@]}"; do
+  for xcode_runtime_rpath in "${xcode_platform_runtime_paths[@]}"; do
     testing_arguments+=(
       -Xlinker -rpath
       -Xlinker "$xcode_runtime_rpath"

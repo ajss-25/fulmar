@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -255,8 +255,8 @@ test("native qualification uses the portable warning-clean Swift Testing runner"
   assert.match(runner, /XCODE_TESTING_INTEROP_OWNER" == 0[\s\S]*?XCODE_TESTING_INTEROP_OWNER" == "\$XCODE_DEVELOPER_OWNER"/u);
   assert.match(
     runner,
-    /if \[\[ -e "\$XCODE_TESTING_RUNTIME"[\s\S]*?codesign --verify --strict --test-requirement '=anchor apple'[\s\S]*?for xcode_runtime_rpath in[\s\S]*?"\$XCODE_TESTING_RUNTIME"[\s\S]*?testing_arguments\+=\([\s\S]*?-Xlinker -rpath[\s\S]*?-Xlinker "\$xcode_runtime_rpath"/u,
-    "the Xcode Swift Testing closure must become durable test-bundle rpaths"
+    /if \[\[ -e "\$XCODE_TESTING_RUNTIME"[\s\S]*?codesign --verify --strict --test-requirement '=anchor apple'[\s\S]*?testing_arguments\+=\([\s\S]*?-Xlinker -rpath[\s\S]*?-Xlinker "\$XCODE_TESTING_RUNTIME"[\s\S]*?required_testing_rpaths\+=\("\$XCODE_TESTING_RUNTIME"\)\nfi\nif \[\[ -e "\$XCODE_PLATFORM_DEVELOPER"/u,
+    "the optional Xcode Swift Testing dylib must have its own durable rpath without owning platform discovery"
   );
   assert.match(
     runner,
@@ -265,7 +265,73 @@ test("native qualification uses the portable warning-clean Swift Testing runner"
   );
   assert.match(runner, /xcode_platform_runtime_paths=\([\s\S]*?"\$XCODE_PLATFORM_FRAMEWORKS"[\s\S]*?"\$XCODE_PLATFORM_PRIVATE_FRAMEWORKS"[\s\S]*?"\$XCODE_PLATFORM_LIBRARIES"/u);
   assert.match(runner, /XCODE_PLATFORM_RUNTIME_OWNER" == 0[\s\S]*?XCODE_PLATFORM_RUNTIME_OWNER" == "\$XCODE_DEVELOPER_OWNER"/u);
-  assert.match(runner, /for xcode_runtime_rpath in[\s\S]*?"\$XCODE_TESTING_RUNTIME"[\s\S]*?"\$\{xcode_platform_runtime_paths\[@\]\}"[\s\S]*?required_testing_rpaths\+=\("\$xcode_runtime_rpath"\)/u);
+  assert.match(runner, /if \[\[ -e "\$XCODE_PLATFORM_DEVELOPER"[\s\S]*?for xcode_runtime_rpath in "\$\{xcode_platform_runtime_paths\[@\]\}"[\s\S]*?required_testing_rpaths\+=\("\$xcode_runtime_rpath"\)/u);
+
+  const pathValidatorStart = runner.indexOf("validate_absolute_path() {");
+  const pathValidatorEnd = runner.indexOf("\n}\n", pathValidatorStart) + 2;
+  const runtimeSelectionStart = runner.indexOf('TESTING_FRAMEWORKS="$DEVELOPER_ROOT/Library/Developer/Frameworks"');
+  const runtimeSelectionEnd = runner.indexOf("\n\nCLANG_CACHE=", runtimeSelectionStart);
+  assert.ok(pathValidatorStart >= 0 && pathValidatorEnd > pathValidatorStart);
+  assert.ok(runtimeSelectionStart >= 0 && runtimeSelectionEnd > runtimeSelectionStart);
+
+  const platformProbeRoot = await mkdtemp("/private/tmp/fulmar-xcode-platform-layout.");
+  try {
+    const fakeDeveloperRoot = join(platformProbeRoot, "Xcode.app", "Contents", "Developer");
+    const fakePlatformDeveloper = join(fakeDeveloperRoot, "Platforms", "MacOSX.platform", "Developer");
+    const fakePlatformFrameworks = join(fakePlatformDeveloper, "Library", "Frameworks");
+    const fakePlatformPrivateFrameworks = join(fakePlatformDeveloper, "Library", "PrivateFrameworks");
+    const fakePlatformLibraries = join(fakePlatformDeveloper, "usr", "lib");
+    const fakeSDK = join(fakePlatformDeveloper, "SDKs", "MacOSX.sdk");
+    await Promise.all([
+      mkdir(join(fakePlatformFrameworks, "Testing.framework"), { recursive: true, mode: 0o755 }),
+      mkdir(fakePlatformPrivateFrameworks, { recursive: true, mode: 0o755 }),
+      mkdir(fakePlatformLibraries, { recursive: true, mode: 0o755 }),
+      mkdir(fakeSDK, { recursive: true, mode: 0o755 })
+    ]);
+
+    const selectedDeveloper = spawnSync("/usr/bin/xcode-select", ["-p"], {
+      encoding: "utf8", timeout: 2_000,
+      env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
+    });
+    assert.equal(selectedDeveloper.status, 0, selectedDeveloper.stderr);
+    const selectedRoot = selectedDeveloper.stdout.trim();
+    const testingInteropSource = [
+      join(selectedRoot, "Platforms", "MacOSX.platform", "Developer", "usr", "lib", "lib_TestingInterop.dylib"),
+      join(selectedRoot, "Library", "Developer", "usr", "lib", "lib_TestingInterop.dylib"),
+      join(selectedRoot, "usr", "lib", "lib_TestingInterop.dylib"),
+      "/Library/Developer/CommandLineTools/Library/Developer/usr/lib/lib_TestingInterop.dylib"
+    ].find((candidate) => existsSync(candidate));
+    assert.ok(testingInteropSource, "an installed Apple Swift Testing interop image is required for the layout probe");
+    await copyFile(testingInteropSource, join(fakePlatformLibraries, "lib_TestingInterop.dylib"));
+    await chmod(join(fakePlatformLibraries, "lib_TestingInterop.dylib"), 0o755);
+
+    const selectionProbe = join(platformProbeRoot, "probe.zsh");
+    await writeFile(selectionProbe, `#!/bin/zsh -f
+set -euo pipefail
+PROJECT_DIR="$1"
+DEVELOPER_ROOT="$2"
+SDKROOT="$3"
+${runner.slice(pathValidatorStart, pathValidatorEnd)}
+${runner.slice(runtimeSelectionStart, runtimeSelectionEnd)}
+print -rl -- "\${required_testing_rpaths[@]}"
+`, { mode: 0o700 });
+    const selectedPaths = spawnSync("/bin/zsh", [
+      "-f", selectionProbe, process.cwd(), fakeDeveloperRoot, fakeSDK
+    ], {
+      encoding: "utf8", timeout: 5_000,
+      env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
+    });
+    assert.equal(selectedPaths.status, 0, selectedPaths.stderr);
+    assert.equal(existsSync(join(fakeDeveloperRoot,
+      "Toolchains", "XcodeDefault.xctoolchain", "usr", "lib", "swift", "macosx", "testing")), false);
+    assert.deepEqual(selectedPaths.stdout.trimEnd().split("\n"), [
+      fakePlatformFrameworks,
+      fakePlatformPrivateFrameworks,
+      fakePlatformLibraries
+    ], "a framework-only Xcode layout must select the complete platform runtime without an optional toolchain dylib");
+  } finally {
+    await rm(platformProbeRoot, { recursive: true, force: true });
+  }
   assert.match(runner, /Swift Testing bundle load-command inspection[\s\S]*?\/usr\/bin\/otool -l "\$TEST_BUNDLE_EXECUTABLE"/u);
   assert.match(runner, /\$1 == "cmd" && \$2 == "LC_RPATH"/u);
   assert.match(runner, /The Swift Testing bundle does not contain its exact selected runtime rpath\./u);
@@ -761,7 +827,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
     "OllamaFixtureIsolationTests.mjs": 1,
     "PublicDistributionScriptsTests.mjs": 8,
     "ReleaseEvidenceRetentionTests.mjs": 3,
-    "ReleaseVerificationScriptTests.mjs": 7,
+    "ReleaseVerificationScriptTests.mjs": 8,
     "ReleaseWatchdogTests.mjs": 3,
     "SignalCleanupTrapTests.mjs": 6,
     "SourceBuildInputInventoryTests.mjs": 2,
@@ -801,7 +867,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
       `${name} changed the reviewed literal zsh command topology`);
     auditedZshCommands += fileCommands;
   }
-  assert.equal(auditedZshCommands, 43, "the literal zsh command audit must remain complete");
+  assert.equal(auditedZshCommands, 44, "the literal zsh command audit must remain complete");
 });
 
 test("every production watchdog and privileged shell callsite suppresses ambient startup injection", async () => {
