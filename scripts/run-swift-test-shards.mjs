@@ -120,8 +120,10 @@ function escapeRegularExpression(value) {
 function failChild(label, result) {
   if (result.stdout) process.stderr.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
-  const detail = result.error ? `: ${result.error.message}` : "";
-  throw new Error(`${label} failed${detail}`);
+  const status = Number.isInteger(result.status) ? `; status ${result.status}` : "";
+  const signal = typeof result.signal === "string" ? `; signal ${result.signal}` : "";
+  const detail = result.error ? `; spawn error: ${result.error.message}` : "";
+  throw new Error(`${label} failed${status}${signal}${detail}`);
 }
 
 for (const [index, selector] of selectors.entries()) {

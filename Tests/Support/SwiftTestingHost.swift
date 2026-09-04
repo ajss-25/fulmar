@@ -3,8 +3,29 @@ import Foundation
 
 @main
 struct SwiftTestingHost {
-    private static func fail() -> Never {
-        let message = Data("The private Swift Testing host could not start.\n".utf8)
+    private enum StartupFailure: String {
+        case invalidInvocation = "invalid invocation"
+        case testBundleLoad = "test bundle load failed"
+        case testEntryPoint = "test entry point missing"
+    }
+
+    private static func currentLoaderError() -> String? {
+        guard let pointer = dlerror() else { return nil }
+        let length = strnlen(pointer, 2_048)
+        let bytes = UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self)
+        let bounded = UnsafeBufferPointer(start: bytes, count: length)
+        let printableASCII = bounded.map { byte in
+            (0x20...0x7E).contains(byte) ? byte : 0x3F
+        }
+        return String(decoding: printableASCII, as: UTF8.self)
+    }
+
+    private static func fail(_ failure: StartupFailure, loaderDetail: String? = nil) -> Never {
+        var text = "The private Swift Testing host could not start: \(failure.rawValue)."
+        if let loaderDetail, !loaderDetail.isEmpty {
+            text += " Loader detail: \(loaderDetail)"
+        }
+        let message = Data("\(text)\n".utf8)
         try? FileHandle.standardError.write(contentsOf: message)
         Darwin.exit(126)
     }
@@ -13,7 +34,7 @@ struct SwiftTestingHost {
         let arguments = CommandLine.arguments
         guard arguments.count >= 3,
               arguments[1] == "--test-bundle-path" else {
-            fail()
+            fail(.invalidInvocation)
         }
 
         // The private app declares NSSupportsAutomaticTermination. This is a
@@ -30,8 +51,9 @@ struct SwiftTestingHost {
         )
         processInfo.disableSuddenTermination()
 
+        _ = dlerror()
         guard let image = dlopen(arguments[2], RTLD_LAZY | RTLD_FIRST) else {
-            fail()
+            fail(.testBundleLoad, loaderDetail: currentLoaderError())
         }
         defer { dlclose(image) }
 
@@ -39,8 +61,9 @@ struct SwiftTestingHost {
             CInt,
             UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
         ) -> CInt
+        _ = dlerror()
         guard let symbol = dlsym(image, "main") else {
-            fail()
+            fail(.testEntryPoint, loaderDetail: currentLoaderError())
         }
         let testingMain = unsafeBitCast(symbol, to: TestingMain.self)
         let status = testingMain(CommandLine.argc, CommandLine.unsafeArgv)

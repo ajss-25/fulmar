@@ -275,6 +275,11 @@ DEVELOPER_ROOT="$(/usr/bin/env -i PATH="$SAFE_PATH" /usr/bin/xcode-select -p)"
 TESTING_FRAMEWORKS="$DEVELOPER_ROOT/Library/Developer/Frameworks"
 XCODE_TESTING_RUNTIME="$DEVELOPER_ROOT/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx/testing"
 XCODE_TESTING_LIBRARY="$XCODE_TESTING_RUNTIME/libTesting.dylib"
+XCODE_PLATFORM_DEVELOPER="$DEVELOPER_ROOT/Platforms/MacOSX.platform/Developer"
+XCODE_PLATFORM_FRAMEWORKS="$XCODE_PLATFORM_DEVELOPER/Library/Frameworks"
+XCODE_PLATFORM_PRIVATE_FRAMEWORKS="$XCODE_PLATFORM_DEVELOPER/Library/PrivateFrameworks"
+XCODE_PLATFORM_LIBRARIES="$XCODE_PLATFORM_DEVELOPER/usr/lib"
+XCODE_TESTING_INTEROP="$XCODE_PLATFORM_LIBRARIES/lib_TestingInterop.dylib"
 TESTING_INTEROP=""
 SWIFT_TEST_HOST_SOURCE="$PROJECT_DIR/Tests/Support/SwiftTestingHost.swift"
 SWIFT_TEST_HOST_COMPILER="/usr/bin/swiftc"
@@ -282,6 +287,7 @@ MINIMUM_MACOS="$(/usr/bin/plutil -extract minimumMacOS raw -o - "$PROJECT_DIR/Co
 validate_absolute_path Swift-test-host-source "$SWIFT_TEST_HOST_SOURCE"
 validate_absolute_path Swift-test-host-compiler "$SWIFT_TEST_HOST_COMPILER"
 validate_absolute_path Xcode-Swift-Testing-runtime "$XCODE_TESTING_RUNTIME"
+validate_absolute_path Xcode-platform-developer "$XCODE_PLATFORM_DEVELOPER"
 
 for candidate in \
   "$DEVELOPER_ROOT/Library/Developer/usr/lib" \
@@ -350,16 +356,65 @@ if [[ -e "$XCODE_TESTING_RUNTIME" || -L "$XCODE_TESTING_RUNTIME" \
     print -u2 "The selected Xcode Swift Testing runtime is not Apple-signed."
     exit 126
   }
+  [[ "$SDKROOT" == "$XCODE_PLATFORM_DEVELOPER/SDKs/"*.sdk \
+     && -f "$XCODE_TESTING_INTEROP" && ! -L "$XCODE_TESTING_INTEROP" \
+     && -x "$XCODE_TESTING_INTEROP" \
+     && "${XCODE_TESTING_INTEROP:A}" == "$XCODE_TESTING_INTEROP" ]] || {
+    print -u2 "The selected Xcode platform testing runtime is unsafe."
+    exit 126
+  }
+  XCODE_TESTING_INTEROP_OWNER="$(/usr/bin/stat -f '%u' "$XCODE_TESTING_INTEROP")"
+  XCODE_TESTING_INTEROP_MODE="$(/usr/bin/stat -f '%Lp' "$XCODE_TESTING_INTEROP")"
+  XCODE_TESTING_INTEROP_LINKS="$(/usr/bin/stat -f '%l' "$XCODE_TESTING_INTEROP")"
+  XCODE_TESTING_INTEROP_SIZE="$(/usr/bin/stat -f '%z' "$XCODE_TESTING_INTEROP")"
+  [[ ( "$XCODE_TESTING_INTEROP_OWNER" == 0 \
+       || "$XCODE_TESTING_INTEROP_OWNER" == "$XCODE_DEVELOPER_OWNER" ) \
+     && "$XCODE_TESTING_INTEROP_MODE" == [0-7][0145][0145] \
+     && "$XCODE_TESTING_INTEROP_LINKS" == 1 \
+     && "$XCODE_TESTING_INTEROP_SIZE" == <-> \
+     && "$XCODE_TESTING_INTEROP_SIZE" -gt 0 ]] || {
+    print -u2 "The selected Xcode platform testing runtime is not owner-controlled."
+    exit 126
+  }
+  /usr/bin/codesign --verify --strict --test-requirement '=anchor apple' \
+    "$XCODE_TESTING_INTEROP" >/dev/null 2>&1 || {
+    print -u2 "The selected Xcode platform testing runtime is not Apple-signed."
+    exit 126
+  }
+  typeset -a xcode_platform_runtime_paths
+  xcode_platform_runtime_paths=(
+    "$XCODE_PLATFORM_FRAMEWORKS"
+    "$XCODE_PLATFORM_PRIVATE_FRAMEWORKS"
+    "$XCODE_PLATFORM_LIBRARIES"
+  )
+  for xcode_platform_runtime_path in "${xcode_platform_runtime_paths[@]}"; do
+    validate_absolute_path Xcode-platform-runtime "$xcode_platform_runtime_path"
+    XCODE_PLATFORM_RUNTIME_OWNER="$(/usr/bin/stat -f '%u' "$xcode_platform_runtime_path" 2>/dev/null || true)"
+    [[ -d "$xcode_platform_runtime_path" && ! -L "$xcode_platform_runtime_path" \
+       && "${xcode_platform_runtime_path:A}" == "$xcode_platform_runtime_path" \
+       && ( "$XCODE_PLATFORM_RUNTIME_OWNER" == 0 \
+         || "$XCODE_PLATFORM_RUNTIME_OWNER" == "$XCODE_DEVELOPER_OWNER" ) \
+       && "$(/usr/bin/stat -f '%Lp' "$xcode_platform_runtime_path")" == [57][0145][0145] ]] || {
+      print -u2 "The selected Xcode platform runtime path is not owner-controlled."
+      exit 126
+    }
+  done
   # Xcode ships Swift Testing as a dylib beside its swiftmodule rather than as
   # the Command Line Tools framework above. SwiftPM supplies -I/-L and a
-  # temporary loader search path for its own launcher, but Fulmar deliberately
-  # executes the attested bundle under env -i. Embed the selected Xcode runtime
-  # directory as a durable bundle rpath so the private host needs no loader hook.
-  testing_arguments+=(
-    -Xlinker -rpath
-    -Xlinker "$XCODE_TESTING_RUNTIME"
-  )
-  required_testing_rpaths+=("$XCODE_TESTING_RUNTIME")
+  # temporary loader search path for its own launcher, plus the SDK platform's
+  # public frameworks, private frameworks, and testing-library directory.
+  # Fulmar deliberately executes the attested bundle under env -i, so embed the
+  # same reviewed closure as durable bundle rpaths rather than restoring a
+  # process-wide DYLD hook.
+  for xcode_runtime_rpath in \
+    "$XCODE_TESTING_RUNTIME" \
+    "${xcode_platform_runtime_paths[@]}"; do
+    testing_arguments+=(
+      -Xlinker -rpath
+      -Xlinker "$xcode_runtime_rpath"
+    )
+    required_testing_rpaths+=("$xcode_runtime_rpath")
+  done
 fi
 
 CLANG_CACHE="$TEST_CACHE/clang"

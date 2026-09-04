@@ -247,10 +247,25 @@ test("native qualification uses the portable warning-clean Swift Testing runner"
   assert.match(runner, /XCODE_TESTING_LIBRARY="\$XCODE_TESTING_RUNTIME\/libTesting\.dylib"/u);
   assert.match(
     runner,
-    /if \[\[ -e "\$XCODE_TESTING_RUNTIME"[\s\S]*?codesign --verify --strict --test-requirement '=anchor apple'[\s\S]*?testing_arguments\+=\([\s\S]*?-Xlinker -rpath[\s\S]*?-Xlinker "\$XCODE_TESTING_RUNTIME"/u,
-    "the Xcode Swift Testing layout must become a durable test-bundle rpath"
+    /XCODE_PLATFORM_DEVELOPER="\$DEVELOPER_ROOT\/Platforms\/MacOSX\.platform\/Developer"/u
   );
-  assert.match(runner, /required_testing_rpaths\+=\("\$XCODE_TESTING_RUNTIME"\)/u);
+  assert.match(runner, /XCODE_PLATFORM_PRIVATE_FRAMEWORKS="\$XCODE_PLATFORM_DEVELOPER\/Library\/PrivateFrameworks"/u);
+  assert.match(runner, /XCODE_PLATFORM_LIBRARIES="\$XCODE_PLATFORM_DEVELOPER\/usr\/lib"/u);
+  assert.match(runner, /XCODE_TESTING_INTEROP="\$XCODE_PLATFORM_LIBRARIES\/lib_TestingInterop\.dylib"/u);
+  assert.match(runner, /XCODE_TESTING_INTEROP_OWNER" == 0[\s\S]*?XCODE_TESTING_INTEROP_OWNER" == "\$XCODE_DEVELOPER_OWNER"/u);
+  assert.match(
+    runner,
+    /if \[\[ -e "\$XCODE_TESTING_RUNTIME"[\s\S]*?codesign --verify --strict --test-requirement '=anchor apple'[\s\S]*?for xcode_runtime_rpath in[\s\S]*?"\$XCODE_TESTING_RUNTIME"[\s\S]*?testing_arguments\+=\([\s\S]*?-Xlinker -rpath[\s\S]*?-Xlinker "\$xcode_runtime_rpath"/u,
+    "the Xcode Swift Testing closure must become durable test-bundle rpaths"
+  );
+  assert.match(
+    runner,
+    /codesign --verify --strict --test-requirement '=anchor apple' \\\n+    "\$XCODE_TESTING_INTEROP"/u,
+    "the transitive Xcode Testing interop image must be an attested Apple image"
+  );
+  assert.match(runner, /xcode_platform_runtime_paths=\([\s\S]*?"\$XCODE_PLATFORM_FRAMEWORKS"[\s\S]*?"\$XCODE_PLATFORM_PRIVATE_FRAMEWORKS"[\s\S]*?"\$XCODE_PLATFORM_LIBRARIES"/u);
+  assert.match(runner, /XCODE_PLATFORM_RUNTIME_OWNER" == 0[\s\S]*?XCODE_PLATFORM_RUNTIME_OWNER" == "\$XCODE_DEVELOPER_OWNER"/u);
+  assert.match(runner, /for xcode_runtime_rpath in[\s\S]*?"\$XCODE_TESTING_RUNTIME"[\s\S]*?"\$\{xcode_platform_runtime_paths\[@\]\}"[\s\S]*?required_testing_rpaths\+=\("\$xcode_runtime_rpath"\)/u);
   assert.match(runner, /Swift Testing bundle load-command inspection[\s\S]*?\/usr\/bin\/otool -l "\$TEST_BUNDLE_EXECUTABLE"/u);
   assert.match(runner, /\$1 == "cmd" && \$2 == "LC_RPATH"/u);
   assert.match(runner, /The Swift Testing bundle does not contain its exact selected runtime rpath\./u);
@@ -335,6 +350,10 @@ test("native qualification isolates every full-suite function behind complete ev
   assert.match(hostSource, /disableSuddenTermination\(\)/u);
   assert.doesNotMatch(hostSource, /enableAutomaticTermination|enableSuddenTermination/u);
   assert.match(hostSource, /dlsym\(image, "main"\)/u);
+  assert.match(hostSource, /test bundle load failed/u);
+  assert.match(hostSource, /test entry point missing/u);
+  assert.match(hostSource, /strnlen\(pointer, 2_048\)/u);
+  assert.match(hostSource, /\(0x20\.\.\.0x7E\)\.contains\(byte\) \? byte : 0x3F/u);
   assert.match(hostSource, /testingMain\(CommandLine\.argc, CommandLine\.unsafeArgv\)/u);
   assert.doesNotMatch(`${runner}\n${assembler}\n${hostSource}\n${shardDriver}`,
     /\.prohibited|NSApplicationDelegate|NSWindow|NSPanel|swiftpm-testing-helper/u);
@@ -349,6 +368,8 @@ test("native qualification isolates every full-suite function behind complete ev
   assert.match(shardDriver, /for \(const \[index, selector\] of selectors\.entries\(\)\)/u);
   assert.match(shardDriver, /functions\.length !== 1/u);
   assert.match(shardDriver, /native-shard function selectors are not substring-unique/u);
+  assert.match(shardDriver, /Number\.isInteger\(result\.status\)/u);
+  assert.match(shardDriver, /typeof result\.signal === "string"/u);
   assert.match(shardDriver, /"--no-parallel"/u);
   assert.match(shardDriver, /verify-swift-test-events\.mjs/u);
   assert.match(shardDriver, /a native-shard authority changed during qualification/u);
@@ -466,8 +487,23 @@ test("native qualification isolates every full-suite function behind complete ev
     });
     assert.equal(firstProcess.error, undefined, firstProcess.error?.message);
     assert.equal(firstProcess.status, 126, firstProcess.stderr);
-    assert.equal(firstProcess.stderr, "The private Swift Testing host could not start.\n",
+    assert.match(firstProcess.stderr, /^The private Swift Testing host could not start: test entry point missing\./u,
       "the signed app executable must reach its reviewed entry point without a policy prompt");
+
+    const hostileMissingPath = join(hostileRoot, `missing-\n-\u001b-\u202e-${"x".repeat(4_000)}`);
+    const loadFailure = spawnSync(executable, ["--test-bundle-path", hostileMissingPath], {
+      encoding: "utf8", timeout: 2_000,
+      env: { HOME: hostileRoot, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
+    });
+    assert.equal(loadFailure.error, undefined, loadFailure.error?.message);
+    assert.equal(loadFailure.status, 126, loadFailure.stderr);
+    assert.match(loadFailure.stderr,
+      /^The private Swift Testing host could not start: test bundle load failed\. Loader detail: /u);
+    assert.equal(loadFailure.stderr.endsWith("\n"), true);
+    assert.doesNotMatch(loadFailure.stderr.slice(0, -1), /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u,
+      "loader diagnostics must not preserve terminal controls or bidi formatting");
+    assert.ok(Buffer.byteLength(loadFailure.stderr, "utf8") <= 2_200,
+      "loader diagnostics must remain byte-bounded");
 
     const plist = spawnSync("/usr/bin/plutil", [
       "-convert", "json", "-o", "-", join(host, "Contents", "Info.plist")
