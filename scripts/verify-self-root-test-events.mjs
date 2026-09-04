@@ -8,6 +8,12 @@ if (!eventPath || process.argv.length !== 3
 }
 
 const expectedNames = Object.freeze([
+  "watchdog capability janitor runs only for a fresh root and removes dead empty records",
+  "watchdog capability janitor retains live occupied young and ambiguous records",
+  "watchdog capability janitor never removes a safe lock owner reference",
+  "watchdog capability janitor rejects linked permissive and malformed records",
+  "watchdog capability janitor rejects an inode replacement at the unlink boundary",
+  "watchdog capability janitor fails closed at every scan bound",
   "watchdog secret backing objects are anonymous before the first secret byte exists",
   "the signing-secret reader accepts its exact byte boundary and rejects malformed descriptors",
   "the zsh secret-closing wrapper preserves argv and closes FD 196",
@@ -62,7 +68,8 @@ const expectedNames = Object.freeze([
   "the parent publication lock blocks a candidate-manifest mutator through atomic rename and fsync",
   "partial and stale candidate-specific sets are rejected instead of being mistaken for retained proof",
   "retained-evidence verification rejects a symbolic evidence-set directory",
-  "test verifier substitution is rejected outside the disposable fixture namespace"
+  "test verifier substitution is rejected outside the disposable fixture namespace",
+  "release-evidence fixture startup recovery is bounded, crash-safe, and exact-unit correlated"
 ]);
 
 const descriptor = openSync(eventPath, constants.O_RDONLY | constants.O_NOFOLLOW);

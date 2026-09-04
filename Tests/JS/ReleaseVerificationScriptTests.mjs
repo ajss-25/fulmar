@@ -832,7 +832,7 @@ test("self-root JavaScript fixtures run only in the exact event-accounted privat
   assert.match(selfTests, /verify-self-root-test-events\.mjs/u);
   assert.match(selfTests, /if ! cleanup; then/u);
   assert.match(selfVerifier, /const expectedNames = Object\.freeze\(\[/u);
-  assert.equal(selfVerifier.match(/^  "/gmu)?.length, 55);
+  assert.equal(selfVerifier.match(/^  "/gmu)?.length, 62);
   assert.match(selfVerifier, /records\.filter\(\(record\) => record\.type === "test:summary"\)/u);
   assert.match(selfVerifier, /summaries\[0\]\.counts\?\.skipped !== 0/u);
   assert.match(reporter, /emittedBytes > 2 \* 1024 \* 1024/u);
