@@ -61,15 +61,28 @@ native, credential, runtime, sandbox, MCP, installed-layout, cloned-state, web/R
 and simulated provider/protocol gates against the archive extraction.
 
 The production audit loads the attested lock with the npm 10.9.8-bundled Arborist,
-applies npm's production-only virtual-tree semantics, and sends sorted, byte-bounded
-batches only to the configured registry's official Bulk Advisory endpoint. Requests
-are credential-free, do not follow redirects or consult proxy environment variables,
-and have per-attempt and whole-operation deadlines. Responses are independently
-bounded before and after decompression and must satisfy the complete advisory schema.
-The decoder recognises gzip magic because npm's registry can currently omit
-`Content-Encoding` and other entity headers from compressed Bulk Advisory responses;
-it does not fall back to the retired Quick Audit endpoint. A passing artifact is
-published only after every requested package/version pair has a validated response.
+applies npm's production-only virtual-tree semantics, and first sends sorted,
+byte-bounded batches to the configured registry's official Bulk Advisory endpoint.
+Requests are credential-free, do not follow redirects or consult proxy environment
+variables, and have per-attempt and whole-operation deadlines. Responses are
+independently bounded before and after decompression and must satisfy the complete
+advisory schema. The decoder recognises gzip magic because npm's registry can
+currently omit `Content-Encoding` and other entity headers from compressed Bulk
+Advisory responses; it never uses the retired Quick Audit endpoint.
+
+If, and only if, one Bulk Advisory batch exhausts two attempts because of a bounded
+timeout, reachability failure, or retryable HTTP 408/429/5xx response, the audit may
+discard any earlier validated zero-finding npm batches and restart the complete graph
+against the credential-free OSV QueryBatch API at
+`https://api.osv.dev/v1/querybatch`. This secondary-authority route is restricted to
+the literal public npm registry and requires every non-development lock node to have
+its exact canonical `registry.npmjs.org` tarball URL and SHA-512 integrity. It does
+not run after an npm advisory, TLS failure, redirect, malformed response, schema
+error, or other semantic failure, and evidence never mixes the two authorities.
+Deterministic request hashes, strict result cardinality, pagination rejection,
+response hashes, and the public-provenance digest bind the fallback result. A passing
+artifact is published only after every requested exact package/version pair has a
+validated zero-finding response from one authority.
 
 Candidate-dependent JavaScript tests run with
 `FULMAR_CI_REQUIRE_CURRENT_CANDIDATE_TESTS=1`; a missing or stale fixture is a failure,
@@ -160,9 +173,10 @@ and the resulting hosted evidence; tracked source alone must never be described 
 external evidence.
 
 The weekly schedule catches runner, registry-audit, runtime-bootstrap, toolchain, and
-rule-endpoint drift. The bounded Bulk Advisory dependency audit, Python/wheel installation, and
-external rule fetch are intentionally network-dependent security observations, not
-offline reproducibility claims.
+rule-endpoint drift. The bounded Bulk Advisory audit and its narrowly admitted OSV
+secondary-authority route, Python/wheel installation, and external rule fetch are
+intentionally network-dependent security observations, not offline reproducibility
+claims.
 
 ## Repository controls
 

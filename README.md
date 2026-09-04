@@ -85,9 +85,13 @@ effort, not a guarantee); Fulmar never pulls, downloads, deletes or substitutes 
 weights; Fulmar itself contains no analytics, telemetry-upload or crash-reporting
 service and its in-app updater is hard-disabled in this release, so the only outbound
 connections are the provider origin you consented to, a page fetch you approved, and
-developer-time dependency downloads. Details: [Privacy model](docs/PRIVACY.md) and
-[Threat model](docs/THREAT_MODEL.md). Data locations and deletion:
-[Public installation and removal → Uninstall and retained data](docs/PUBLIC_INSTALLATION.md#uninstall-and-retained-data).
+developer-time dependency downloads. Source-build dependency qualification also
+sends credential-free exact package-name
+and version batches to the configured npm advisory endpoint; if one narrowly
+retryable batch outage exhausts two attempts, the complete exact public-npm graph is
+instead sent to `api.osv.dev` for one authority-complete audit. Details:
+[Privacy model](docs/PRIVACY.md) and [Threat model](docs/THREAT_MODEL.md). Data
+locations and deletion: [Public installation and removal → Uninstall and retained data](docs/PUBLIC_INSTALLATION.md#uninstall-and-retained-data).
 
 ## Requirements
 
@@ -183,7 +187,7 @@ make tracked-index-policy
 make source-contract-test
 make deepseek-contract-test
 make runtime-inventory-verify
-make dependency-audit                 # contacts the public npm registry, credential-free
+make dependency-audit                 # npm first; eligible outages use credential-free OSV
 make static-security-scan
 FULMAR_SWIFT_BUILD_JOBS=2 /usr/bin/caffeinate -dimsu zsh scripts/run-swift-tests.sh   # 1,445 isolated functions
 zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # 666 tests (619 pass, 47 reviewed skips)
@@ -713,9 +717,11 @@ The release build is also gated on a fresh Semgrep/secret-scan pass. Its canonic
 `source-build-inputs.json`, and both SHA-256 descriptors are embedded in the candidate
 manifest, retained qualification evidence, and public review package. Missing, failed,
 stale, or digest-tampered scan evidence stops assembly and verification.
-`make dependency-audit` contacts the configured npm registry and must produce a
-current, lock-bound, zero-unresolved-finding summary before `make release-verify` can
-pass. `make deterministic-release-verify` runs every credential-free candidate,
+`make dependency-audit` contacts the configured npm registry first; during a narrowly
+retryable batch outage, it may restart the complete exact public-registry graph against
+`api.osv.dev` as a credential-free secondary authority. It must produce a current,
+lock-bound, zero-unresolved-finding summary before `make release-verify` can pass.
+`make deterministic-release-verify` runs every credential-free candidate,
 archive, runtime, sandbox, MCP, native, JavaScript, and simulated-provider/protocol
 gate suitable for a standard hosted ARM Mac, but explicitly records the mandatory
 physical-Qwen lane as required-not-run. The default `make release-verify` remains the

@@ -61,9 +61,15 @@ Updated: 2026-09-03 (Europe/London)
   gate still derives production-only semantics from the npm 10.9.8-bundled Arborist,
   but posts bounded sorted package/version batches directly to npm's official Bulk
   Advisory route, recognises the registry's documented unlabelled-gzip response,
-  validates every response and fails closed without using the retired Quick Audit
-  fallback. The summary now binds graph, batch and response digests as well as the
-  existing lock, registry, Node/npm and zero-finding identities.
+  validates every response and never uses the retired Quick Audit route. A current
+  npm Bulk service outage can leave the first request open without response bytes, so
+  a narrowly admitted secondary route now discards earlier zero-finding npm batches
+  and restarts the complete graph against OSV QueryBatch only after one npm batch
+  exhausts two retryable availability attempts. OSV is permitted only for canonical
+  SHA-512-bound public npm tarballs; the route never follows an npm advisory, TLS or
+  semantic failure and never mixes authorities. The summary binds graph,
+  public-provenance, batch and response digests as well as the existing lock,
+  registry, Node/npm and zero-finding identities.
 - Added the owner-selected MIT licence and strict digest-bound metadata for original
   Fulmar source. Third-party licence, icon/name, trademark, privacy, and export review
   remain separate gates.

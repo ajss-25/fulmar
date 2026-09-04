@@ -12,8 +12,13 @@ import test from "node:test";
 import {
   advisoryBatchSize,
   advisoryEndpointSuffix,
+  osvFallbackProvenance,
+  osvQueryBatchEndpoint,
+  osvQueryBatchSize,
   productionAdvisoryPayload,
-  splitAdvisoryBatches
+  publicNPMRegistry,
+  splitAdvisoryBatches,
+  splitOSVQueryBatches
 } from "../../scripts/audit-dependencies.mjs";
 
 const project = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -133,46 +138,77 @@ test("dependency audit uses complete bounded bulk-advisory batches and fails clo
     request.on("end", () => {
       const bytes = Buffer.concat(chunks, received);
       const body = JSON.parse(bytes.toString("utf8"));
+      const isOSV = request.url === "/v1/querybatch";
       observed.push({
+        authority: isOSV ? "osv" : "npm",
         method: request.method,
         url: request.url,
         headers: request.headers,
         bytes: bytes.length,
         body
       });
-      const requestedName = Object.keys(body)[0];
-      let document = {};
-      if (responseMode === "advisory" && responseIndex === 0) {
-        document = {
-          [requestedName]: [{
-            id: 12345,
-            title: "fixture production vulnerability",
-            severity: "high",
-            vulnerable_versions: "<=999.0.0"
-          }]
-        };
-      } else if (responseMode === "unexpected-key") {
+      const requestedName = isOSV ? null : Object.keys(body)[0];
+      let document = isOSV
+        ? { results: body.queries.map(() => ({})) }
+        : {};
+      if (!isOSV && ["advisory", "advisory-late-server-error"].includes(responseMode)
+          && responseIndex === 0) {
+        document = { [requestedName]: [{
+          id: 12345,
+          title: "fixture production vulnerability",
+          severity: "high",
+          vulnerable_versions: "<=999.0.0"
+        }] };
+      } else if (!isOSV && responseMode === "unexpected-key") {
         document = { "not-requested-by-fulmar": [] };
-      } else if (responseMode === "malformed-schema") {
+      } else if (!isOSV && (responseMode === "malformed-schema"
+          || (responseMode === "late-malformed-schema" && responseIndex > 0))) {
         document = { [requestedName]: {} };
+      } else if (isOSV && responseMode === "osv-cardinality") {
+        document.results.pop();
+      } else if (isOSV && responseMode === "osv-unexpected-top-level") {
+        document.unexpected = true;
+      } else if (isOSV && responseMode === "osv-unexpected-field") {
+        document.results[0] = { unexpected: true };
+      } else if (isOSV && responseMode === "osv-pagination") {
+        document.results[0] = { next_page_token: "more" };
+      } else if (isOSV && responseMode === "osv-malformed-vulnerability") {
+        document.results[0] = { vulns: [{ id: "GHSA-fixture" }] };
+      } else if (isOSV && responseMode === "osv-advisory" && responseIndex === 2) {
+        document.results[0] = { vulns: [{
+          id: "GHSA-fixture-0000-0000",
+          modified: "2026-09-04T00:00:00Z"
+        }] };
       }
       let payload = Buffer.from(JSON.stringify(document), "utf8");
-      const headers = responseMode === "clean" && responseIndex === 0
+      const headers = !isOSV && responseMode === "clean" && responseIndex === 0
         ? {} : { "content-type": "application/json" };
-      if ((responseMode === "clean" && responseIndex < 2) || responseMode === "malformed-gzip") {
-        payload = responseMode === "malformed-gzip" ? Buffer.from([0x1f, 0x8b, 0x00]) : gzipSync(payload);
+      if ((!isOSV && responseMode === "clean" && responseIndex < 2)
+          || (!isOSV && responseMode === "malformed-gzip")
+          || (isOSV && responseMode === "osv-malformed-gzip")) {
+        payload = responseMode.includes("malformed-gzip")
+          ? Buffer.from([0x1f, 0x8b, 0x00]) : gzipSync(payload);
         if (responseMode === "clean" && responseIndex === 1) headers["content-encoding"] = "gzip";
-      } else if (responseMode === "malformed-json") {
+      } else if ((!isOSV && responseMode === "malformed-json")
+          || (isOSV && responseMode === "osv-malformed-json")) {
         payload = Buffer.from("{", "utf8");
       }
       responseIndex += 1;
-      if (responseMode === "redirect") {
+      if ((!isOSV && responseMode === "redirect") || (isOSV && responseMode === "osv-redirect")) {
         response.writeHead(302, { location: `/${advisoryEndpointSuffix}` });
         response.end("{}");
-      } else if (responseMode === "server-error") {
+      } else if (!isOSV && responseMode === "invalid-http-status") {
+        response.writeHead(600, headers);
+        response.end("{}");
+      } else if (responseMode === "server-error"
+          || (!isOSV && responseMode.startsWith("osv-"))
+          || (!isOSV && responseMode === "fallback-clean")
+          || (!isOSV && ["late-server-error", "advisory-late-server-error"].includes(responseMode)
+            && responseIndex > 1)) {
         response.writeHead(503, headers);
         response.end("{}");
-      } else if (responseMode === "oversized") {
+      } else if ((!isOSV && responseMode === "oversized")
+          || (isOSV && responseMode === "osv-oversized")) {
         response.writeHead(200, { ...headers, "content-length": String(9 * 1024 * 1024) });
         // Keep the declared-oversize response open. The client must destroy it
         // immediately rather than clearing its deadline and draining forever.
@@ -231,9 +267,18 @@ test("dependency audit uses complete bounded bulk-advisory batches and fails clo
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /zero findings/);
     const summary = JSON.parse(await readFile(output, "utf8"));
-    const expectedGraph = productionAdvisoryPayload(
-      JSON.parse(await readFile(join(project, "VendorRuntime", "package.json"), "utf8")),
-      JSON.parse(await readFile(join(project, "VendorRuntime", "package-lock.json"), "utf8"))
+    const runtimePackageDocument = JSON.parse(
+      await readFile(join(project, "VendorRuntime", "package.json"), "utf8")
+    );
+    const runtimeLockDocument = JSON.parse(
+      await readFile(join(project, "VendorRuntime", "package-lock.json"), "utf8")
+    );
+    const expectedGraph = productionAdvisoryPayload(runtimePackageDocument, runtimeLockDocument);
+    const expectedProvenance = osvFallbackProvenance(runtimeLockDocument);
+    assert.equal(expectedProvenance.packageNodeCount, 511);
+    assert.equal(
+      expectedProvenance.packageNodeProvenanceSHA256,
+      "c81a01227e4b7c6e6ca6bd909a5b77a3194a3fd377ae2ac48a81975fc7f2c4dc"
     );
     assert.ok(observed.length > 1);
     assert.equal(observed.length, Math.ceil(expectedGraph.packageNameCount / advisoryBatchSize));
@@ -296,8 +341,34 @@ test("dependency audit uses complete bounded bulk-advisory batches and fails clo
     assert.equal(summary.packageGraphSHA256, expectedGraph.graphSHA256);
     assert.equal(summary.batchCount, observed.length);
     assert.equal(summary.batches.length, observed.length);
+    assert.equal(summary.vulnerabilities.unknown, 0);
     assert.equal(summary.vulnerabilities.total, 0);
     assert.deepEqual(summary.unresolved, []);
+    const verifier = join(project, "scripts", "verify-dependency-audit.mjs");
+    const runtimeLockPath = join(project, "VendorRuntime", "package-lock.json");
+    const publicPrimarySummary = structuredClone(summary);
+    publicPrimarySummary.registry = publicNPMRegistry;
+    publicPrimarySummary.auditEndpoint = `${publicNPMRegistry}${advisoryEndpointSuffix}`;
+    const publicPrimaryPath = join(temporary, "public-primary-summary.json");
+    await writeJSON(publicPrimaryPath, publicPrimarySummary);
+    const primaryVerified = await execFileAsync(
+      process.execPath, [verifier, publicPrimaryPath, runtimeLockPath]
+    );
+    assert.match(primaryVerified.stdout, /zero unresolved production vulnerabilities/u);
+    for (const [index, mutation] of [
+      (value) => { value.auditTransport = "osv-querybatch-v1-fallback"; },
+      (value) => { value.auditEndpoint = osvQueryBatchEndpoint; },
+      (value) => { value.batchCount -= 1; },
+      (value) => { value.batches[0].attemptCount = 3; },
+      (value) => { value.batches[0].requestSHA256 = "0".repeat(64); },
+      (value) => { value.unexpectedTopLevel = true; }
+    ].entries()) {
+      const mutated = structuredClone(publicPrimarySummary);
+      mutation(mutated);
+      const mutatedPath = join(temporary, `primary-verifier-mutation-${index}.json`);
+      await writeJSON(mutatedPath, mutated);
+      await assert.rejects(execFileAsync(process.execPath, [verifier, mutatedPath, runtimeLockPath]));
+    }
     responseMode = "advisory";
     responseIndex = 0;
     observed.length = 0;
@@ -308,12 +379,117 @@ test("dependency audit uses complete bounded bulk-advisory batches and fails clo
     assert.match(vulnerable.stderr, /found 1 unresolved vulnerabilities/u);
     const vulnerableSummary = JSON.parse(await readFile(vulnerableOutput, "utf8"));
     assert.equal(vulnerableSummary.vulnerabilities.high, 1);
+    assert.equal(vulnerableSummary.vulnerabilities.unknown, 0);
     assert.equal(vulnerableSummary.vulnerabilities.total, 1);
     assert.equal(vulnerableSummary.unresolved.length, 1);
+    assert.equal(observed.some((request) => request.authority === "osv"), false);
+
+    responseMode = "fallback-clean";
+    responseIndex = 0;
+    observed.length = 0;
+    const fallbackOutput = join(temporary, "fallback-summary.json");
+    const fallback = await runAudit(fallbackOutput);
+    assert.equal(fallback.signal, null);
+    assert.equal(fallback.code, 0, fallback.stderr);
+    const fallbackSummary = JSON.parse(await readFile(fallbackOutput, "utf8"));
+    const npmFallbackRequests = observed.filter((request) => request.authority === "npm");
+    const osvRequests = observed.filter((request) => request.authority === "osv");
+    const expectedOSVBatches = splitOSVQueryBatches(expectedGraph.payload);
+    assert.equal(npmFallbackRequests.length, 2);
+    assert.equal(osvRequests.length, expectedOSVBatches.length);
+    assert.deepEqual(osvRequests.map((request) => request.body), expectedOSVBatches);
+    assert.equal(osvRequests.flatMap((request) => request.body.queries).length, expectedGraph.packageVersionCount);
+    for (const request of osvRequests) {
+      assert.equal(request.method, "POST");
+      assert.equal(request.url, "/v1/querybatch");
+      assert.equal(request.headers.authorization, undefined);
+      assert.equal(request.headers.cookie, undefined);
+      assert.equal(request.headers["npm-command"], undefined);
+      assert.equal(request.headers["content-type"], "application/json");
+      assert.ok(request.bytes <= 64 * 1024);
+      assert.ok(request.body.queries.length >= 1);
+      assert.ok(request.body.queries.length <= osvQueryBatchSize);
+    }
+    assert.equal(fallbackSummary.auditTransport, "osv-querybatch-v1-fallback");
+    assert.equal(fallbackSummary.queryBatchSize, osvQueryBatchSize);
+    assert.equal(fallbackSummary.queryCount, expectedGraph.packageVersionCount);
+    assert.equal(fallbackSummary.packageNodeCount, expectedProvenance.packageNodeCount);
+    assert.equal(
+      fallbackSummary.packageNodeProvenanceSHA256,
+      expectedProvenance.packageNodeProvenanceSHA256
+    );
+    assert.equal(fallbackSummary.fallbackFrom.failedBatchIndex, 0);
+    assert.equal(fallbackSummary.fallbackFrom.attemptCount, 2);
+    assert.equal(fallbackSummary.fallbackFrom.failureClass, "retryable-http");
+    assert.equal(fallbackSummary.vulnerabilities.unknown, 0);
+    assert.equal(fallbackSummary.vulnerabilities.total, 0);
+    assert.deepEqual(fallbackSummary.unresolved, []);
+
+    responseMode = "late-server-error";
+    responseIndex = 0;
+    observed.length = 0;
+    const lateFallbackOutput = join(temporary, "late-fallback-summary.json");
+    const lateFallback = await runAudit(lateFallbackOutput);
+    assert.equal(lateFallback.signal, null);
+    assert.equal(lateFallback.code, 0, lateFallback.stderr);
+    const lateFallbackSummary = JSON.parse(await readFile(lateFallbackOutput, "utf8"));
+    assert.equal(lateFallbackSummary.auditTransport, "osv-querybatch-v1-fallback");
+    assert.equal(lateFallbackSummary.fallbackFrom.failedBatchIndex, 1);
+    assert.equal(lateFallbackSummary.fallbackFrom.attemptCount, 2);
+    assert.equal(observed.filter((request) => request.authority === "npm").length, 3);
+    assert.equal(observed.filter((request) => request.authority === "osv").length, expectedOSVBatches.length);
+
+    const publicFallbackSummary = structuredClone(fallbackSummary);
+    publicFallbackSummary.registry = publicNPMRegistry;
+    publicFallbackSummary.auditEndpoint = osvQueryBatchEndpoint;
+    publicFallbackSummary.fallbackFrom.auditEndpoint = `${publicNPMRegistry}${advisoryEndpointSuffix}`;
+    const publicFallbackPath = join(temporary, "public-fallback-summary.json");
+    await writeJSON(publicFallbackPath, publicFallbackSummary);
+    const verified = await execFileAsync(process.execPath, [verifier, publicFallbackPath, runtimeLockPath]);
+    assert.match(verified.stdout, /zero unresolved production vulnerabilities/u);
+    const publicLateFallbackSummary = structuredClone(lateFallbackSummary);
+    publicLateFallbackSummary.registry = publicNPMRegistry;
+    publicLateFallbackSummary.auditEndpoint = osvQueryBatchEndpoint;
+    publicLateFallbackSummary.fallbackFrom.auditEndpoint = `${publicNPMRegistry}${advisoryEndpointSuffix}`;
+    const publicLateFallbackPath = join(temporary, "public-late-fallback-summary.json");
+    await writeJSON(publicLateFallbackPath, publicLateFallbackSummary);
+    await execFileAsync(process.execPath, [verifier, publicLateFallbackPath, runtimeLockPath]);
+    for (const [index, mutation] of [
+      (value) => { value.packageNodeCount -= 1; },
+      (value) => { value.packageNodeProvenanceSHA256 = "0".repeat(64); },
+      (value) => { value.fallbackFrom.failureClass = "invalid-response"; },
+      (value) => { value.fallbackFrom.attemptCount = 1; },
+      (value) => { value.fallbackFrom.requestSHA256 = "0".repeat(64); },
+      (value) => { value.batches[0].queryCount -= 1; },
+      (value) => { value.batches[0].requestSHA256 = "0".repeat(64); },
+      (value) => { value.registry = "https://registry.example.invalid/"; },
+      (value) => { value.unexpectedTopLevel = true; }
+    ].entries()) {
+      const mutated = structuredClone(publicFallbackSummary);
+      mutation(mutated);
+      const mutatedPath = join(temporary, `fallback-verifier-mutation-${index}.json`);
+      await writeJSON(mutatedPath, mutated);
+      await assert.rejects(execFileAsync(process.execPath, [verifier, mutatedPath, runtimeLockPath]));
+    }
+
+    const firstProductionPath = Object.keys(runtimeLockDocument.packages).find((path) => path !== ""
+      && runtimeLockDocument.packages[path].dev !== true);
+    for (const mutation of [
+      (value) => { value.resolved = value.resolved.replace("registry.npmjs.org", "mirror.invalid"); },
+      (value) => { value.integrity = undefined; },
+      (value) => { value.integrity = "sha512-not-canonical"; },
+      (value) => { value.link = true; },
+      (value) => { value.name = "aliased-package"; }
+    ]) {
+      const mutatedLock = structuredClone(runtimeLockDocument);
+      mutation(mutatedLock.packages[firstProductionPath]);
+      assert.throws(() => osvFallbackProvenance(mutatedLock), /OSV fallback/u);
+    }
 
     for (const mode of [
       "malformed-gzip", "malformed-json", "malformed-schema", "unexpected-key",
-      "redirect", "server-error", "oversized"
+      "redirect", "oversized", "invalid-http-status", "late-malformed-schema",
+      "advisory-late-server-error"
     ]) {
       responseMode = mode;
       responseIndex = 0;
@@ -329,9 +505,41 @@ test("dependency audit uses complete bounded bulk-advisory batches and fails clo
       assert.ok(observed.every((request) => request.url === `/${advisoryEndpointSuffix}`));
     }
 
+    for (const mode of [
+      "server-error", "osv-cardinality", "osv-unexpected-top-level", "osv-unexpected-field", "osv-pagination",
+      "osv-malformed-vulnerability", "osv-redirect", "osv-malformed-gzip",
+      "osv-malformed-json", "osv-oversized"
+    ]) {
+      responseMode = mode;
+      responseIndex = 0;
+      observed.length = 0;
+      const hostileOutput = join(temporary, `${mode}.json`);
+      const hostile = await runAudit(hostileOutput);
+      assert.equal(hostile.signal, null);
+      assert.notEqual(hostile.code, 0, `${mode} unexpectedly passed`);
+      const incomplete = JSON.parse(await readFile(hostileOutput, "utf8"));
+      assert.equal(incomplete.state, "audit-incomplete");
+      assert.equal(incomplete.vulnerabilities, undefined);
+      assert.equal(observed.some((request) => request.authority === "osv"), true);
+    }
+
+    responseMode = "osv-advisory";
+    responseIndex = 0;
+    observed.length = 0;
+    const osvVulnerableOutput = join(temporary, "osv-advisory.json");
+    const osvVulnerable = await runAudit(osvVulnerableOutput);
+    assert.equal(osvVulnerable.signal, null);
+    assert.notEqual(osvVulnerable.code, 0);
+    const osvVulnerableSummary = JSON.parse(await readFile(osvVulnerableOutput, "utf8"));
+    assert.equal(osvVulnerableSummary.vulnerabilities.unknown, 1);
+    assert.equal(osvVulnerableSummary.vulnerabilities.total, 1);
+    assert.equal(osvVulnerableSummary.unresolved[0].source, "OSV");
+    assert.equal(osvVulnerableSummary.unresolved[0].advisoryID, "GHSA-fixture-0000-0000");
+
     const implementation = await readFile(join(project, "scripts", "audit-dependencies.mjs"), "utf8");
     assert.doesNotMatch(implementation, /process\.env\.(?:HTTPS_PROXY|HTTP_PROXY|NO_PROXY)/u);
     assert.match(implementation, /npm\/v1\/security\/advisories\/bulk/u);
+    assert.match(implementation, /https:\/\/api\.osv\.dev\/v1\/querybatch/u);
     assert.doesNotMatch(implementation, /audits\/quick/u);
   } finally {
     await new Promise((resolveClose) => registry.close(resolveClose));
