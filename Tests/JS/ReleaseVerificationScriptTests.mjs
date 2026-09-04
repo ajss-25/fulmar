@@ -15,6 +15,11 @@ test("release verifier never executes a candidate-bundle interpreter before inve
   const treeCheck = '"$INVENTORY_NODE" "$PROJECT_DIR/scripts/verify-release-tree.mjs"';
   const signedRuntimeCheck = '"$INVENTORY_NODE" "$INVENTORY_TOOL" verify-signed-runtime';
   const firstCandidateNodeExecution = '[[ "$("$NODE" --version)" == "v$PINNED_NODE_VERSION" ]]';
+  const packagedLockComparison = 'cmp -s "$PROJECT_DIR/VendorRuntime/package-lock.json" "$LOCKFILE"';
+  const dependencyAudit = [
+    '"$NODE" "$PROJECT_DIR/scripts/verify-dependency-audit.mjs" \\',
+    '  "$AUDIT_SUMMARY" "$VENDOR_ROOT/package-lock.json"'
+  ].join("\n");
 
   assert.ok(script.includes(zipCheck), "archive structure must use the independently pinned interpreter");
   assert.ok(script.includes(treeCheck), "tree comparison must use the independently pinned interpreter");
@@ -28,6 +33,17 @@ test("release verifier never executes a candidate-bundle interpreter before inve
   const candidateExecutionIndex = script.indexOf(firstCandidateNodeExecution);
   assert.ok(inventoryIndex >= 0, "signed runtime inventory verification must be present");
   assert.ok(candidateExecutionIndex > inventoryIndex, "candidate Node may execute only after signed-runtime inventory verification");
+  const packagedLockComparisonIndex = script.indexOf(packagedLockComparison);
+  const dependencyAuditIndex = script.indexOf(dependencyAudit);
+  assert.ok(packagedLockComparisonIndex > inventoryIndex,
+    "the packaged lock must be byte-bound to the reviewed npm project after runtime inventory verification");
+  assert.ok(dependencyAuditIndex > packagedLockComparisonIndex,
+    "dependency evidence must use the complete reviewed npm project after the packaged lock is bound to it");
+  assert.doesNotMatch(
+    script,
+    /verify-dependency-audit\.mjs" "\$AUDIT_SUMMARY" "\$LOCKFILE"/u,
+    "the incomplete packaged Runtime root must never be treated as an npm project"
+  );
   assert.match(script, /verify-macho-compatibility\.sh" \\\n+  "\$APP_DIR" "\$RUNTIME_SIGNABLES" "\$MINIMUM_MACOS"/u);
 });
 

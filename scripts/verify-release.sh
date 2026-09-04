@@ -412,7 +412,8 @@ done
   "$PROJECT_DIR/Resources/THIRD_PARTY_NOTICES.md" "$RUNTIME_ROOT" \
   "$PROJECT_DIR/Config/ThirdPartyLicenseOverrides.json" "$TEMP_ROOT/expected-notices.md"
 cmp -s "$TEMP_ROOT/expected-notices.md" "$NOTICES"
-"$NODE" "$PROJECT_DIR/scripts/verify-dependency-audit.mjs" "$AUDIT_SUMMARY" "$LOCKFILE"
+"$NODE" "$PROJECT_DIR/scripts/verify-dependency-audit.mjs" \
+  "$AUDIT_SUMMARY" "$VENDOR_ROOT/package-lock.json"
 
 "$NODE" "$PROJECT_DIR/scripts/verify-sanitized-agent-presets.mjs" "$DSH_ROOT"
 "$NODE" "$PROJECT_DIR/scripts/verify-packaged-policy.mjs" \
