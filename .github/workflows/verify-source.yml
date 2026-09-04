@@ -146,6 +146,9 @@ jobs:
           /usr/bin/stat -f 'Swift Testing metadata: %N uid=%u mode=%Lp links=%l bytes=%z' \
             "$developer_dir" \
             "$developer_dir/Platforms/MacOSX.platform/Developer/usr/lib/lib_TestingInterop.dylib"
+          /usr/bin/stat -f 'Lifecycle fixture ancestor: %N uid=%u mode=%Lp links=%l' \
+            "$HOME/Library/Caches"
+          /bin/ls -lde "$HOME/Library/Caches"
 
       - name: Verify source contracts and runtime inventory
         run: |
