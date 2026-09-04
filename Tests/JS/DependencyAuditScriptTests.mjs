@@ -1,13 +1,20 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { gzipSync } from "node:zlib";
 import test from "node:test";
+import {
+  advisoryBatchSize,
+  advisoryEndpointSuffix,
+  productionAdvisoryPayload,
+  splitAdvisoryBatches
+} from "../../scripts/audit-dependencies.mjs";
 
 const project = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const execFileAsync = promisify(execFile);
@@ -108,20 +115,72 @@ function property(component, name) {
   return component.properties?.find((entry) => entry.name === name)?.value;
 }
 
-test("dependency audit resolves the bundled npm CLI before entering its isolated cwd", async () => {
-  const temporary = await mkdtemp(join(tmpdir(), "local-harness-audit-regression-"));
-  const output = join(temporary, "summary.json");
+test("dependency audit uses complete bounded bulk-advisory batches and fails closed on hostile responses", async () => {
+  const temporary = await realpath(await mkdtemp(join(tmpdir(), "local-harness-audit-regression-")));
   await mkdir(join(temporary, "home"), { mode: 0o700 });
+  let responseMode = "clean";
+  let responseIndex = 0;
+  const observed = [];
 
   const registry = createServer((request, response) => {
+    const chunks = [];
     let received = 0;
     request.on("data", (chunk) => {
       received += chunk.length;
-      if (received > 8 * 1024 * 1024) request.destroy();
+      if (received > 64 * 1024) request.destroy();
+      else chunks.push(Buffer.from(chunk));
     });
     request.on("end", () => {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end("{}");
+      const bytes = Buffer.concat(chunks, received);
+      const body = JSON.parse(bytes.toString("utf8"));
+      observed.push({
+        method: request.method,
+        url: request.url,
+        headers: request.headers,
+        bytes: bytes.length,
+        body
+      });
+      const requestedName = Object.keys(body)[0];
+      let document = {};
+      if (responseMode === "advisory" && responseIndex === 0) {
+        document = {
+          [requestedName]: [{
+            id: 12345,
+            title: "fixture production vulnerability",
+            severity: "high",
+            vulnerable_versions: "<=999.0.0"
+          }]
+        };
+      } else if (responseMode === "unexpected-key") {
+        document = { "not-requested-by-fulmar": [] };
+      } else if (responseMode === "malformed-schema") {
+        document = { [requestedName]: {} };
+      }
+      let payload = Buffer.from(JSON.stringify(document), "utf8");
+      const headers = responseMode === "clean" && responseIndex === 0
+        ? {} : { "content-type": "application/json" };
+      if ((responseMode === "clean" && responseIndex < 2) || responseMode === "malformed-gzip") {
+        payload = responseMode === "malformed-gzip" ? Buffer.from([0x1f, 0x8b, 0x00]) : gzipSync(payload);
+        if (responseMode === "clean" && responseIndex === 1) headers["content-encoding"] = "gzip";
+      } else if (responseMode === "malformed-json") {
+        payload = Buffer.from("{", "utf8");
+      }
+      responseIndex += 1;
+      if (responseMode === "redirect") {
+        response.writeHead(302, { location: `/${advisoryEndpointSuffix}` });
+        response.end("{}");
+      } else if (responseMode === "server-error") {
+        response.writeHead(503, headers);
+        response.end("{}");
+      } else if (responseMode === "oversized") {
+        response.writeHead(200, { ...headers, "content-length": String(9 * 1024 * 1024) });
+        // Keep the declared-oversize response open. The client must destroy it
+        // immediately rather than clearing its deadline and draining forever.
+        response.write("{}");
+      } else {
+        response.writeHead(200, { ...headers, "content-length": String(payload.length) });
+        response.end(payload);
+      }
     });
   });
 
@@ -134,7 +193,7 @@ test("dependency audit resolves the bundled npm CLI before entering its isolated
     assert.equal(typeof address, "object");
     const registryURL = `http://127.0.0.1:${address.port}/`;
 
-    const result = await new Promise((resolveChild, reject) => {
+    const runAudit = (output) => new Promise((resolveChild, reject) => {
       const child = spawn(process.execPath, [
         "scripts/audit-dependencies.mjs",
         "VendorRuntime/package.json",
@@ -166,16 +225,114 @@ test("dependency audit resolves the bundled npm CLI before entering its isolated
       }));
     });
 
+    const output = join(temporary, "summary.json");
+    const result = await runAudit(output);
     assert.equal(result.signal, null);
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /zero findings/);
     const summary = JSON.parse(await readFile(output, "utf8"));
+    const expectedGraph = productionAdvisoryPayload(
+      JSON.parse(await readFile(join(project, "VendorRuntime", "package.json"), "utf8")),
+      JSON.parse(await readFile(join(project, "VendorRuntime", "package-lock.json"), "utf8"))
+    );
+    assert.ok(observed.length > 1);
+    assert.equal(observed.length, Math.ceil(expectedGraph.packageNameCount / advisoryBatchSize));
+    const observedNames = observed.flatMap((request) => Object.keys(request.body));
+    assert.equal(new Set(observedNames).size, observedNames.length);
+    assert.deepEqual([...observedNames].sort(), Object.keys(expectedGraph.payload).sort());
+    for (const request of observed) {
+      assert.equal(request.method, "POST");
+      assert.equal(request.url, `/${advisoryEndpointSuffix}`);
+      assert.equal(request.headers.authorization, undefined);
+      assert.equal(request.headers.cookie, undefined);
+      assert.equal(request.headers["content-type"], "application/json");
+      assert.equal(request.headers["npm-command"], "audit");
+      assert.ok(request.bytes <= 64 * 1024);
+      assert.ok(Object.keys(request.body).length >= 1);
+      assert.ok(Object.keys(request.body).length <= advisoryBatchSize);
+      for (const [name, versions] of Object.entries(request.body)) {
+        assert.deepEqual(versions, expectedGraph.payload[name]);
+      }
+    }
+    const syntheticPayload = Object.fromEntries(Array.from(
+      { length: advisoryBatchSize + 1 },
+      (_, index) => [`synthetic-package-${String(index).padStart(4, "0")}`, ["1.0.0"]]
+    ));
+    const syntheticBatches = splitAdvisoryBatches(syntheticPayload);
+    assert.equal(syntheticBatches.length, 2);
+    assert.equal(Object.keys(syntheticBatches[0]).length, advisoryBatchSize);
+    assert.equal(Object.keys(syntheticBatches[1]).length, 1);
+    const omissionGraph = productionAdvisoryPayload(
+      {
+        name: "audit-omission-fixture",
+        version: "1.0.0",
+        dependencies: { "production-package": "1.0.0" },
+        devDependencies: { "development-package": "1.0.0" },
+        optionalDependencies: { "optional-package": "1.0.0" },
+        peerDependencies: { "peer-package": "1.0.0" }
+      },
+      {
+        name: "audit-omission-fixture",
+        version: "1.0.0",
+        lockfileVersion: 3,
+        packages: {
+          "": { name: "audit-omission-fixture", version: "1.0.0" },
+          "node_modules/production-package": { version: "1.0.0" },
+          "node_modules/development-package": { version: "1.0.0", dev: true },
+          "node_modules/optional-package": { version: "1.0.0", optional: true },
+          "node_modules/peer-package": { version: "1.0.0", peer: true }
+        }
+      }
+    );
+    assert.deepEqual(Object.keys(omissionGraph.payload), [
+      "optional-package", "peer-package", "production-package"
+    ]);
     assert.equal(summary.registry, registryURL);
+    assert.equal(summary.auditEndpoint, `${registryURL}${advisoryEndpointSuffix}`);
+    assert.equal(summary.auditTransport, "npm-bulk-advisory-v1");
     assert.equal(summary.auditReportVersion, 2);
+    assert.equal(summary.packageNameCount, expectedGraph.packageNameCount);
+    assert.equal(summary.packageVersionCount, expectedGraph.packageVersionCount);
+    assert.equal(summary.packageGraphSHA256, expectedGraph.graphSHA256);
+    assert.equal(summary.batchCount, observed.length);
+    assert.equal(summary.batches.length, observed.length);
     assert.equal(summary.vulnerabilities.total, 0);
     assert.deepEqual(summary.unresolved, []);
+    responseMode = "advisory";
+    responseIndex = 0;
+    observed.length = 0;
+    const vulnerableOutput = join(temporary, "vulnerable-summary.json");
+    const vulnerable = await runAudit(vulnerableOutput);
+    assert.equal(vulnerable.signal, null);
+    assert.notEqual(vulnerable.code, 0);
+    assert.match(vulnerable.stderr, /found 1 unresolved vulnerabilities/u);
+    const vulnerableSummary = JSON.parse(await readFile(vulnerableOutput, "utf8"));
+    assert.equal(vulnerableSummary.vulnerabilities.high, 1);
+    assert.equal(vulnerableSummary.vulnerabilities.total, 1);
+    assert.equal(vulnerableSummary.unresolved.length, 1);
+
+    for (const mode of [
+      "malformed-gzip", "malformed-json", "malformed-schema", "unexpected-key",
+      "redirect", "server-error", "oversized"
+    ]) {
+      responseMode = mode;
+      responseIndex = 0;
+      observed.length = 0;
+      const hostileOutput = join(temporary, `${mode}.json`);
+      const hostile = await runAudit(hostileOutput);
+      assert.equal(hostile.signal, null);
+      assert.notEqual(hostile.code, 0, `${mode} unexpectedly passed`);
+      const incomplete = JSON.parse(await readFile(hostileOutput, "utf8"));
+      assert.equal(incomplete.state, "audit-incomplete");
+      assert.equal(incomplete.vulnerabilities, undefined);
+      assert.ok(observed.length >= 1);
+      assert.ok(observed.every((request) => request.url === `/${advisoryEndpointSuffix}`));
+    }
+
     const implementation = await readFile(join(project, "scripts", "audit-dependencies.mjs"), "utf8");
     assert.doesNotMatch(implementation, /process\.env\.(?:HTTPS_PROXY|HTTP_PROXY|NO_PROXY)/u);
+    assert.match(implementation, /npm\/v1\/security\/advisories\/bulk/u);
+    assert.doesNotMatch(implementation, /audits\/quick/u);
   } finally {
     await new Promise((resolveClose) => registry.close(resolveClose));
     await rm(temporary, { recursive: true, force: true });

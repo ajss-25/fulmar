@@ -57,6 +57,13 @@ Updated: 2026-09-03 (Europe/London)
   The runtime was rebuilt only through the pinned materializer and the production
   dependency audit now reports zero findings; advisory probes, lock staging and
   reconstruction evidence live under ignored `build/release-triage/fast-uri-3.1.6-*`.
+- Replaced npm CLI's failing audit transport without changing the audited graph. The
+  gate still derives production-only semantics from the npm 10.9.8-bundled Arborist,
+  but posts bounded sorted package/version batches directly to npm's official Bulk
+  Advisory route, recognises the registry's documented unlabelled-gzip response,
+  validates every response and fails closed without using the retired Quick Audit
+  fallback. The summary now binds graph, batch and response digests as well as the
+  existing lock, registry, Node/npm and zero-finding identities.
 - Added the owner-selected MIT licence and strict digest-bound metadata for original
   Fulmar source. Third-party licence, icon/name, trademark, privacy, and export review
   remain separate gates.

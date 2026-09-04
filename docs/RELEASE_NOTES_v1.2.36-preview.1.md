@@ -42,7 +42,7 @@ unrun result.
 | Tracked-index policy on the proposed public commit | must pass against the exact committed index |
 | Clean-checkout bootstrap (`zsh scripts/bootstrap-source-checkout.sh`) | must reconstruct pinned Node, DSH 0.1.1-rc.1, qs 6.16.0, fast-uri 3.1.6, 13 patches, and the exact 38,501-entry / 394,622,078-byte VendorRuntime inventory |
 | DSH promotion provenance, source product contract, DeepSeek runtime contract | must pass |
-| Production dependency audit (npm 10.9.8, credential-free) | must report zero findings |
+| Production dependency audit (pinned npm 10.9.8 virtual tree; credential-free, bounded Bulk Advisory transport; no legacy fallback) | must report zero findings |
 | Static security scan | must report zero unreviewed findings using the content-pinned Semgrep 1.135.0 closure and pinned rules |
 | JavaScript gate | must complete 666 exact tests: 619 passed, 47 reviewed intentional skips, 0 failures |
 | Swift gate | must complete 1,445/1,445 isolated functions, DeviceAttestationAuthorityTests 10/10, warning-clean, with deployment target 15.0 verified |

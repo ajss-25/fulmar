@@ -64,7 +64,7 @@
 | I8 | Upstream MCP client lacked wrapper-level tool/output/startup limits and inherited too much environment. | Guarded local-stdio adapter, native per-call approval, limits, reduced child env; remote MCP disabled. | Closed in 1.1; qualification pending |
 | I9 | Passive file extensions could cause mismatched downloads to be previewed. | Content signature/MIME mismatch warns and disables passive preview; revalidate before save. | Closed in 1.1; regression pending |
 | I10 | Legacy credential migration requires real user consent. | Preserve source until verified Keychain read-back; leave final action to user. | Manual item open |
-| I11 | The production dependency audit requires disclosing the pinned package graph to the configured registry. | Require explicit network authorization, record the exact credential-free HTTPS registry and lock digest, and fail release verification when current evidence is absent. | Blocked pending authorization; no pass inferred |
+| I11 | The production dependency audit requires disclosing the pinned package graph to the configured registry. | Require explicit network authorization; disclose only bounded production package/version batches to the credential-free HTTPS Bulk Advisory endpoint; bind registry, lock, graph, request and response digests; fail closed when current complete evidence is absent. | Control implemented; each candidate still requires fresh evidence |
 
 ## Dependencies
 

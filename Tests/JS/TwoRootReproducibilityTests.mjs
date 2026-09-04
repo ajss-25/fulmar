@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import {
   chmod,
   link,
-  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -95,14 +94,23 @@ test("two different roots produce one path-free exact pre-sign summary", async (
     ], { cwd: project, encoding: "utf8" });
     assert.equal(cli.status, 0, cli.stderr);
     assert.match(cli.stdout, /8 compiler products, 8 dSYMs/u);
-    assert.equal((await lstat(report)).mode & 0o777, 0o600);
-    const firstReportBytes = await readFile(report);
+    const firstReportInput = await readAttestedRegularFile(report, {
+      label: "initial two-root comparison report",
+      maximumBytes: 1024 * 1024,
+      requirePrivateMode: true
+    });
+    assert.equal(Number(firstReportInput.metadata.mode & 0o777n), 0o600);
     cli = spawnSync(process.execPath, [
       path.join(project, "scripts", "unsigned-reproducibility-inventory.mjs"),
       "compare-inventories", leftInventory, rightInventory, "a".repeat(40), "b".repeat(40), report
     ], { cwd: project, encoding: "utf8" });
     assert.equal(cli.status, 0, cli.stderr);
-    assert.deepEqual(await readFile(report), firstReportBytes);
+    const repeatedReportInput = await readAttestedRegularFile(report, {
+      label: "repeated two-root comparison report",
+      maximumBytes: 1024 * 1024,
+      requirePrivateMode: true
+    });
+    assert.deepEqual(repeatedReportInput.bytes, firstReportInput.bytes);
     const reportInput = await readAttestedRegularFile(report, {
       label: "two-root comparison report",
       maximumBytes: 1024 * 1024,
