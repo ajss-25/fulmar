@@ -58,7 +58,10 @@ public enum CredentialPrivateDirectory {
               validComponent(metadataName) else {
             throw CredentialPrivateDirectoryError.unsafePath
         }
-        var descriptor = open(home.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        // Ancestors are traversal capabilities, not directory-listing grants.
+        // Sandboxed credential services may search and attest them while only
+        // the final metadata directory permits reading its contents.
+        var descriptor = open(home.path, O_SEARCH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { throw CredentialPrivateDirectoryError.unsafePath }
         defer { if descriptor >= 0 { _ = close(descriptor) } }
         try validateDirectory(
@@ -76,12 +79,14 @@ public enum CredentialPrivateDirectory {
             (productName, true),
             (metadataName, true),
         ]
-        for (name, privatePermissions) in components {
+        for (index, component) in components.enumerated() {
+            let (name, privatePermissions) = component
             let child = try openOrCreateDirectory(
                 parent: descriptor,
                 name: name,
                 ownerID: ownerID,
-                privatePermissions: privatePermissions
+                privatePermissions: privatePermissions,
+                access: index == components.count - 1 ? O_RDONLY : O_SEARCH
             )
             _ = close(descriptor)
             descriptor = child
@@ -106,10 +111,11 @@ public enum CredentialPrivateDirectory {
         parent: Int32,
         name: String,
         ownerID: uid_t,
-        privatePermissions: Bool
+        privatePermissions: Bool,
+        access: Int32
     ) throws -> Int32 {
         var child = name.withCString {
-            openat(parent, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            openat(parent, $0, access | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         }
         if child < 0, errno == ENOENT {
             let created = name.withCString { mkdirat(parent, $0, S_IRWXU) }
@@ -120,7 +126,7 @@ public enum CredentialPrivateDirectory {
                 throw CredentialPrivateDirectoryError.creationFailed
             }
             child = name.withCString {
-                openat(parent, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                openat(parent, $0, access | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             }
         }
         guard child >= 0 else { throw CredentialPrivateDirectoryError.unsafePath }

@@ -68,7 +68,7 @@ test("broker transaction and byte-buffer unavailable states fail closed without 
 });
 
 test("broker release assembly is sandboxed, signed, verified, and has a bounded nonsecret canary", async () => {
-  const [manifest, build, release, verifier, live, processMonitor, plist, entitlements, service] = await Promise.all([
+  const [manifest, build, release, verifier, live, processMonitor, plist, entitlements, service, directory, helperVerifier, bootstrap] = await Promise.all([
     source("Package.swift"),
     source("scripts", "build-app.sh"),
     source("scripts", "verify-release.sh"),
@@ -77,7 +77,10 @@ test("broker release assembly is sandboxed, signed, verified, and has a bounded 
     source("scripts", "credential-xpc-live-process-monitor.mjs"),
     source("Resources", "CredentialBrokerService-Info.plist"),
     source("Resources", "CredentialBrokerService.entitlements"),
-    source("Tools", "CredentialBrokerService", "main.swift")
+    source("Tools", "CredentialBrokerService", "main.swift"),
+    source("Sources", "CredentialSecurity", "CredentialPrivateDirectory.swift"),
+    source("scripts", "verify-credential-helper.sh"),
+    source("scripts", "credential-application-support-bootstrap.swift")
   ]);
 
   assert.match(manifest, /name: "LocalHarnessCredentialBrokerService"/u);
@@ -107,4 +110,10 @@ test("broker release assembly is sandboxed, signed, verified, and has a bounded 
   assert.match(entitlements, /com\.apple\.security\.app-sandbox[\s\S]*<true\/>/u);
   assert.match(entitlements, /CredentialMetadata\//u);
   assert.doesNotMatch(entitlements, /network\.client|network\.server|files\.user-selected/u);
+  assert.match(directory, /open\(home\.path, O_SEARCH \| O_DIRECTORY \| O_NOFOLLOW \| O_CLOEXEC\)/u);
+  assert.match(directory, /access: index == components\.count - 1 \? O_RDONLY : O_SEARCH/u);
+  assert.match(directory, /openat\(parent, \$0, access \| O_DIRECTORY \| O_NOFOLLOW \| O_CLOEXEC\)/u);
+  assert.match(helperVerifier, /credential-application-support-bootstrap\.swift[\s\S]*userInfo\(\)\.homedir[\s\S]*admit-application-support[\s\S]*verify-credential-helper-bounds\.mjs/u);
+  assert.match(bootstrap, /ApplicationSupportRootAdmission\(url: url\)[\s\S]*admission\.admit\(\)/u);
+  assert.doesNotMatch(bootstrap, /SecItem|SecKeychain|chmod\(|FileManager\.default\.createDirectory/u);
 });

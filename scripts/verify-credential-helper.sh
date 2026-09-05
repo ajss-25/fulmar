@@ -20,9 +20,6 @@ elif (( ROOT_WATCHDOG_STATE == 2 )); then
   exit 126
 fi
 
-/bin/zsh -f "$PROJECT_DIR/scripts/verify-telemetry-lock-helper.sh" "$HELPER"
-"$NODE" "$PROJECT_DIR/scripts/verify-credential-helper-bounds.mjs" "$HELPER"
-
 # A detached release helper deliberately refuses every broker command. Build
 # the existing DEBUG-only historical source seam for the changed-signer fixture;
 # the current helper under test remains the exact, unmodified supplied candidate.
@@ -57,6 +54,19 @@ trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 /bin/mkdir -m 0700 "$FIXTURE_ROOT/clang" "$FIXTURE_ROOT/swift"
 source "$PROJECT_DIR/scripts/select-compatible-swift-sdk.sh"
+# Normal applicationDidFinishLaunching admits this exact private root before
+# any credential request. A direct packaged-helper canary must reproduce that
+# precondition, without launching the UI/runtime or widening broker entitlements.
+/usr/bin/swiftc -sdk "$SDKROOT" -warnings-as-errors -parse-as-library \
+  -module-cache-path "$FIXTURE_ROOT/clang" \
+  "$PROJECT_DIR/Sources/ApplicationSupportAdmission/ApplicationSupportRootAdmission.swift" \
+  "$PROJECT_DIR/scripts/credential-application-support-bootstrap.swift" \
+  -o "$FIXTURE_ROOT/admit-application-support"
+ACCOUNT_HOME="$("$NODE" -p 'require("node:os").userInfo().homedir')"
+"$FIXTURE_ROOT/admit-application-support" "$ACCOUNT_HOME/Library/Application Support/Local Harness"
+/bin/zsh -f "$PROJECT_DIR/scripts/verify-telemetry-lock-helper.sh" "$HELPER"
+"$NODE" "$PROJECT_DIR/scripts/verify-credential-helper-bounds.mjs" "$HELPER"
+
 typeset -a fixture_build
 fixture_build=(
   /usr/bin/env "SDKROOT=$SDKROOT"

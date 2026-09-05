@@ -35,6 +35,13 @@ struct CredentialPrivateDirectoryTests {
         #expect(metadata.st_dev == named.st_dev)
         #expect(metadata.st_ino == named.st_ino)
         #expect(metadata.st_mode & 0o777 == 0o700)
+        // Ancestors need only search handles; the retained final capability
+        // must still support the actual metadata store's read/write operations.
+        #expect(fcntl(descriptor, F_GETFL) & O_ACCMODE == O_RDONLY)
+        #expect(fcntl(descriptor, F_GETFL) & O_EXEC == 0)
+        let store = try CredentialFileStateStore(directoryCapability: capability)
+        try store.writeMetadata(account: "ref:SEARCH_ONLY_ANCESTORS", kind: "reference")
+        #expect(try store.readMetadata(account: "ref:SEARCH_ONLY_ANCESTORS")?.kind == "reference")
     }
 
     @Test func everyIntermediateSymlinkAndWritableComponentIsRejected() throws {
