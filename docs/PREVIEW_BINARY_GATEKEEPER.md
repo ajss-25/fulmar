@@ -1,8 +1,16 @@
 # Preview binary and Gatekeeper — Fulmar 1.2.36 build 156 (v1.2.36-preview.1)
 
-## What the preview binary is
+## Local signing is required for a usable source build
 
-A Fulmar app built with the documented preview command
+The documented `make private-release` command creates or reuses **Fulmar Local
+Signing**, a persistent self-signed development identity in your login Keychain.
+It may require initial macOS authorization; keep the identity for later builds.
+It does not install the app, publish a binary, add an Apple Developer ID, or notarise
+anything. The credential helper and embedded XPC services require the same
+designated requirement, so an ordinary ad-hoc build cannot provide working cloud
+credential storage. Do not remove the signature checks.
+
+A compile/review-only app built with
 (`LOCAL_HARNESS_REQUIRE_STABLE_SIGNING=0 LOCAL_HARNESS_SIGN_IDENTITY=- LOCAL_HARNESS_SIGN_TIMESTAMP=0 make build`)
 is **ad-hoc signed**: it carries a code signature with no certificate, no Apple Developer
 ID team, no secure timestamp and no notarisation ticket (`codesign -dv` reports
@@ -10,11 +18,12 @@ ID team, no secure timestamp and no notarisation ticket (`codesign -dv` reports
 The signature lets macOS verify that the bundle has not changed since it was built; it
 says nothing about who built it.
 
-Consequences:
+Neither local-signing option supplies a notarisation ticket. Consequences:
 
-- macOS Gatekeeper refuses to open it by default. On macOS 15 and later the dialog says
-  the app could not be verified or "cannot be opened"; there is no longer a
-  Control-click → Open shortcut for unsigned software.
+- macOS may block it depending on its provenance, quarantine state and security
+  policy. A clean-Mac first launch has not been qualified for this candidate. If
+  macOS blocks your own reviewed build, follow the per-app guidance below; do not
+  disable Gatekeeper system-wide.
 - It cannot be delivered through the in-app updater (disabled in this release) or
   through the fail-closed public-distribution path, which requires Developer ID and
   notarisation.
@@ -24,22 +33,25 @@ Consequences:
 
 ## Recommended path: build it yourself
 
-The safest way to run the preview is to build it from the exact tagged source on your
-own Mac (see the README "Build from source" section). A locally built app is still
-ad-hoc signed and Gatekeeper still applies, but you know where every byte came from,
-and the build records the source-input inventory, dependency audit and static-scan
-evidence in `build/`.
+Build the preview from the exact tagged source on your own Mac using
+`make private-release` (see the README "Build from source" section). The resulting
+app is locally certificate-signed, not Apple-notarised; Gatekeeper still applies.
+The build records the source-input inventory, dependency audit and static-scan
+evidence in `build/`. Quit any existing copy, retain its bundle and a private state
+backup, then place the reviewed build in `/Applications`. The sandboxed credential
+services must be able to inspect their sibling helper's signature there; running
+the build directly from `/private/tmp` is not the supported credential-service path.
 
-## If you decide to run an ad-hoc preview anyway
+## If macOS blocks your locally signed preview
 
 Understand what you are accepting first: you are telling macOS to trust software that
-Apple has not scanned and no identified developer has signed. If the bundle was
+Apple has not notarised and no Apple Developer ID has signed. If the bundle was
 tampered with, Gatekeeper is the control you are switching off for that one app.
 
 Use only Apple's explicit per-app allowance:
 
-1. Copy `Fulmar.app` to `/Applications` and double-click it once. macOS will refuse and
-   show the verification dialog. Choose **Done** (not "Move to Trash").
+1. Copy your reviewed `Fulmar.app` to `/Applications` and double-click it once. If
+   macOS shows a verification dialog, choose **Done** (not "Move to Trash").
 2. Open **System Settings → Privacy & Security**, scroll to the **Security** section,
    and next to the message about Fulmar choose **Open Anyway**. Authenticate.
 3. Launch Fulmar again and confirm the second dialog.
@@ -75,7 +87,7 @@ Developer ID signed, notarised and stapled release for which none of the above a
 
 ## Gatekeeper evidence for a locally built preview
 
-The documented build and frozen-candidate checks record the ad-hoc signature and
+The build and frozen-candidate checks record the actual signing state and
 absence of a notarisation ticket under the builder's private `build/` evidence. An old
 candidate log must not be reused for changed source, and private build logs are not
 included in the source package. Even a passing local frozen-candidate check does not

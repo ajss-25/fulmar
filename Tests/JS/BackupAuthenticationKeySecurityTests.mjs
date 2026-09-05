@@ -100,6 +100,10 @@ test("pre-controller credential paths pin the exact bundle components around exe
 
 test("the real-Keychain signer-change canary preserves the exact production backup key", async () => {
   const canary = await readFile(join(root, "Scripts", "verify-keychain-no-ui-transition.mjs"), "utf8");
+  assert.match(canary, /const historicalHelper = process\.argv\[3\]/u);
+  assert.match(canary, /assert\.notEqual\(historicalHelper, helper/u);
+  assert.match(canary, /copyFile\(historicalHelper, legacy\)/u);
+  assert.doesNotMatch(canary, /copyFile\(helper, legacy\)/u);
   assert.match(canary, /helper, \["backup-load-or-create"\]/u);
   assert.match(canary, /legacy, \["backup-load-or-create"\]/u);
   assert.match(canary, /changed-signature backup read waited for authorization UI/u);

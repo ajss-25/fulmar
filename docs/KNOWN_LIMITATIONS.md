@@ -80,8 +80,10 @@ exact frozen candidate closes it.
   Public app-binary distribution is therefore
   clean-install-only until an atomic pre-start/pre-backup migration or quarantine is
   implemented and fault-tested; never share an older DSH state tree or backup.
-- A candidate built from this source is locally/ad-hoc signed, not Developer ID signed
-  or Apple-notarized. No build-156 binary has passed a clean non-developer Mac install,
+- A usable source build requires a persistent local signing identity via
+  `make private-release`; it is not Developer ID signed or Apple-notarized. Ad-hoc
+  builds are compile/review-only and cannot satisfy the packaged credential services'
+  shared designated requirement. No build-156 binary has passed a clean non-developer Mac install,
   minimum-macOS matrix, or a two-version notarized update/rollback exercise.
 - The retained updater source now requires a nonce-bound healthy launch from the exact
   directly spawned PID/bundle and journals every replacement/health/commit phase, but

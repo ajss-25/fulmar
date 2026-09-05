@@ -18,8 +18,8 @@ promise feature parity with proprietary desktop applications or freedom from def
 > **Public-release status — source preview, not a supported download.** The proposed
 > first public tag is `v1.2.36-preview.1`. It is an MIT-licensed **source preview**:
 > reviewers and developers can build and run it from source. There is no Developer ID
-> signed or Apple-notarised binary; a locally built app is ad-hoc signed and macOS
-> Gatekeeper will refuse it by default (see
+> signed or Apple-notarised binary. A usable local build needs a persistent
+> self-signed identity; this does not remove Gatekeeper checks (see
 > [Preview binary and Gatekeeper](docs/PREVIEW_BINARY_GATEKEEPER.md)). Clean-Mac install
 > testing, the manual permission/accessibility matrix, live paid-provider tests, icon and
 > trademark clearance, and hosted CI are open gates listed in
@@ -121,9 +121,9 @@ for the full table and the evidence behind each row.
 
 1. **Build Fulmar from source** (there is no supported download yet) — see
    [Build from source](#build-from-source). The app is assembled at
-   `/private/tmp/LocalHarnessBuild/Fulmar.app`; copy it to `/Applications` yourself if
-   you want to keep it. Because it is only ad-hoc signed, macOS will refuse the first
-   launch; read [Preview binary and Gatekeeper](docs/PREVIEW_BINARY_GATEKEEPER.md)
+   `/private/tmp/LocalHarnessBuild/Fulmar.app`; quit older copies and place your
+   reviewed build in `/Applications` before using its credential services. It is
+   locally signed, not Apple-notarised; read [Preview binary and Gatekeeper](docs/PREVIEW_BINARY_GATEKEEPER.md)
    before deciding whether to allow it.
 2. **For on-device work**, install the official Ollama macOS app (0.33.x) and pull the
    qualified model: `ollama pull qwen3.8:27b-mlx` (needs a 48 GB Mac). Ollama's normal
@@ -191,17 +191,31 @@ make dependency-audit                 # npm first; eligible outages use credenti
 make static-security-scan
 FULMAR_SWIFT_BUILD_JOBS=2 /usr/bin/caffeinate -dimsu zsh scripts/run-swift-tests.sh   # 1,445 isolated functions
 zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # 666 tests (619 pass, 47 reviewed skips)
-LOCAL_HARNESS_REQUIRE_STABLE_SIGNING=0 LOCAL_HARNESS_SIGN_IDENTITY=- LOCAL_HARNESS_SIGN_TIMESTAMP=0 make build
+make private-release                # persistent local signing identity; no Developer ID or notarisation
 ./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
   --emergency-rss-bytes 17179869184 --label "Fulmar frozen-candidate check" -- /usr/bin/make frozen-candidate-check
 ```
+
+`make private-release` creates or reuses **Fulmar Local Signing** in your login
+Keychain and may require initial macOS authorization. It does not install the app,
+publish anything, or require a paid Apple developer account. Keep that identity for
+subsequent builds: the packaged credential helper and XPC services must share its
+designated requirement. Before using the app, quit any older copy and place your
+reviewed build in `/Applications`; retain the old bundle and a private state backup.
+See [preview signing and Gatekeeper](docs/PREVIEW_BINARY_GATEKEEPER.md).
+
+For compile/review work that must not create a signing identity, the explicit
+`LOCAL_HARNESS_REQUIRE_STABLE_SIGNING=0 LOCAL_HARNESS_SIGN_IDENTITY=- LOCAL_HARNESS_SIGN_TIMESTAMP=0 make build`
+command remains available. Its ad-hoc result is **not a usable cloud-credential
+build**: the packaged credential services deliberately reject its mismatched
+designated requirements. Do not disable those checks.
 
 Never run `npm ci` directly against `VendorRuntime/package-lock.json`: the bootstrap
 derives the install-only lock, applies the thirteen hash-bound runtime patches and
 verifies the complete `VendorRuntime.inventory.json`. The Swift gate builds with
 warnings as errors and takes minutes on a warm cache and considerably longer cold; run
 it and the JavaScript gate sequentially, not concurrently. The full gate list, expected
-counts and the private/release targets you should **not** run for a preview are in
+counts and the distinction between local signing and public binary release targets are in
 [Getting started](docs/GETTING_STARTED.md), [Test plan](docs/TEST_PLAN.md) and the
 [detailed reference](#build-and-qualification) below.
 
@@ -773,7 +787,8 @@ candidate without rebuilding it, then runs the public-distribution verifier. Nei
 uploads or publishes anything. See [public-release readiness](docs/PUBLIC_RELEASE_READINESS.md)
 for the required variables and evidence workflow.
 
-Private installation never uses a blind Finder copy or the disabled public updater.
+The **qualified private-install target**, distinct from manual source-preview
+placement above, never uses a blind Finder copy or the disabled public updater.
 `make private-install-qualified` rebinds the frozen candidate to current source,
 archive, signatures, manifest, and retained full-hardware evidence, then atomically
 swaps it with `/Applications/Fulmar.app` through separately built private tools. It

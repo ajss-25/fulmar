@@ -117,8 +117,7 @@ make dependency-audit
 make static-security-scan
 zsh scripts/run-swift-tests.sh
 zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs
-LOCAL_HARNESS_REQUIRE_STABLE_SIGNING=0 LOCAL_HARNESS_SIGN_IDENTITY=- \
-  LOCAL_HARNESS_SIGN_TIMESTAMP=0 make build
+make private-release
 ```
 
 The assembled local candidate is
@@ -126,6 +125,20 @@ The assembled local candidate is
 `node_modules` trees are intentionally excluded from Git. Bootstrap must recreate
 them from the checked lock, patch manifest, and byte inventory. A clean bootstrap and
 test run is necessary evidence; it is not Developer ID signing or notarization.
+`make private-release` deliberately creates or reuses **Fulmar Local Signing** in
+your login Keychain, potentially with a first-use authorization prompt. This is a
+persistent self-signed development identity, not a paid Apple Developer ID, and the
+target neither installs nor publishes the app. Reuse it on later builds so the
+credential helper and XPC services retain their shared designated requirement.
+Before use, quit any previous copy and place the reviewed app in `/Applications`,
+retaining your previous bundle and a private state backup. Read
+[Preview binary and Gatekeeper](PREVIEW_BINARY_GATEKEEPER.md) first.
+
+For compile/review-only work, the explicit
+`LOCAL_HARNESS_REQUIRE_STABLE_SIGNING=0 LOCAL_HARNESS_SIGN_IDENTITY=- LOCAL_HARNESS_SIGN_TIMESTAMP=0 make build`
+command avoids creating a signing identity. That ad-hoc bundle cannot satisfy the
+packaged credential services' shared-signature requirement; do not use it to
+evaluate cloud credentials or weaken the identity checks to make it run.
 The Semgrep installer refuses an existing destination; use a new private temporary
 root for a new installation rather than modifying a previously reviewed toolchain in
 place.

@@ -55,7 +55,9 @@ host have, see `docs/QUALIFICATION_EVIDENCE.md` and `docs/SUPPORT_MATRIX.md`.
 
 ## What you can do with it
 
-- Build it from source on an Apple-silicon Mac and run it locally (ad-hoc signed; see
+- Build it from source on an Apple-silicon Mac using the persistent local signing
+  identity created/reused by `make private-release` (no paid Apple developer account;
+  ad-hoc builds are compile/review-only, not cloud-credential builds; see
   `docs/PREVIEW_BINARY_GATEKEEPER.md`).
 - Use the on-device route with official Ollama 0.33.x and `qwen3.8:27b-mlx` on a 48 GB
   Mac (the only qualified local model), or other models in Compatibility mode.

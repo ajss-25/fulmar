@@ -7,7 +7,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const helper = process.argv[2] ? resolve(process.argv[2]) : undefined;
+const historicalHelper = process.argv[3] ? resolve(process.argv[3]) : undefined;
 assert.ok(helper, "credential helper path is required");
+assert.ok(historicalHelper, "separately built DEBUG historical credential fixture is required");
+assert.notEqual(historicalHelper, helper, "the historical fixture must not reuse the current candidate helper");
+assert.equal(process.argv.length, 4, "expected only the current helper and historical fixture paths");
 const root = await mkdtemp(join(tmpdir(), "fulmar-keychain-no-ui-"));
 const legacy = join(root, "LegacyCredentialHelper");
 const reference = `FULMAR_NO_UI_${randomUUID().replaceAll("-", "").toUpperCase()}`;
@@ -62,7 +66,9 @@ function run(executable, args, input, deadline = 3_000) {
 }
 
 try {
-  await copyFile(helper, legacy);
+  // Only the existing DEBUG source seam admits standalone historical commands.
+  // Re-sign this separate fixture, never the packaged release helper under test.
+  await copyFile(historicalHelper, legacy);
   await chmod(legacy, 0o700);
   let result = await run("/usr/bin/codesign", [
     "--force", "--options", "runtime", "--sign", "-",

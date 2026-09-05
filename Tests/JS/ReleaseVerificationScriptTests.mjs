@@ -92,6 +92,15 @@ test("build, archive verification, and public packaging enforce one fail-closed 
 
 test("release verifier exercises a byte-identical macOS Applications-style layout", async () => {
   const script = await readFile(verifierPath, "utf8");
+  assert.match(script, /mktemp -d \/Applications\/Fulmar-Release-Verification\.XXXXXX/u);
+  assert.match(script, /TEMP_ROOT_IDENTITY=.*stat -f '%d:%i:%u:%HT:%Lp'/u);
+  assert.match(script, /Directory:700/u);
+  assert.match(script, /"\$TEMP_ROOT" == \/Applications\/Fulmar-Release-Verification\.\*/u);
+  assert.match(script, /! -L "\$TEMP_ROOT"/u);
+  assert.match(script, /== "\$TEMP_ROOT_IDENTITY"/u);
+  assert.match(script, /Refusing to remove a changed release-verification staging root/u);
+  assert.doesNotMatch(script, /mktemp -d \/private\/tmp\/local-harness-release-verification/u);
+  assert.doesNotMatch(script, /(?:rm|ditto|cp) [^\n]*[ "']\/Applications\/Fulmar\.app/u);
   assert.match(script, /SIMULATED_APPLICATIONS="\$TEMP_ROOT\/Applications"/u);
   assert.match(script, /chmod 0775 "\$SIMULATED_APPLICATIONS"/u);
   assert.match(script, /cp -Rp "\$APP_DIR" "\$INSTALLED_LAYOUT_APP"/u);
@@ -1076,6 +1085,13 @@ test("credential qualification has bounded helper and telemetry-lock lifecycles"
   const telemetry = await readFile(join(process.cwd(), "scripts", "verify-telemetry-lock-helper.mjs"), "utf8");
   assert.match(shell, /verify-credential-helper-bounds\.mjs/u);
   assert.match(shell, /verify-keychain-no-ui-transition\.mjs/u);
+  assert.match(shell, /fulmar_root_watchdog_state/u);
+  assert.match(shell, /fulmar_acquire_root_group_lock "\$TEST_LOCK_DIR"/u);
+  assert.match(shell, /mktemp -d \/private\/tmp\/fulmar-legacy-credential-fixture\.XXXXXX/u);
+  assert.match(shell, /--scratch-path "\$FIXTURE_ROOT\/build" --jobs 1 -c debug/u);
+  assert.match(shell, /--product LocalHarnessCredentialHelper -Xswiftc -warnings-as-errors/u);
+  assert.match(shell, /verify-keychain-no-ui-transition\.mjs" "\$HELPER" "\$LEGACY_FIXTURE"/u);
+  assert.doesNotMatch(shell, /codesign|security (?:import|find-certificate)/u);
   assert.doesNotMatch(shell, /list-records/u);
   assert.match(credential, /deadlineMilliseconds\s*=\s*3_000/u);
   assert.match(credential, /\["describe-record", retainedRecord\]/u);

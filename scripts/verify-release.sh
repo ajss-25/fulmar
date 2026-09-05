@@ -70,11 +70,24 @@ PINNED_NODE_VERSION="$(plutil -extract runtime.nodeVersion raw -o - "$RELEASE_ID
 PINNED_NODE_SHA256="$(plutil -extract runtime.nodeSHA256 raw -o - "$RELEASE_IDENTITY")"
 PINNED_DSH_VERSION="$(plutil -extract runtime.deepseekHarnessVersion raw -o - "$RELEASE_IDENTITY")"
 PINNED_DSH_MCP_CLIENT_VERSION="$(plutil -extract runtime.deepseekMCPClientVersion raw -o - "$RELEASE_IDENTITY")"
-TEMP_ROOT="$(mktemp -d /private/tmp/local-harness-release-verification.XXXXXX)"
+TEMP_ROOT=""
+TEMP_ROOT_IDENTITY=""
 
 cleanup() {
   local exit_code="${1:-$?}"
-  rm -rf "$TEMP_ROOT"
+  if [[ -n "$TEMP_ROOT" ]]; then
+    if [[ "$TEMP_ROOT" == /Applications/Fulmar-Release-Verification.* \
+       && -d "$TEMP_ROOT" && ! -L "$TEMP_ROOT" \
+       && "${TEMP_ROOT:A}" == "$TEMP_ROOT" \
+       && "$(/usr/bin/stat -f '%d:%i:%u:%HT:%Lp' "$TEMP_ROOT" 2>/dev/null)" == "$TEMP_ROOT_IDENTITY" ]]; then
+      /bin/rm -rf -- "$TEMP_ROOT" || exit_code=126
+      [[ ! -e "$TEMP_ROOT" && ! -L "$TEMP_ROOT" ]] || exit_code=126
+      TEMP_ROOT=""
+    else
+      print -u2 "Refusing to remove a changed release-verification staging root."
+      exit_code=126
+    fi
+  fi
   fulmar_release_release_lock
   return "$exit_code"
 }
@@ -90,6 +103,23 @@ trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 
 fulmar_acquire_release_lock "Fulmar release verification" || exit
+
+# Sandboxed XPC services must inspect their sibling helper's signed bytes.
+# macOS denies that read from /private/tmp even when XPC activation succeeds.
+# Stage only this exact archive in an exclusive private directory under the
+# standard application location; never replace /Applications/Fulmar.app or
+# weaken the service's sandbox/signature checks to accommodate a test location.
+[[ -d /Applications && ! -L /Applications ]] || {
+  print -u2 "Release verification requires the standard Applications directory."
+  exit 1
+}
+TEMP_ROOT="$(/usr/bin/mktemp -d /Applications/Fulmar-Release-Verification.XXXXXX)"
+TEMP_ROOT_IDENTITY="$(/usr/bin/stat -f '%d:%i:%u:%HT:%Lp' "$TEMP_ROOT")"
+[[ "${TEMP_ROOT:A}" == "$TEMP_ROOT" \
+   && "$TEMP_ROOT_IDENTITY" == "$(/usr/bin/stat -f '%d:%i' "$TEMP_ROOT"):$(/usr/bin/id -u):Directory:700" ]] || {
+  print -u2 "Release verification staging must be a private owner-controlled directory."
+  exit 1
+}
 
 [[ -d "$SOURCE_APP_DIR" && ! -L "$SOURCE_APP_DIR" && "${SOURCE_APP_DIR:A}" == "$SOURCE_APP_DIR" ]] || {
   print -u2 "Missing or non-canonical source application bundle: $SOURCE_APP_DIR"; exit 1

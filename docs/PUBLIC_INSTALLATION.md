@@ -5,8 +5,9 @@ DeepSeek, OpenAI, Anthropic, Ollama, Alibaba or the Qwen project.
 
 These instructions apply only to a Fulmar release whose public-distribution gate has
 passed. For the current source preview (`v1.2.36-preview.1`) there is no such release:
-build the app from source and read `PREVIEW_BINARY_GATEKEEPER.md` before running an
-ad-hoc signed preview build. The **Uninstall and retained data** section below applies
+build the app from source and read `PREVIEW_BINARY_GATEKEEPER.md` before running a
+locally certificate-signed preview build. An ad-hoc compile/review build cannot use
+the packaged cloud credential service. The **Uninstall and retained data** section below applies
 to preview builds as well. The current private candidate is not a public release: it is not Developer ID
 signed/notarized, has not passed clean-Mac/minimum-OS qualification, and its updater
 transaction has not passed the required two-version real-signed power-loss exercise.
