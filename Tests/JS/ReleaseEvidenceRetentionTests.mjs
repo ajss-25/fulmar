@@ -588,8 +588,6 @@ async function assertExclusiveCapabilityReference(capability, expectedLock) {
     entryCount += 1;
     assert.ok(entryCount <= 4_096, "capability reference scan entry bound was exceeded");
     if (!/^[A-Za-z0-9._-]{1,200}\.lock$/u.test(entry.name)) continue;
-    lockCount += 1;
-    assert.ok(lockCount <= 256, "capability reference scan lock bound was exceeded");
     const lockPath = join(productionFixtureParent, entry.name);
     let lockDetails;
     try { lockDetails = await lstat(lockPath); } catch (error) {
@@ -598,6 +596,10 @@ async function assertExclusiveCapabilityReference(capability, expectedLock) {
     }
     if (!lockDetails.isDirectory() || lockDetails.isSymbolicLink()
         || lockDetails.uid !== process.getuid() || (lockDetails.mode & 0o777) !== 0o700) continue;
+    // Regular .lock files cannot reference a watchdog capability. They remain
+    // covered by the entry bound, not the separate eligible-directory bound.
+    lockCount += 1;
+    assert.ok(lockCount <= 256, "capability reference scan lock bound was exceeded");
     let entries;
     try { entries = (await readdir(lockPath)).sort(); } catch (error) {
       if (error?.code === "ENOENT") continue;
@@ -1175,6 +1177,15 @@ test("test verifier substitution is rejected outside the disposable fixture name
   assert.match(testSource,
     /current\.dev, current\.ino, current\.uid, current\.mode & 0o777, current\.nlink, current\.size/u);
   assert.match(testSource, /finally \{ await cleanupFixture\(value\); \}/u);
+  const referenceScan = testSource.slice(
+    testSource.indexOf("async function assertExclusiveCapabilityReference("),
+    testSource.indexOf("async function cleanupFixture(")
+  );
+  assert.ok(referenceScan.indexOf("lockCount += 1")
+    > referenceScan.indexOf("if (!lockDetails.isDirectory()"),
+  "unrelated regular lock files must not consume the eligible-directory budget");
+  assert.match(referenceScan, /entryCount <= 4_096/u);
+  assert.match(referenceScan, /lockCount <= 256/u);
   assert.doesNotMatch(source, /(^|\n)\s*(env|export|set)\s*$/mu);
   for (const failurePoint of ["root-only", "retained-capability", "retained-root"]) {
     const capture = {};
