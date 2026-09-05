@@ -2028,10 +2028,11 @@ private func assertExternalOccurrenceIsReconciledAtMostOnce(
     let firstExecutor = FakeScheduleExecutor()
     let failureScript = ScheduleDurabilityFailureScript(point: failurePoint)
     let selection = makeScheduleSelection(provider: "deepseek-official", model: "deepseek-chat")
+    var firstActivities: ActivityStore? = scheduleActivityStore(applicationSupport: root)
     var firstManager: ScheduleManager? = ScheduleManager(
         applicationSupport: root,
         executor: firstExecutor,
-        activities: scheduleActivityStore(applicationSupport: root),
+        activities: try #require(firstActivities),
         now: { clock.now() },
         durabilityFailureInjector: { try failureScript.inject($0) }
     )
@@ -2064,6 +2065,11 @@ private func assertExternalOccurrenceIsReconciledAtMostOnce(
     let journalStore = try ScheduleDocumentStore(applicationSupport: root, now: { clock.now() })
     #expect(try journalStore.pendingOccurrenceCount() == 1)
     firstManager = nil // model a fresh process using only durable bytes
+    // storageIssue() fences the scheduler queue, not the separate activity
+    // queue. Finish its pending writes before another store opens the same
+    // document; overlapping processes are not the restart being simulated.
+    #expect(try #require(firstActivities).status() == .available)
+    firstActivities = nil
 
     let secondExecutor = FakeScheduleExecutor()
     let relaunched = ScheduleManager(
