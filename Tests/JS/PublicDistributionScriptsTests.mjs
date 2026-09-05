@@ -619,6 +619,8 @@ test("credential XPC Info.plists reject every unreviewed top-level and launch di
 
     const pristineMigration = JSON.parse(await readFile(migrationJSON, "utf8"));
     const pristineBroker = JSON.parse(await readFile(brokerJSON, "utf8"));
+    assert.equal(pristineMigration.XPCService.JoinExistingSession, true);
+    assert.equal(pristineBroker.XPCService.JoinExistingSession, true);
     const hostileFixtures = [
       ["top-level background launch", { ...pristineMigration, LSBackgroundOnly: true }, pristineBroker, /LSBackgroundOnly/u],
       ["environment injection", pristineMigration, {
@@ -632,15 +634,29 @@ test("credential XPC Info.plists reject every unreviewed top-level and launch di
         ...pristineMigration,
         XPCService: { ...pristineMigration.XPCService, RunLoopType: "dispatch_main" }
       }, pristineBroker, /RunLoopType/u],
-      ["session join", pristineMigration, {
-        ...pristineBroker,
-        XPCService: { ...pristineBroker.XPCService, JoinExistingSession: true }
-      }, /JoinExistingSession/u],
       ["changed service type", {
         ...pristineMigration,
-        XPCService: { ServiceType: "System" }
+        XPCService: { ...pristineMigration.XPCService, ServiceType: "System" }
       }, pristineBroker, /ServiceType does not match the reviewed value/u]
     ];
+    for (const [service, pristine] of [
+      ["migration", pristineMigration], ["broker", pristineBroker]
+    ]) {
+      for (const [label, value] of [
+        ["missing", undefined], ["disabled", false], ["string", "true"], ["number", 1]
+      ]) {
+        const altered = {
+          ...pristine,
+          XPCService: { ...pristine.XPCService, JoinExistingSession: value }
+        };
+        hostileFixtures.push([
+          `${service} security session ${label}`,
+          service === "migration" ? altered : pristineMigration,
+          service === "broker" ? altered : pristineBroker,
+          /JoinExistingSession/u
+        ]);
+      }
+    }
     for (const [label, migration, broker, rejection] of hostileFixtures) {
       await writeFile(migrationJSON, `${JSON.stringify(migration)}\n`, { mode: 0o600 });
       await writeFile(brokerJSON, `${JSON.stringify(broker)}\n`, { mode: 0o600 });

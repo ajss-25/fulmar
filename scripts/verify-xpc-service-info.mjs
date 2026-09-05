@@ -168,6 +168,9 @@ const common = {
   CFBundleVersion: String(identity.appBuild),
   LSMinimumSystemVersion: identity.minimumMacOS,
   XPCService: {
+    // User-Keychain access requires the caller's security session; omission
+    // creates a separate session even when the caller unlocked its Keychain.
+    JoinExistingSession: true,
     ServiceType: "Application"
   }
 };
