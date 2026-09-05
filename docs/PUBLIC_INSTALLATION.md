@@ -86,6 +86,17 @@ thermal claims and requires its own endpoint/protocol/tool/cancellation/privacy 
 
 ## Updating safely
 
+A release published under the manual-install **beta** profile
+(`docs/PUBLIC_BETA_RELEASE_CONTRACT.md`) has its in-app updater disabled and is
+updated only by hand: download the new versioned release, verify its checksum as
+above, quit Fulmar, keep the previous `Fulmar.app` and a matching Harness-state
+backup outside `/Applications`, then replace the app. A manual replacement you
+perform yourself is not an automatic update and does not prove automatic recovery.
+Until a beta release explicitly qualifies retained-state migration, a beta is
+**clean-install-only**: install it only on a Mac with no prior Fulmar Application
+Support, Keychain items or Harness backups, and do not delete or move existing
+state to make room for it. No beta release exists yet.
+
 Use in-app update only after the release notes identify a fully qualified two-phase
 updater. A public updater must retain the prior app, install the candidate, launch that
 exact bundle with a private nonce-bound readiness channel, verify application identity

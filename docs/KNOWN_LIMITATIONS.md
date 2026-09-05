@@ -142,11 +142,22 @@ exact frozen candidate closes it.
   icon for this source preview without claiming originality, exclusivity, registration,
   affiliation, or a formal legal opinion.
 - A built app additionally redistributes `@img/sharp-libvips-darwin-arm64`/libvips
-  binary material. The current package does not yet carry the complete reviewed
-  LGPL/GPL notice, corresponding-source and relinking material needed for public binary
-  distribution. That binary gate, plus privacy-manifest, encryption/export and formal
-  mark review, remains open. A source preview must not be presented as a qualified or
-  notarized binary release.
+  binary material. The notice inventory now binds the upstream component manifest,
+  exact component versions, the libvips 8.18.3 LGPL-2.1 text and the SPDX
+  LGPL-3.0/GPL-3.0 text, with exact provenance in
+  `Config/ThirdPartyBinaryProvenance.json`. Per-component copyright/permissive notice
+  texts, corresponding source, relinking/installation-information under code signing,
+  and legal clearance remain explicitly open. That binary gate, plus privacy-manifest,
+  encryption/export and formal mark review, remains open. A source preview must not be
+  presented as a qualified or notarized binary release.
+- An explicit manual-install `beta` public-release profile exists in source
+  (`docs/PUBLIC_BETA_RELEASE_CONTRACT.md`). It is implementation with synthetic-fixture
+  tests, not qualification: no beta candidate, evidence record, version, release or tag
+  exists. The beta keeps Apple trust, clean-install, history-scan, repository-control,
+  permission, privacy and binary-licence gates, replaces the automatic-updater exercise
+  with manual install/reinstall/recovery evidence plus updater-disabled proof, and is
+  clean-install-only until retained-state migration is separately qualified. Manual
+  replacement is not evidence of automatic recovery.
 - Static qualification fetches two content-pinned Semgrep registry packs without
   redistributing them. `p/secrets` is exact-byte pinned; `p/default` tolerates only a
   top-level permutation of byte-identical, uniquely identified rule blocks. Any rule

@@ -89,6 +89,20 @@ recovery design for the interval where the main app path can be absent.
 Developer ID builds can additionally be notarized and stapled, but build 156 must not
 be described that way unless actual Apple evidence is recorded.
 
+## Manual-install beta profile
+
+The explicit `beta` public-release profile (`docs/PUBLIC_BETA_RELEASE_CONTRACT.md`)
+does not enable, exercise or qualify the updater above. It requires proof that the
+exact shipped candidate exposes no updater entry point, plus evidence that a person
+completed the documented manual download/verify/install, quit, same-version
+reinstall and manual rollback to a retained previous app on a clean Mac. That manual
+workflow is the beta's only supported replacement route; it does not prove the
+automatic journal/health/commit path, power-loss safety, or retained-state
+migration, and release copy must not present it as such. Under the beta's
+`clean-install-only` declaration existing retained state is neither migrated nor
+removed, and existing users are not told they can upgrade. No candidate has been
+qualified under that profile.
+
 ## Qualified private update to build 156
 
 The current private candidate uses one persistent, code-signing-only identity trusted
