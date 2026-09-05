@@ -38,9 +38,24 @@
     },
     {
       "packagePath": "node_modules/@img/sharp-libvips-darwin-arm64",
-      "reason": "The binary tarball omits standalone licence texts; its shipped README is the upstream component licence manifest. LGPL and source/relinking obligations remain an external legal gate.",
+      "reason": "The 1.3.2 binary tarball (sharp-libvips gitHead 4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6) omits standalone licence texts; bind its shipped component licence manifest and exact component versions, the libvips 8.18.3 LGPL-2.1 terms whose any-later-version clause is exercised, and the SPDX 3.28.0 LGPL-3.0/GPL-3.0 text. Corresponding-source and relinking obligations remain recorded in Config/ThirdPartyBinaryProvenance.json as an open legal gate.",
       "materials": [
-        { "path": "dsh/node_modules/@img/sharp-libvips-darwin-arm64/README.md", "sha256": "47083f1ae7e990f74a56f576bcb8434051cb84ed1982fa57932720869e5147fe" }
+        { "path": "dsh/node_modules/@img/sharp-libvips-darwin-arm64/README.md", "sha256": "47083f1ae7e990f74a56f576bcb8434051cb84ed1982fa57932720869e5147fe" },
+        { "path": "dsh/node_modules/@img/sharp-libvips-darwin-arm64/versions.json", "sha256": "71e22ad5154a3891e09291e2f316b3d9b0d0f405459144a94897a203580df055" },
+        {
+          "sourcePath": "Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE",
+          "origin": "https://github.com/libvips/libvips/blob/3664cfc5dc2c5661288f5bf5a85ccc51c64c1626/LICENSE",
+          "upstreamSHA256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+          "normalization": "append-terminal-lf-v1",
+          "sha256": "7c6699c75f87b52bdc542db26d6b1b92892577cda46e20eceb79e2790a1c291b"
+        },
+        {
+          "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2-LGPL-3.0-only-spdx-3.28.0",
+          "origin": "https://github.com/spdx/license-list-data/blob/c4a7237ec8f4654e867546f9f409749300f1bf4c/text/LGPL-3.0-only.txt",
+          "upstreamSHA256": "996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1",
+          "normalization": "append-terminal-lf-v1",
+          "sha256": "d2db3fe538e9ecb8aac723a2bc51d27dfa81aa880ad3fc20c203966ec908dc6e"
+        }
       ]
     },
     {

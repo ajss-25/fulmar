@@ -278,6 +278,28 @@ test("pi-ai override binds exact upstream MIT terms and immutable provenance", a
   assert.match(terms.toString("utf8"), /The above copyright notice and this permission notice shall be included in all\ncopies or substantial portions/u);
 });
 
+test("sharp-libvips override binds the exact component manifest, versions and LGPL texts without claiming clearance", async () => {
+  const config = JSON.parse(await readFile(join(project, "Config", "ThirdPartyLicenseOverrides.json"), "utf8"));
+  const entry = config.overrides.find(({ packagePath }) => packagePath === "node_modules/@img/sharp-libvips-darwin-arm64");
+  assert.ok(entry, "sharp-libvips override must exist");
+  assert.match(entry.reason, /1\.3\.2/u);
+  assert.match(entry.reason, /remain recorded in Config\/ThirdPartyBinaryProvenance\.json as an open legal gate/u);
+  assert.doesNotMatch(entry.reason, /cleared|satisfied|compliant/iu);
+  assert.deepEqual(entry.materials.map((material) => material.path ?? `source:${material.sourcePath}`), [
+    "dsh/node_modules/@img/sharp-libvips-darwin-arm64/README.md",
+    "dsh/node_modules/@img/sharp-libvips-darwin-arm64/versions.json",
+    "source:Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE",
+    "source:Resources/ThirdPartyLicenses/sharp-libvips-1.3.2-LGPL-3.0-only-spdx-3.28.0"
+  ]);
+  for (const material of entry.materials.filter(({ sourcePath }) => sourcePath !== undefined)) {
+    assert.equal(material.normalization, "append-terminal-lf-v1");
+    assert.match(material.origin, /^https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/[a-f0-9]{40}\//u, "tracked terms are pinned to an immutable commit");
+    const terms = await readFile(join(project, material.sourcePath));
+    assert.equal(digest(terms), material.sha256, material.sourcePath);
+    assert.equal(digest(terms.subarray(0, terms.byteLength - 1)), material.upstreamSHA256, material.sourcePath);
+  }
+});
+
 test("release call sites bind the runtime root and authoritative override config", async () => {
   for (const path of [
     "scripts/build-app.sh",
