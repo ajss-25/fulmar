@@ -190,7 +190,7 @@ make runtime-inventory-verify
 make dependency-audit                 # npm first; eligible outages use credential-free OSV
 make static-security-scan
 FULMAR_SWIFT_BUILD_JOBS=2 /usr/bin/caffeinate -dimsu zsh scripts/run-swift-tests.sh   # 1,445 isolated functions
-zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # 666 tests (619 pass, 47 reviewed skips)
+zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # 680 tests (633 pass, 47 reviewed skips)
 make private-release                # persistent local signing identity; no Developer ID or notarisation
 ./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
   --emergency-rss-bytes 17179869184 --label "Fulmar frozen-candidate check" -- /usr/bin/make frozen-candidate-check
