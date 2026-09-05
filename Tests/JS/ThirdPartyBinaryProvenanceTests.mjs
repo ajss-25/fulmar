@@ -82,10 +82,13 @@ test("binary provenance manifest is strict, bounded and names its open obligatio
   const notices = component.obligations.find(({ id }) => id === "per-component-copyright-and-permissive-notice-texts");
   assert.equal(notices.status, "material-bound");
   assert.match(notices.detail, /29 libraries/u);
-  assert.match(notices.detail, /Rust crates .* not covered/u, "the notice obligation names what it does not cover");
+  assert.match(notices.detail, /Rust crates .* only as an explicit approximation/u, "the notice obligation names what it does not fully cover");
+  assert.match(notices.detail, /not verified/u);
   const source = component.obligations.find(({ id }) => id === "corresponding-source");
   assert.match(source.detail, /Config\/SharpLibvipsSourceMaterials\.json/u);
   assert.match(source.detail, /no corresponding-source offer exists yet/u);
+  assert.match(source.detail, /Config\/SharpLibvipsRustProvenance\.json/u);
+  assert.match(source.detail, /compiled crate set is unverified/u);
 });
 
 test("per-component notices cover every upstream manifest library exactly once with exact tracked upstream texts", async () => {

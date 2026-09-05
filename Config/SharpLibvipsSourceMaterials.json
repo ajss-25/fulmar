@@ -791,7 +791,7 @@
     {
       "id": "rust-crates",
       "component": "librsvg",
-      "detail": "librsvg 2.62.90 is implemented in Rust. Its release tarball carries Cargo.lock (357 package entries) but no vendored crates; the recipe runs cargo update --workspace and Cargo fetches crate sources from crates.io at build time. The exact crate set statically linked into libvips-cpp, its source archives and its MIT/Apache/BSD notices are therefore not identified or retained by this manifest."
+      "detail": "librsvg 2.62.90 is implemented in Rust. Its release tarball carries Cargo.lock (357 package entries) but no vendored crates; the recipe runs cargo update --workspace and Cargo fetches crate sources from crates.io at build time. Config/SharpLibvipsRustProvenance.json pins, by crates.io checksum, the 159 registry crates a simplified resolver identifies for librsvg-c on aarch64-apple-darwin from that Cargo.lock and the recipe's edits, together with the licence texts each .crate carries; that set is an explicit approximation (resolved-approximation), not the historical compile log, and the crates actually incorporated into libvips-cpp remain unverified."
     },
     {
       "id": "rust-toolchain",
