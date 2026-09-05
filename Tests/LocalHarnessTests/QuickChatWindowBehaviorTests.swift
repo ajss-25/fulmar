@@ -490,10 +490,20 @@ private func quickChatWait(
     _ description: String,
     until condition: @escaping @MainActor () -> Bool
 ) async {
-    for _ in 0..<2_000 {
+    // Streaming renders coalesce on a 33 ms main-queue timer. A yield count
+    // can expire before that timer is eligible, so wait in elapsed time and
+    // suspend between checks instead of depending on executor throughput.
+    let deadline = ContinuousClock.now + .seconds(2)
+    while ContinuousClock.now < deadline {
         if condition() { return }
-        await Task.yield()
+        do {
+            try await Task.sleep(for: .milliseconds(10))
+        } catch {
+            Issue.record("Cancelled waiting for \(description)")
+            return
+        }
     }
+    if condition() { return }
     Issue.record("Timed out waiting for \(description)")
 }
 
