@@ -62,15 +62,15 @@ returned for owner/legal review rather than resolved here:
 - cairo is dual-licensed LGPL-2.1 / MPL-1.1; the README says "Mozilla Public
   License 2.0". Both real texts are bound.
 - freetype's FTL (§2) and mozjpeg's IJG terms (README.ijg) each require a
-  specific acknowledgement in accompanying documentation ("Portions of this
-  software are copyright © The FreeType Project (www.freetype.org)" and "this
-  software is based in part on the work of the Independent JPEG Group").
-  Binding the licence text does not by itself place those statements.
+  specific acknowledgement in accompanying documentation. The exact wording is
+  held in `docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md`; placing it in the shipped
+  documentation is Codex integration work, and binding the licence text does not
+  by itself place those statements.
 - highway (Apache-2.0 / BSD-3) and libultrahdr (MIT / Apache-2.0) are
   dual-licensed; the README names the BSD-3 and MIT options respectively.
 - libaom and libwebp carry additional patent-grant files (bound).
-- librsvg is Rust. Its statically linked crate dependencies are **not** covered
-  (see Part B).
+- librsvg is Rust. Its statically linked crate dependencies are covered only as
+  an explicit approximation (see Part B).
 
 ## Part B — corresponding-source materials (identified and pinned, not offered)
 
@@ -110,15 +110,87 @@ only; its output is labelled `"authoritative": false` in the inventory.
 Recommended location: `build/libvips-corresponding-source/` inside the ignored
 build directory. Nothing under `build/` is tracked.
 
+### Rust crates linked through librsvg (approximated, historical build unverified)
+
+librsvg 2.62.90 is Rust. Its tarball carries `Cargo.lock` (357 package entries,
+sha256 `e91fcc90…`) but no vendored crates; the recipe edits the workspace
+manifests (drops the `image` features `gif`/`webp` and the `cairo-rs` features
+`pdf`/`ps`), runs `cargo update --workspace`, and meson then runs
+`cargo cbuild --locked -p librsvg-c --library-type staticlib` in release mode
+with fat LTO, codegen-units 1, opt-level z (`meson/cargo_wrapper.py`). No
+`avif` or `pixbuf` feature is enabled because the recipe builds neither dav1d nor
+gdk-pixbuf.
+
+`Config/SharpLibvipsRustProvenance.json` records what could be established on
+05/09/2026 without executing Cargo, distinguishing five categories that must not
+be equated:
+
+| Category | Count | Status |
+| --- | --- | --- |
+| Packages listed in the retained `Cargo.lock` | 357 | exact |
+| Reachable from `librsvg-c` in the lockfile graph (target/feature-agnostic) | 338 | exact superset |
+| Resolved for `aarch64-apple-darwin` with the recipe's feature edits (simplified resolver over each crate's checksum-verified `Cargo.toml`; dev-dependencies excluded) | 161 = 159 crates.io crates + 2 workspace members (143 normal, 11 proc-macro, 5 build-only) | **approximation** |
+| Compiled in the historical build | — | **unverified** |
+| Incorporated into the shipped dylib (after fat LTO and `-dead_strip`) | — | **unverified** |
+
+Every one of the 159 crates is pinned by its crates.io checksum as recorded in
+the lockfile (all 159 also equal the crates.io sparse-index `cksum` observed on
+05/09/2026; none yanked), with its Cargo.toml licence expression, its role, and
+the exact top-level licence members its `.crate` archive carries (266 texts;
+six crates — `block`, `malloc_buf`, `mutants`, `objc-foundation`, `objc_id`,
+`selectors` — carry none and are identified by licence expression only).
+Every item is marked `provenanceStatus: "resolved-approximation"`; the tool
+refuses a manifest that marks the historical build "verified" while any crate
+still carries that status.
+
+Historical evidence bindings that **are** established:
+
+- The npm provenance attestation (SLSA v1, retrieved 05/09/2026) binds the
+  shipped tarball — sha512 equal to the `integrity` pinned in
+  `VendorRuntime/package-lock.json` — to GitHub Actions run 28432216836,
+  attempt 1, of commit `4da6d14c…` at `refs/tags/v1.3.2`.
+- That run's job `build-darwin-arm64v8` (id 84249528353, `macos-15`,
+  08:52–09:17 UTC on 30/06/2026) is the build that produced the dylib.
+
+The missing evidence is precise: **the log of step 4 of that job**, which lists
+every `Compiling <crate> v<version>` line Cargo emitted. It exists but requires
+an authenticated GitHub session (unauthenticated API and web requests returned
+403/404), and GitHub retains public workflow logs for 90 days, so it is expected
+to expire around **28/09/2026**. Retrieving it is the one action that would
+turn "approximation" into "compiled" for this binary; it needs the owner's
+decision to use a GitHub login for that purpose. Nothing else short of a
+controlled, pinned replacement build (a separate, separately approved lane that
+would change runtime bytes) can establish the compiled set.
+
+`scripts/prepare-libvips-source-materials.mjs acquire Config/SharpLibvipsRustProvenance.json
+build/libvips-corresponding-source/sharp-libvips-1.3.2-rust-crate-materials`
+acquires the 159 `.crate` files (≈12 MB, HTTPS to `static.crates.io` only, no
+redirects), verifies each against its checksum, reads only the manifest-named
+licence members from each archive through a bounded tar reader that rejects
+links, traversal, foreign roots, non-plain entries, oversized output and excess
+entries, verifies each member's size and SHA-256, and renders a deterministic
+`RUST_CRATE_NOTICES.md` (table of crates, the crates without licence text, and
+every licence text) next to `INVENTORY.json`/`SHA256SUMS`. The inventory carries
+`historicalBuildProvenance` verbatim from the manifest so a partial set can
+never be mistaken for complete corresponding source.
+
+Licence expressions present: MIT OR Apache-2.0 (70), MIT (36), Unicode-3.0
+(18), Apache-2.0 OR MIT (6), MPL-2.0 (5), Apache-2.0 (4), MIT/Apache-2.0 (4),
+Zlib/MIT/Apache combinations (7), Unlicense OR MIT (3), BSD-3-Clause OR
+Apache-2.0 (2), 0BSD OR MIT OR Apache-2.0 (1), (Apache-2.0 OR MIT) AND
+BSD-3-Clause (1), Apache-2.0 WITH LLVM-exception (1), (MIT OR Apache-2.0) AND
+Unicode-3.0 (1). MPL-2.0 crates carry a source-availability obligation for
+their own files (the pinned `.crate` archives are that source) and Unicode-3.0
+crates carry notice requirements; both are owner/legal items.
+
 ### Explicitly unretained or unverifiable
 
-Recorded in the manifest's `unretained` array; summarised:
+Recorded in the manifests' `unretained` arrays; summarised:
 
-1. **Rust crates (librsvg).** The librsvg 2.62.90 tarball ships `Cargo.lock`
-   (357 package entries) but no vendored crates; the recipe runs
-   `cargo update --workspace` and Cargo fetches crate sources from crates.io at
-   build time. The exact crate set statically linked into `libvips-cpp`, its
-   sources and its MIT/Apache/BSD notices are not identified here.
+1. **Historical compile log** (see above) — the compiled Rust crate set is
+   unverified; the 159-crate set is a resolver approximation that may
+   over-include crates behind cfg predicates it could not evaluate and may
+   under-include crates enabled by feature-unification paths it does not model.
 2. **Rust toolchain.** rustup `nightly` and `cargo install cargo-c --locked`
    at build time; compiler revision and cargo-c version unpinned.
 3. **Apple toolchain and system frameworks** of the GitHub Actions macOS runner
@@ -134,8 +206,11 @@ Recorded in the manifest's `unretained` array; summarised:
 8. **No rebuild attempted.** Nothing proves that re-running the recipe
    reproduces `libvips-cpp.8.18.3.dylib`, or that a relinked library can be
    substituted under the app's Developer ID signature and hardened runtime.
+9. **Binary incorporation.** Fat LTO and dead-stripping mean the crates whose
+   code survives in the dylib are a subset of the compiled set; no binary
+   inspection was performed, and strings alone would not prove inclusion.
 
-Because of items 1 and 8, `Config/ThirdPartyBinaryProvenance.json` keeps
+Because of items 1, 8 and 9, `Config/ThirdPartyBinaryProvenance.json` keeps
 `corresponding-source` and `relinking-and-installation-information` **open**.
 
 ## Proposed packaging integration (for Codex; not applied)
@@ -147,6 +222,9 @@ on its own:
 - **Option A — separate persistent artefact.** Publish the verified
   `sharp-libvips-1.3.2-corresponding-source-materials/` directory (≈162 MB
   of upstream archives plus recipe, patches, `INVENTORY.json`, `SHA256SUMS`)
+  together with `sharp-libvips-1.3.2-rust-crate-materials/` (≈12 MB of
+  `.crate` files plus `RUST_CRATE_NOTICES.md`, `INVENTORY.json`, `SHA256SUMS`,
+  labelled as an approximation until the compile log is retrieved)
   as a distinct, versioned release asset or a stable download location, and
   have the beta's installation guide and the generated notices name that
   location together with the `INVENTORY.json` SHA-256. This keeps the app
@@ -158,10 +236,9 @@ on its own:
   host the archives as in Option A. Delta: one additional file in the notices
   resource, plus Option A's hosting commitment.
 
-In both options the Rust crate gap (unretained item 1) remains until either
-the crate set is reconstructed from the pinned `Cargo.lock` and pinned as
-further manifest items, or the owner decides to source the libvips binary
-differently.
+In both options the Rust crate set remains an approximation until the
+historical compile log is retrieved (before ~28/09/2026) or the owner chooses a
+controlled, pinned replacement build; neither is performed here.
 
 ## Questions for owner/legal review
 
@@ -178,8 +255,14 @@ differently.
    installation guide / about text, and where?
 4. Is the upstream README's cairo "MPL 2.0" entry to be reported to
    `lovell/sharp-libvips` (the README invites error reports)?
-5. Is the librsvg Rust crate gap acceptable for the beta, to be closed by
-   crate-set reconstruction, or a reason to build/sourced libvips differently?
+5. May a GitHub login be used to retrieve the retained `build-darwin-arm64v8`
+   job log of run 28432216836 (expires ~28/09/2026)? It is the only evidence
+   that can turn the 159-crate approximation into the compiled set. If not, is
+   the approximation acceptable for a beta, or is a controlled pinned
+   replacement build (separately approved; changes runtime bytes) preferred?
+6. How are the MPL-2.0 crate sources and Unicode-3.0 notices to be made
+   available/presented, and where do the FTL and IJG acknowledgements in
+   `docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md` go (Codex integration)?
 
 ## Reproduction pointers (not executed here)
 
