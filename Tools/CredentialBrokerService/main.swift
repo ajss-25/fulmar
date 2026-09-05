@@ -743,15 +743,18 @@ private func execute(
         return BrokerResult(response: CredentialBrokerXPCResponse(status: .success), payload: value)
     case .describe, .describeRecord:
         guard let transaction else { throw BrokerError.internalFailure }
-        let value = try transaction.readConfiguredValue(account: account)
-        if request.operation == .describeRecord, let value {
-            guard let record = validatedRecord(value),
-                  try transaction.metadata(account: account)?.kind == record.kind else {
-                throw BrokerError.unsafeState
-            }
+        // Catalogue refresh is metadata-only, matching the helper contract.
+        // Pending journals still recover through metadata(); ordinary committed
+        // markers must not read Keychain bytes after a signing-identity change.
+        let metadata = try transaction.metadata(account: account)
+        if let metadata {
+            let validKind = request.operation == .describeRecord
+                ? metadata.kind == "api-key" || metadata.kind == "grant"
+                : metadata.kind == "reference"
+            guard validKind else { throw BrokerError.unsafeState }
         }
         return BrokerResult(
-            response: CredentialBrokerXPCResponse(status: .success, configured: value != nil),
+            response: CredentialBrokerXPCResponse(status: .success, configured: metadata != nil),
             payload: Data()
         )
     case .set, .setRecord:

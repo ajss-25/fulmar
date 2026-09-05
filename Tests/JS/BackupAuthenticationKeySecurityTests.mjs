@@ -28,6 +28,18 @@ test("every unattended backup-key path has both per-query and process-wide no-UI
   assert.doesNotMatch(describeBody, /readConfiguredValue|SecItemCopyMatching/u);
   assert.match(describeBody, /metadata\.kind == "api-key"[\s\S]*metadata\.kind == "grant"/u);
   assert.match(describeBody, /metadata\.kind == "reference"/u);
+
+  const broker = await readFile(join(root, "Tools", "CredentialBrokerService", "main.swift"), "utf8");
+  const brokerDescribeStart = broker.indexOf("case .describe, .describeRecord:", broker.indexOf("switch request.operation {"));
+  const brokerSetStart = broker.indexOf("case .set, .setRecord:", brokerDescribeStart);
+  assert.ok(brokerDescribeStart >= 0 && brokerSetStart > brokerDescribeStart);
+  const brokerDescribeBody = broker.slice(brokerDescribeStart, brokerSetStart);
+  assert.match(brokerDescribeBody, /let metadata = try transaction\.metadata\(account: account\)/u);
+  assert.doesNotMatch(brokerDescribeBody, /readConfiguredValue|SecItemCopyMatching|try\?/u);
+  assert.match(brokerDescribeBody, /request\.operation == \.describeRecord\s*\? metadata\.kind == "api-key" \|\| metadata\.kind == "grant"\s*: metadata\.kind == "reference"/u);
+  assert.match(brokerDescribeBody, /guard validKind else \{ throw BrokerError\.unsafeState \}/u);
+  assert.match(brokerDescribeBody, /configured: metadata != nil/u);
+  assert.match(brokerDescribeBody, /payload: Data\(\)/u);
 });
 
 test("foreground authorization is explicit, read-only, bounded, and validated before caching", async () => {

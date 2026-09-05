@@ -538,6 +538,23 @@ private func prepareAmbiguousCredential(
     #expect(values.values[account] == previous)
     #expect(try coordinator.metadata(account: account)?.kind == "reference")
     try assertNoPendingCredentialJournal(fixture)
+
+    // A catalogue refresh must not read a committed secret just to report
+    // configuration. Actual resolution still requires Keychain authorization.
+    values.readError = .authorizationRequired
+    for kind in ["reference", "api-key", "grant"] {
+        try fixture.state.writeMetadata(account: account, kind: kind)
+        #expect(try coordinator.metadata(account: account)?.kind == kind)
+        #expect(throws: CredentialValueStoreError.authorizationRequired) {
+            try coordinator.readConfiguredValue(account: account)
+        }
+        #expect(try fixture.state.readMetadata(account: account)?.kind == kind)
+        #expect(values.values[account] == previous)
+        try assertNoPendingCredentialJournal(fixture)
+    }
+    try fixture.state.removeMetadata(account: account)
+    #expect(try coordinator.metadata(account: account) == nil)
+    #expect(values.values[account] == previous)
 }
 
 @Test func legacyMarkerWithoutCredentialIsReconciledOnResolution() throws {
@@ -1220,6 +1237,16 @@ private func prepareAmbiguousCredential(
         stateStore: try CredentialFileStateStore(directory: fixture.root),
         valueStore: values
     )
+    let journalBefore = try Data(contentsOf: credentialStateURL(fixture: fixture, account: account, journal: true))
+    let metadataBefore = try Data(contentsOf: credentialStateURL(fixture: fixture, account: account, journal: false))
+    // Metadata lookup must still recover pending transactions, never turn an
+    // authorization failure into a configured result or discard its journal.
+    #expect(throws: CredentialValueStoreError.authorizationRequired) {
+        try denied.metadata(account: account)
+    }
+    #expect(try Data(contentsOf: credentialStateURL(fixture: fixture, account: account, journal: true)) == journalBefore)
+    #expect(try Data(contentsOf: credentialStateURL(fixture: fixture, account: account, journal: false)) == metadataBefore)
+    #expect(values.values[account] == third)
     #expect(throws: CredentialValueStoreError.authorizationRequired) {
         try denied.repairAdoptingCurrentValue(account: account, kind: "reference")
     }
