@@ -286,6 +286,21 @@ test("public distribution scripts pin every Apple trust and immutable-asset gate
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /complete and candidate-bound across all 8 external gates/u);
 
+    // The stable contract is the default invocation and never accepts the
+    // separately identifiable beta profile's evidence, however complete.
+    const betaShaped = validEvidence();
+    betaShaped.evidenceType = "fulmar-public-beta-external-evidence";
+    await writeEvidence(betaShaped);
+    result = runEvidenceVerifier();
+    assert.notEqual(result.status, 0, "stable must refuse beta-typed evidence");
+    assert.match(result.stderr, /belongs to another release profile; the stable profile refuses it/u);
+    const profileLabelled = validEvidence();
+    profileLabelled.releaseProfile = "beta";
+    await writeEvidence(profileLabelled);
+    result = runEvidenceVerifier();
+    assert.notEqual(result.status, 0, "stable must refuse a beta-labelled record");
+    assert.match(result.stderr, /belongs to another release profile/u);
+
     for (const missingGate of publicExternalGateNames) {
       const fixture = validEvidence();
       delete fixture.gates[missingGate];

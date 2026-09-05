@@ -24,14 +24,44 @@ if [[ -n "${FULMAR_PUBLIC_RELEASE_TEST_SEAM:-}" ]]; then
   TEST_MODE=1
 fi
 MODE="fresh"
-if [[ "${1:-}" == "--finalize" ]]; then
-  MODE="finalize"
-  shift
-fi
-(( $# == 0 )) || {
-  print -u2 "Usage: run-public-release.sh [--finalize]"
-  exit 64
-}
+# The release profile is explicit and positional-order independent. `stable` is
+# the unchanged default; `beta` selects the separately identifiable manual-install
+# beta contract (docs/PUBLIC_BETA_RELEASE_CONTRACT.md). It is never read from the
+# environment and never inferred from evidence contents.
+RELEASE_PROFILE="stable"
+PROFILE_SELECTED=0
+while (( $# > 0 )); do
+  case "$1" in
+    --finalize)
+      [[ "$MODE" == "fresh" ]] || {
+        print -u2 "Usage: run-public-release.sh [--profile stable|beta] [--finalize]"
+        exit 64
+      }
+      MODE="finalize"
+      shift
+      ;;
+    --profile)
+      (( $# >= 2 && PROFILE_SELECTED == 0 )) || {
+        print -u2 "Usage: run-public-release.sh [--profile stable|beta] [--finalize]"
+        exit 64
+      }
+      case "$2" in
+        stable|beta) RELEASE_PROFILE="$2" ;;
+        *)
+          print -u2 "run-public-release.sh accepts only the exact release profiles stable or beta."
+          exit 64
+          ;;
+      esac
+      PROFILE_SELECTED=1
+      shift 2
+      ;;
+    *)
+      print -u2 "Usage: run-public-release.sh [--profile stable|beta] [--finalize]"
+      exit 64
+      ;;
+  esac
+done
+unset PROFILE_SELECTED
 
 umask 077
 export PATH="$SAFE_PATH"
@@ -49,6 +79,18 @@ NOTARY_SUBMISSION="$BUILD_DIR/notarization-submission.json"
 NOTARY_LOG="$BUILD_DIR/notarization-log.json"
 PUBLIC_ASSETS="$BUILD_DIR/public-release-assets"
 PUBLIC_EXTERNAL_EVIDENCE="$BUILD_DIR/public-external-evidence.json"
+# Profile-bound evidence and verifier operands. The beta evidence lives in its
+# own file so stable finalization can never consume beta records and vice versa.
+typeset -a EVIDENCE_PROFILE_ARGUMENTS
+EVIDENCE_PROFILE_ARGUMENTS=()
+GATE_DESCRIPTION="complete the eight manual gates"
+FINALIZE_TARGET="make public-release-finalize"
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  PUBLIC_EXTERNAL_EVIDENCE="$BUILD_DIR/public-beta-external-evidence.json"
+  EVIDENCE_PROFILE_ARGUMENTS=(--profile beta)
+  FINALIZE_TARGET="make public-beta-release-finalize"
+  GATE_DESCRIPTION="complete the ten manual beta gates (manual install/reinstall/recovery and updater-disabled proof replace the automatic-updater exercise; retained-state migration stays unqualified unless separately closed)"
+fi
 OPERATOR_HOME="${HOME:-}"
 if (( TEST_MODE == 1 )); then
   OPERATOR_HOME="$PROJECT_DIR/test-state/home"
@@ -286,7 +328,7 @@ run_reviewed_node "$PROJECT_DIR/scripts/first-party-license-policy.mjs" \
 
 if [[ "$MODE" == "fresh" ]]; then
   [[ ! -e "$PUBLIC_ASSETS" && ! -L "$PUBLIC_ASSETS" ]] || {
-    print -u2 "A retained public asset set already exists. Preserve it and use 'make public-release-finalize' for its exact candidate, or move it aside before creating a new candidate."
+    print -u2 "A retained public asset set already exists. Preserve it and use '$FINALIZE_TARGET' for its exact candidate, or move it aside before creating a new candidate."
     exit 1
   }
   run_static_scan
@@ -302,13 +344,14 @@ CANDIDATE_SHA256="$(read_candidate_field sha256)"
 CANDIDATE_VERSION="$(read_candidate_field version)"
 CANDIDATE_BUILD="$(read_candidate_field build)"
 if [[ ! -f "$PUBLIC_EXTERNAL_EVIDENCE" || -L "$PUBLIC_EXTERNAL_EVIDENCE" ]]; then
-  print -u2 "Retained notarized Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256."
-  print -u2 "Public release is intentionally paused: complete the eight manual gates and create owner-private build/public-external-evidence.json for this exact candidate, then run 'make public-release-finalize'. Do not rebuild."
+  print -u2 "Retained notarized Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256 ($RELEASE_PROFILE profile)."
+  print -u2 "Public release is intentionally paused: $GATE_DESCRIPTION and create owner-private build/${PUBLIC_EXTERNAL_EVIDENCE:t} for this exact candidate, then run '$FINALIZE_TARGET'. Do not rebuild."
   exit 78
 fi
 if ! run_reviewed_node "$PROJECT_DIR/scripts/verify-public-external-evidence.mjs" \
-  "$PUBLIC_EXTERNAL_EVIDENCE" "$CANDIDATE_SHA256" "$CANDIDATE_VERSION" "$CANDIDATE_BUILD"; then
-  print -u2 "Public external evidence is incomplete or belongs to another candidate. Correct it for $CANDIDATE_SHA256, then run 'make public-release-finalize'. Do not rebuild."
+  "$PUBLIC_EXTERNAL_EVIDENCE" "$CANDIDATE_SHA256" "$CANDIDATE_VERSION" "$CANDIDATE_BUILD" \
+  "${EVIDENCE_PROFILE_ARGUMENTS[@]}"; then
+  print -u2 "Public external evidence is incomplete, belongs to another candidate or release profile. Correct it for $CANDIDATE_SHA256 ($RELEASE_PROFILE profile), then run '$FINALIZE_TARGET'. Do not rebuild."
   exit 78
 fi
 
@@ -318,5 +361,9 @@ if [[ ! -e "$PUBLIC_ASSETS" && ! -L "$PUBLIC_ASSETS" ]]; then
     "$CANDIDATE_SHA256" "$CANDIDATE_VERSION" "$CANDIDATE_BUILD"
 fi
 run_clean_script "$PROJECT_DIR/scripts/verify-public-distribution.sh" \
-  "$PUBLIC_ASSETS" "$PUBLIC_EXTERNAL_EVIDENCE"
-print "Public release qualification passed for retained Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256. No upload or publication was performed."
+  "$PUBLIC_ASSETS" "$PUBLIC_EXTERNAL_EVIDENCE" "${EVIDENCE_PROFILE_ARGUMENTS[@]}"
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  print "Public BETA release qualification passed for retained Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256 (manual install, in-app updater disabled). This is not stable qualification. No upload or publication was performed."
+else
+  print "Public release qualification passed for retained Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256. No upload or publication was performed."
+fi

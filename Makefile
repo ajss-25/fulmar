@@ -1,4 +1,4 @@
-.PHONY: app build private-release private-install-qualified private-rollback-status private-recovery-resume private-recovery-finalize private-recovery-cancel private-recovery-reconcile private-rollback-retire build-and-smoke frozen-smoke frozen-candidate-check frozen-installed-candidate-check run clean test tracked-index-policy dsh-promotion-provenance-verify source-contract-test deepseek-contract-test static-security-scan security-test web-rpc-canary web-live-canary installed-web-live-canary sandbox-test runtime-lease-test cloned-state-security credential-test credential-crash-test dependency-audit provider-contract-test provider-matrix-test agent-route-test deep-agent-test realistic-agent-test app-owned-ollama-generation toolbar-render-macos26 status-item-compile status-item-live status-item-normal-actions status-item-headless-handoff status-item-physical-background-handoff installed-status-item-live installed-status-item-normal-actions installed-status-item-headless-handoff installed-status-item-physical-background-handoff runtime-inventory-verify runtime-inventory-test deterministic-release-verify release-verify public-release public-release-finalize public-assets public-external-evidence-verify public-distribution-verify
+.PHONY: app build private-release private-install-qualified private-rollback-status private-recovery-resume private-recovery-finalize private-recovery-cancel private-recovery-reconcile private-rollback-retire build-and-smoke frozen-smoke frozen-candidate-check frozen-installed-candidate-check run clean test tracked-index-policy dsh-promotion-provenance-verify source-contract-test deepseek-contract-test static-security-scan security-test web-rpc-canary web-live-canary installed-web-live-canary sandbox-test runtime-lease-test cloned-state-security credential-test credential-crash-test dependency-audit provider-contract-test provider-matrix-test agent-route-test deep-agent-test realistic-agent-test app-owned-ollama-generation toolbar-render-macos26 status-item-compile status-item-live status-item-normal-actions status-item-headless-handoff status-item-physical-background-handoff installed-status-item-live installed-status-item-normal-actions installed-status-item-headless-handoff installed-status-item-physical-background-handoff runtime-inventory-verify runtime-inventory-test deterministic-release-verify release-verify public-release public-release-finalize public-assets public-external-evidence-verify public-distribution-verify public-beta-release public-beta-release-finalize public-beta-external-evidence-verify public-beta-distribution-verify
 
 app: build
 
@@ -193,3 +193,24 @@ public-external-evidence-verify: frozen-candidate-check
 
 public-distribution-verify: dsh-promotion-provenance-verify
 	/bin/zsh -f scripts/verify-public-distribution.sh
+
+# Explicit manual-install beta profile (docs/PUBLIC_BETA_RELEASE_CONTRACT.md).
+# These entry points never build in finalize mode, never upload, tag, sign on
+# their own or notarize, and never consume stable evidence. They are not stable
+# qualification.
+public-beta-release: dsh-promotion-provenance-verify
+	/bin/zsh -f scripts/run-public-release.sh --profile beta
+
+public-beta-release-finalize: dsh-promotion-provenance-verify
+	/bin/zsh -f scripts/run-public-release.sh --profile beta --finalize
+
+public-beta-external-evidence-verify: frozen-candidate-check
+	@set -eu; \
+	  candidate_sha="$$(/usr/bin/plutil -extract sha256 raw -o - build/release-manifest.json)"; \
+	  version="$$(/usr/bin/plutil -extract version raw -o - build/release-manifest.json)"; \
+	  build="$$(/usr/bin/plutil -extract build raw -o - build/release-manifest.json)"; \
+	  VendorRuntime/node-v22.23.1-darwin-arm64/bin/node scripts/verify-public-external-evidence.mjs \
+	    "$(CURDIR)/build/public-beta-external-evidence.json" "$$candidate_sha" "$$version" "$$build" --profile beta
+
+public-beta-distribution-verify: dsh-promotion-provenance-verify
+	/bin/zsh -f scripts/verify-public-distribution.sh --profile beta

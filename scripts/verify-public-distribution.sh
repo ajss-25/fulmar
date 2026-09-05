@@ -18,15 +18,58 @@ fi
 source "${0:A:h}/clean-release-environment.zsh"
 fulmar_require_clean_release_environment public "$0" "$@"
 
-(( $# <= 2 )) || {
-  print -u2 "Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json]"
+# An explicit `--profile stable|beta` may follow the positional operands. The
+# default remains the unchanged stable contract; the beta profile binds the
+# verifier to the separately identifiable beta evidence record. The profile is
+# never read from the environment.
+RELEASE_PROFILE="stable"
+typeset -a EVIDENCE_PROFILE_ARGUMENTS
+EVIDENCE_PROFILE_ARGUMENTS=()
+typeset -a POSITIONAL_OPERANDS
+POSITIONAL_OPERANDS=()
+PROFILE_SELECTED=0
+while (( $# > 0 )); do
+  case "$1" in
+    --profile)
+      (( $# >= 2 && PROFILE_SELECTED == 0 )) || {
+        print -u2 "Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable|beta]"
+        exit 64
+      }
+      case "$2" in
+        stable|beta) RELEASE_PROFILE="$2" ;;
+        *)
+          print -u2 "verify-public-distribution.sh accepts only the exact release profiles stable or beta."
+          exit 64
+          ;;
+      esac
+      PROFILE_SELECTED=1
+      shift 2
+      ;;
+    --*)
+      print -u2 "Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable|beta]"
+      exit 64
+      ;;
+    *)
+      POSITIONAL_OPERANDS+=("$1")
+      shift
+      ;;
+  esac
+done
+unset PROFILE_SELECTED
+(( ${#POSITIONAL_OPERANDS[@]} <= 2 )) || {
+  print -u2 "Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable|beta]"
   exit 64
 }
 
 source "$PROJECT_DIR/scripts/release-lock.zsh"
 RELEASE_IDENTITY="$PROJECT_DIR/Config/ReleaseIdentity.json"
-PACKAGE="${1:-$PROJECT_DIR/build/public-release-assets}"
-PUBLIC_EXTERNAL_EVIDENCE="${2:-$PROJECT_DIR/build/public-external-evidence.json}"
+PACKAGE="${POSITIONAL_OPERANDS[1]:-$PROJECT_DIR/build/public-release-assets}"
+DEFAULT_PUBLIC_EXTERNAL_EVIDENCE="$PROJECT_DIR/build/public-external-evidence.json"
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  DEFAULT_PUBLIC_EXTERNAL_EVIDENCE="$PROJECT_DIR/build/public-beta-external-evidence.json"
+  EVIDENCE_PROFILE_ARGUMENTS=(--profile beta)
+fi
+PUBLIC_EXTERNAL_EVIDENCE="${POSITIONAL_OPERANDS[2]:-$DEFAULT_PUBLIC_EXTERNAL_EVIDENCE}"
 umask 077
 TEMP_ROOT=""
 cleanup() {
@@ -340,5 +383,10 @@ PUBLIC_CANDIDATE_SHA256="$(/usr/bin/plutil -extract sha256 raw -o - "$SNAPSHOT/r
 PUBLIC_VERSION="$(/usr/bin/plutil -extract version raw -o - "$SNAPSHOT/release-manifest.json")"
 PUBLIC_BUILD="$(/usr/bin/plutil -extract build raw -o - "$SNAPSHOT/release-manifest.json")"
 "$NODE" "$PROJECT_DIR/scripts/verify-public-external-evidence.mjs" \
-  "$PUBLIC_EXTERNAL_EVIDENCE" "$PUBLIC_CANDIDATE_SHA256" "$PUBLIC_VERSION" "$PUBLIC_BUILD"
-echo "Public distribution verification passed for the exact manifest-bound archive and Developer ID team $team."
+  "$PUBLIC_EXTERNAL_EVIDENCE" "$PUBLIC_CANDIDATE_SHA256" "$PUBLIC_VERSION" "$PUBLIC_BUILD" \
+  "${EVIDENCE_PROFILE_ARGUMENTS[@]}"
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  echo "Public BETA distribution verification passed for the exact manifest-bound archive and Developer ID team $team (manual install, in-app updater disabled; not stable qualification)."
+else
+  echo "Public distribution verification passed for the exact manifest-bound archive and Developer ID team $team."
+fi
