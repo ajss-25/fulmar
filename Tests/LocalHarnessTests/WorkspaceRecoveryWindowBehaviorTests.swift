@@ -373,6 +373,7 @@ private struct WorkspaceRecoveryBehaviorFixtures {
     let refresh = try workspaceRecoveryButton("Refresh", root: root)
     let capture = try workspaceRecoveryButton("Create Checkpoint…", root: root)
     let status = try workspaceRecoveryStatus(root)
+    let delete = try workspaceRecoveryButton("Delete…", root: root)
 
     refresh.performClick(nil)
     try await workspaceRecoveryEventually { operations.counts().list == 1 && refresh.isEnabled }
@@ -387,13 +388,18 @@ private struct WorkspaceRecoveryBehaviorFixtures {
     #expect(status.stringValue.count < 240)
 
     refresh.performClick(nil)
-    try await workspaceRecoveryEventually { operations.counts().list == 2 && operations.counts().preview == 1 }
+    // The worker records a preview call before its main-thread completion.
+    // Wait for that completion and its error alert before queuing Delete's
+    // approval; otherwise the disabled click is lost or that alert consumes it.
+    try await workspaceRecoveryEventually {
+        operations.counts().list == 2 && operations.counts().preview == 1
+            && delete.isEnabled && alerts.titles.contains("Workspace preview failed")
+    }
     #expect(!status.stringValue.contains("WORKSPACE_SECRET_CANARY"))
     #expect(status.stringValue.count < 240)
 
     // The failed preview leaves restore disabled, while deletion remains an
     // independently confirmed metadata operation.
-    let delete = try workspaceRecoveryButton("Delete…", root: root)
     alerts.decisions = [true]
     delete.performClick(nil)
     try await workspaceRecoveryEventually { operations.counts().delete == 1 && delete.isEnabled }
