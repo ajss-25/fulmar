@@ -222,6 +222,32 @@ const knownGroups = new Set();
 const retiredPIDs = new Set();
 const maximumKnownIdentities = 8_192;
 const maximumKnownGroups = 2_048;
+// Only fixed diagnostic codes cross this boundary. Never print raw ps rows,
+// child arguments, environment values or arbitrary exception messages.
+function inspectionFailureCode(error) {
+  switch (error?.message) {
+    case "process table exceeded its byte limit": return "ps_byte_limit";
+    case "bounded process table inspection failed": return "ps_status";
+    case "process table inspection did not terminate": return "ps_timeout";
+    case "invalid process-table row count": return "ps_row_count";
+    case "oversized process-table row": return "ps_row_size";
+    case "malformed process-table row": return "ps_row_format";
+    case "invalid process-table value": return "ps_row_value";
+    case "supervisor disappeared from the process table": return "supervisor_absent";
+    case "supervisor process group changed": return "supervisor_group_changed";
+    case "a retired test-runner PID reappeared while supervised": return "leader_retired_visible";
+    case "test-runner PID identity changed": return "leader_identity_changed";
+    case "a retired descendant PID reappeared while supervised": return "descendant_retired_visible";
+    case "descendant PID identity changed while supervised": return "descendant_identity_changed";
+    case "tracked descendant identity limit exceeded": return "known_identity_limit";
+    case "retired descendant identity limit exceeded": return "retired_identity_limit";
+    case "tracked descendant group limit exceeded": return "known_group_limit";
+    default: return "unknown_inspection_failure";
+  }
+}
+function inspectionFailureDiagnostic(error) {
+  return `code=${inspectionFailureCode(error)} known=${known.size} retired=${retiredPIDs.size} groups=${knownGroups.size}`;
+}
 let childIdentity;
 let childIdentityActive = false;
 let supervisorPGID;
@@ -399,11 +425,11 @@ while (terminationCode === undefined) {
     rows = await processTable();
     ({ owned } = updateOwnership(rows));
     inspectionFailures = 0;
-  } catch {
+  } catch (error) {
     inspectionFailures += 1;
     if (inspectionFailures >= 3) {
       terminationCode = 126;
-      terminationMessage = `${label} could not inspect its complete process tree safely.`;
+      terminationMessage = `${label} could not inspect its complete process tree safely. ${inspectionFailureDiagnostic(error)}`;
       break;
     }
     await pause(50);
@@ -467,7 +493,10 @@ while (terminationCode === undefined) {
 if (terminationMessage) process.stderr.write(`${terminationMessage}\n`);
 let drained = false;
 if (treeProvenEmpty) drained = true;
-else try { drained = await drain(); } catch { drained = false; }
+else try { drained = await drain(); } catch (error) {
+  drained = false;
+  process.stderr.write(`${label} process-tree drain inspection failed. ${inspectionFailureDiagnostic(error)}\n`);
+}
 if (!drained) {
   process.stderr.write(`${label} could not prove its complete process tree empty after bounded TERM/KILL cleanup.\n`);
   process.exit(126);

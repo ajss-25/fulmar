@@ -9,6 +9,7 @@ import { closeSync, constants, existsSync, openSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { runInNewContext } from "node:vm";
 import { readAttestedRegularFile } from "../../scripts/attested-regular-file.mjs";
 
 const watchdog = join(process.cwd(), "scripts", "run-with-watchdog.sh");
@@ -1184,6 +1185,44 @@ test("watchdog source contains no blocking reap fallback", async () => {
   assert.match(treeSource, /await establishChildIdentity\(\)/u);
   assert.match(treeSource, /childExit !== undefined && childIdentityActive/u);
   assert.match(treeSource, /a retired test-runner PID reappeared while supervised/u);
+  const diagnosticStart = treeSource.indexOf("function inspectionFailureCode(error) {");
+  const diagnosticEnd = treeSource.indexOf("\nlet childIdentity;", diagnosticStart);
+  assert.ok(diagnosticStart >= 0 && diagnosticEnd > diagnosticStart);
+  const diagnose = runInNewContext(
+    `${treeSource.slice(diagnosticStart, diagnosticEnd)}; inspectionFailureDiagnostic`,
+    { known: new Map([[1, {}]]), retiredPIDs: new Set([2, 3]), knownGroups: new Set([4]) },
+    { timeout: 1_000 }
+  );
+  const fixedCodes = [
+    ["process table exceeded its byte limit", "ps_byte_limit"],
+    ["bounded process table inspection failed", "ps_status"],
+    ["process table inspection did not terminate", "ps_timeout"],
+    ["invalid process-table row count", "ps_row_count"],
+    ["oversized process-table row", "ps_row_size"],
+    ["malformed process-table row", "ps_row_format"],
+    ["invalid process-table value", "ps_row_value"],
+    ["supervisor disappeared from the process table", "supervisor_absent"],
+    ["supervisor process group changed", "supervisor_group_changed"],
+    ["a retired test-runner PID reappeared while supervised", "leader_retired_visible"],
+    ["test-runner PID identity changed", "leader_identity_changed"],
+    ["a retired descendant PID reappeared while supervised", "descendant_retired_visible"],
+    ["descendant PID identity changed while supervised", "descendant_identity_changed"],
+    ["tracked descendant identity limit exceeded", "known_identity_limit"],
+    ["retired descendant identity limit exceeded", "retired_identity_limit"],
+    ["tracked descendant group limit exceeded", "known_group_limit"]
+  ];
+  for (const [message, code] of fixedCodes) {
+    assert.equal(diagnose(new Error(message)), `code=${code} known=1 retired=2 groups=1`);
+  }
+  for (const error of [undefined, null, new Error("private argv and credential sentinel"),
+    { message: "retired descendant identity limit exceeded\nprivate sentinel" }]) {
+    assert.equal(diagnose(error), "code=unknown_inspection_failure known=1 retired=2 groups=1");
+  }
+  assert.match(treeSource, /const maximumKnownIdentities = 8_192;/u);
+  assert.match(treeSource, /const maximumKnownGroups = 2_048;/u);
+  assert.match(treeSource, /inspectionFailures >= 3/u);
+  assert.equal(treeSource.split("inspectionFailureDiagnostic(error)").length - 1, 3,
+    "fixed diagnostics must cover both inspection and drain failures");
   assert.doesNotMatch(treeSource, /if \(!childIdentity && root\) childIdentity/u);
   assert.ok(
     treeSource.indexOf("await establishChildIdentity()") < treeSource.indexOf("while (terminationCode === undefined)"),
