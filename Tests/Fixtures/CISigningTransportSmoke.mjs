@@ -28,6 +28,43 @@ export function assertCIWorkflowSigningTransport(project, workflow) {
     false,
     "CI must not bypass the private descriptor bootstrap with the legacy direct identity invocation"
   );
+  const provision = workflow.slice(workflow.indexOf("- name: Provision one isolated unlocked CI Keychain"),
+    workflow.indexOf("- name: Build the exact stable-signed candidate fixtures"));
+  const provisioningOrder = [
+    'require("node:os").userInfo().homedir',
+    'ci_keychain="$account_home/Library/Keychains/fulmar-ci.keychain-db"',
+    '/bin/zsh -f scripts/provision-ci-signing-keychain.sh "$ci_keychain"',
+    'test "${#identity}" -eq 40',
+    'echo "LOCAL_HARNESS_SIGNING_KEYCHAIN=$ci_keychain" >> "$GITHUB_ENV"'
+  ];
+  let preceding = -1;
+  for (const step of provisioningOrder) {
+    const position = provision.indexOf(step);
+    assert.ok(position > preceding, `CI signing provision order must retain ${step}`);
+    assert.equal(provision.indexOf(step, position + step.length), -1,
+      "CI signing provision must not duplicate path assignment, provisioning, or export");
+    preceding = position;
+  }
+  assert.doesNotMatch(workflow, /ci_keychain="\$RUNNER_TEMP\//u,
+    "the isolated file-based Keychain must be reachable by the unchanged broker sandbox");
+  const cleanup = workflow.slice(workflow.indexOf("- name: Remove the isolated CI Keychain"),
+    workflow.indexOf("  minimum-macos-candidate:"));
+  const cleanupStatements = cleanup.split("\n").map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  assert.deepEqual(cleanupStatements, [
+    "- name: Remove the isolated CI Keychain",
+    "if: always()",
+    "run: |",
+    'ci_keychain="${LOCAL_HARNESS_SIGNING_KEYCHAIN:-}"',
+    'if test -n "$ci_keychain"; then',
+    'account_home="$("$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node" \\',
+    '-p \'require("node:os").userInfo().homedir\')"',
+    'test "$ci_keychain" = "$account_home/Library/Keychains/fulmar-ci.keychain-db"',
+    'test -f "$ci_keychain" && test ! -L "$ci_keychain"',
+    'test "$(/usr/bin/stat -f \'%u:%l\' "$ci_keychain")" = "$(/usr/bin/id -u):1"',
+    '/usr/bin/security delete-keychain "$ci_keychain"',
+    "fi"
+  ], "failure cleanup must delete only its successfully exported exact owned regular Keychain, after every guard");
 
   const secret = `fulmar-ci-smoke-${randomUUID()}`;
   const provisioner = join(project, "scripts", "provision-ci-signing-keychain.sh");

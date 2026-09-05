@@ -171,7 +171,12 @@ jobs:
 
       - name: Provision one isolated unlocked CI Keychain
         run: |
-          ci_keychain="$RUNNER_TEMP/fulmar-ci.keychain-db"
+          account_home="$("$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node" \
+            -p 'require("node:os").userInfo().homedir')"
+          # Sandboxed credential services can access file-based Keychains in the
+          # account's standard Keychain directory, not arbitrary RUNNER_TEMP files.
+          # The provisioner refuses an existing target; this never replaces login.
+          ci_keychain="$account_home/Library/Keychains/fulmar-ci.keychain-db"
           ci_password="$(/usr/bin/uuidgen)"
           identity="$(LOCAL_HARNESS_SIGNING_KEYCHAIN="$ci_keychain" \
             LOCAL_HARNESS_SIGNING_KEYCHAIN_PASSWORD="$ci_password" \
@@ -284,8 +289,15 @@ jobs:
       - name: Remove the isolated CI Keychain
         if: always()
         run: |
-          ci_keychain="$RUNNER_TEMP/fulmar-ci.keychain-db"
-          if test -f "$ci_keychain"; then
+          # The path is exported only after successful creation and provisioning.
+          # A failed attempt against an existing target must never delete it.
+          ci_keychain="${LOCAL_HARNESS_SIGNING_KEYCHAIN:-}"
+          if test -n "$ci_keychain"; then
+            account_home="$("$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node" \
+              -p 'require("node:os").userInfo().homedir')"
+            test "$ci_keychain" = "$account_home/Library/Keychains/fulmar-ci.keychain-db"
+            test -f "$ci_keychain" && test ! -L "$ci_keychain"
+            test "$(/usr/bin/stat -f '%u:%l' "$ci_keychain")" = "$(/usr/bin/id -u):1"
             /usr/bin/security delete-keychain "$ci_keychain"
           fi
 
