@@ -27,8 +27,8 @@ test("binary provenance manifest is strict, bounded and names its open obligatio
   assert.ok(Array.isArray(manifest.components) && manifest.components.length === 1);
   const [component] = manifest.components;
   assert.deepEqual(Object.keys(component).sort(), [
-    "boundLicenseTexts", "componentVersions", "declaredLicense", "id", "integrity", "lgplComponents",
-    "lockfile", "lockfilePath", "obligations", "packageName", "registryMetadata", "resolved",
+    "boundLicenseTexts", "componentNotices", "componentVersions", "declaredLicense", "id", "integrity", "lgplComponents",
+    "lockfile", "lockfilePath", "manifestDiscrepancy", "manifestLibraries", "obligations", "packageName", "registryMetadata", "resolved",
     "shippedFiles", "upstream", "version"
   ]);
   assert.equal(component.id, "sharp-libvips-darwin-arm64");
@@ -75,11 +75,87 @@ test("binary provenance manifest is strict, bounded and names its open obligatio
   }
   const open = component.obligations.filter(({ status }) => status === "open").map(({ id }) => id);
   assert.deepEqual(open, [
-    "per-component-copyright-and-permissive-notice-texts",
     "corresponding-source",
     "relinking-and-installation-information",
     "legal-clearance"
-  ], "the recorded binary-material gap stays open until a human closes it with retained evidence");
+  ], "the recorded binary-material gaps stay open until a human closes them with retained evidence");
+  const notices = component.obligations.find(({ id }) => id === "per-component-copyright-and-permissive-notice-texts");
+  assert.equal(notices.status, "material-bound");
+  assert.match(notices.detail, /29 libraries/u);
+  assert.match(notices.detail, /Rust crates .* not covered/u, "the notice obligation names what it does not cover");
+  const source = component.obligations.find(({ id }) => id === "corresponding-source");
+  assert.match(source.detail, /Config\/SharpLibvipsSourceMaterials\.json/u);
+  assert.match(source.detail, /no corresponding-source offer exists yet/u);
+});
+
+test("per-component notices cover every upstream manifest library exactly once with exact tracked upstream texts", async () => {
+  const manifest = await readJSON("Config/ThirdPartyBinaryProvenance.json");
+  const [component] = manifest.components;
+  const sourceMaterials = await readJSON("Config/SharpLibvipsSourceMaterials.json");
+  const archives = new Map(sourceMaterials.items.filter(({ kind }) => kind === "source-archive").map((item) => [item.versionKey, item]));
+
+  assert.equal(component.manifestLibraries.length, 29, "the tarball README names 29 libraries");
+  assert.deepEqual(component.manifestLibraries, [...component.manifestLibraries].sort());
+  assert.deepEqual(component.manifestDiscrepancy.librariesWithoutVersionKey, ["libnsgif"]);
+  assert.match(component.manifestDiscrepancy.resolution, /libvips\/foreign\/libnsgif/u);
+  assert.match(component.manifestDiscrepancy.resolution, /no upstream libnsgif release or commit is recorded/u);
+
+  const names = component.componentNotices.map(({ component: name }) => name);
+  assert.deepEqual(names, [...component.manifestLibraries], "one notice record per manifest library, in sorted order");
+  const versionKeys = component.componentNotices.map(({ versionKey }) => versionKey).filter((key) => key !== null);
+  assert.deepEqual(versionKeys.sort(), Object.keys(component.componentVersions).sort(), "every pinned version has exactly one notice record");
+
+  const seenPaths = new Set();
+  for (const notice of component.componentNotices) {
+    const label = notice.component;
+    assert.ok(["component", "manifestLicense", "materials", "revisionEvidence", "upstreamRepository", "upstreamRevision", "version", "versionKey"]
+      .every((key) => Object.hasOwn(notice, key)), label);
+    assert.ok(Object.keys(notice).every((key) => ["component", "manifestLicense", "materials", "note", "revisionEvidence", "upstreamRepository", "upstreamRevision", "version", "versionKey"].includes(key)), label);
+    if (notice.versionKey === null) {
+      assert.equal(notice.version, null, label);
+      assert.equal(notice.component, "libnsgif");
+      assert.match(notice.note, /Last updated 22 Jan 2023/u);
+      assert.doesNotMatch(notice.note, /version \d/u, "no libnsgif version may be invented");
+    } else {
+      assert.equal(notice.version, component.componentVersions[notice.versionKey], label);
+      const archive = archives.get(notice.versionKey);
+      assert.ok(archive, `${label} has a pinned source archive`);
+      assert.equal(archive.upstreamRevision, notice.upstreamRevision, label);
+    }
+    assert.match(notice.upstreamRevision, COMMIT, label);
+    assert.equal(new URL(notice.upstreamRepository).protocol, "https:", label);
+    assert.ok(notice.materials.length >= 1 && notice.materials.length <= 8, label);
+    for (const material of notice.materials) {
+      assert.deepEqual(Object.keys(material).sort(), ["archiveMember", "archiveSHA256", "describes", "normalization", "origin", "sha256", "sourcePath", "upstreamSHA256"], label);
+      assert.ok(material.sourcePath.startsWith("Resources/ThirdPartyLicenses/"), material.sourcePath);
+      assert.ok(!seenPaths.has(material.sourcePath), `${material.sourcePath} is bound once`);
+      seenPaths.add(material.sourcePath);
+      assert.equal(material.normalization, "append-terminal-lf-v1");
+      const origin = new URL(material.origin);
+      assert.equal(origin.protocol, "https:", material.sourcePath);
+      assert.equal(origin.search, "", material.sourcePath);
+      const commitPinned = /\/(?:blob|-\/blob)\/[a-f0-9]{40}\//u.test(origin.pathname);
+      const archiveOrigin = sourceMaterials.items.some((item) => item.url === material.origin && item.sha256 === material.archiveSHA256);
+      assert.ok(commitPinned || archiveOrigin, `${material.sourcePath} origin is a commit-pinned file or the pinned release archive`);
+      if (commitPinned) assert.ok(origin.pathname.includes(notice.upstreamRevision), `${material.sourcePath} origin is pinned to the notice revision`);
+      assert.ok(sourceMaterials.items.some((item) => item.kind === "source-archive" && item.sha256 === material.archiveSHA256),
+        `${material.sourcePath} archive digest is one pinned source archive`);
+      const bytes = await readFile(join(project, material.sourcePath));
+      assert.equal(digest(bytes), material.sha256, material.sourcePath);
+      assert.equal(bytes[bytes.byteLength - 1], 0x0a, material.sourcePath);
+      assert.equal(digest(bytes.subarray(0, bytes.byteLength - 1)), material.upstreamSHA256, material.sourcePath);
+      assert.ok(!bytes.includes(0x0d) && !bytes.includes(0x00), material.sourcePath);
+      assert.ok(/copyright|licen[cs]e|permission|patent/iu.test(bytes.toString("utf8")), `${material.sourcePath} reads as a notice`);
+    }
+  }
+  const trackedDirectory = "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2";
+  const { readdir } = await import("node:fs/promises");
+  const tracked = (await readdir(join(project, trackedDirectory))).map((name) => `${trackedDirectory}/${name}`).sort();
+  const bound = [...seenPaths].filter((path) => path.startsWith(`${trackedDirectory}/`)).sort();
+  assert.deepEqual(tracked, bound, "every tracked component notice file is bound and nothing untracked is present");
+  const libvips = component.componentNotices.find(({ component: name }) => name === "libvips");
+  assert.equal(libvips.materials[0].sourcePath, "Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE", "libvips reuses the package-level tracked text");
+  assert.equal(libvips.materials[0].origin, component.upstream.libvipsLicenseURL);
 });
 
 test("binary provenance hashes match the pinned lockfile and reviewed runtime inventory", async () => {

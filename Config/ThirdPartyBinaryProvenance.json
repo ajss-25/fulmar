@@ -89,6 +89,691 @@
           "sha256": "d2db3fe538e9ecb8aac723a2bc51d27dfa81aa880ad3fc20c203966ec908dc6e"
         }
       ],
+      "manifestLibraries": ["aom", "cairo", "cgif", "expat", "fontconfig", "freetype", "fribidi", "glib", "harfbuzz", "highway", "lcms", "libarchive", "libexif", "libffi", "libheif", "libimagequant", "libnsgif", "libpng", "librsvg", "libtiff", "libultrahdr", "libvips", "libwebp", "libxml2", "mozjpeg", "pango", "pixman", "proxy-libintl", "zlib-ng"],
+      "manifestDiscrepancy": {
+        "librariesWithoutVersionKey": ["libnsgif"],
+        "resolution": "The README table names 29 libraries and versions.json pins 28 because libnsgif is not downloaded or versioned by the sharp-libvips recipe: libvips vendors it in libvips/foreign/libnsgif (copied from git://git.netsurf-browser.org/libnsgif.git by update.sh, 'Last updated 22 Jan 2023'). Its source is the libvips 8.18.3 archive and its notice is bound below; no upstream libnsgif release or commit is recorded by libvips, so none is asserted here."
+      },
+      "componentNotices": [
+        {
+          "component": "aom",
+          "versionKey": "aom",
+          "version": "3.14.1",
+          "manifestLicense": "BSD 2-Clause + Alliance for Open Media Patent License 1.0",
+          "upstreamRepository": "https://aomedia.googlesource.com/aom",
+          "upstreamRevision": "03087864cf4bea6abb0d28f95cf7843511413d8f",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/aom-3.14.1-LICENSE",
+              "describes": "libaom 3.14.1 BSD-2-Clause licence text (release tarball member; byte-identical to LICENSE at tag v3.14.1 on aomedia.googlesource.com)",
+              "origin": "https://storage.googleapis.com/aom-releases/libaom-3.14.1.tar.gz",
+              "upstreamSHA256": "4764a286d8b2faeaf42f4418e7d7a28d58fc8fd4d00a3d0a7f44b0a4099de7f2",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "3d7090ac85a4e38b52ca3958919954d0a588b369b7c01878fd372c97a46f5ea0",
+              "archiveMember": "libaom-3.14.1/LICENSE",
+              "archiveSHA256": "44bf90dbd23e734d50e70a8c41c285193922938bd0d3bc2ee56764d181d55ef5"
+            },
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/aom-3.14.1-PATENTS",
+              "describes": "Alliance for Open Media Patent License 1.0 text (release tarball member; byte-identical to PATENTS at tag v3.14.1)",
+              "origin": "https://storage.googleapis.com/aom-releases/libaom-3.14.1.tar.gz",
+              "upstreamSHA256": "661fb8e504744e95587b556b94a58343448300606a41bea8c7a9b97125696e61",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "a3871e419eb71366c2beac6780d6dbcdef86f6d03d0052b69a2bfde6c6416caf",
+              "archiveMember": "libaom-3.14.1/PATENTS",
+              "archiveSHA256": "44bf90dbd23e734d50e70a8c41c285193922938bd0d3bc2ee56764d181d55ef5"
+            }
+          ],
+          "note": "No forge raw URL exists for aomedia.googlesource.com; the release tarball is the pinned origin."
+        },
+        {
+          "component": "cairo",
+          "versionKey": "cairo",
+          "version": "1.18.4",
+          "manifestLicense": "Mozilla Public License 2.0",
+          "upstreamRepository": "https://gitlab.freedesktop.org/cairo/cairo",
+          "upstreamRevision": "4541e0cd3a751b85e52e2a83d02ac6145a5efa85",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/cairo-1.18.4-COPYING",
+              "describes": "cairo 1.18.4 COPYING: dual LGPL-2.1 / MPL-1.1 election statement",
+              "origin": "https://gitlab.freedesktop.org/cairo/cairo/-/blob/4541e0cd3a751b85e52e2a83d02ac6145a5efa85/COPYING",
+              "upstreamSHA256": "67228a9f7c5f9b67c58f556f1be178f62da4d9e2e6285318d8c74d567255abdf",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "2c5841ab92bc9bb8d8a3f693cd3d06ccc78807d6dc449ae220d3e14a1ae56ec1",
+              "archiveMember": "cairo-1.18.4/COPYING",
+              "archiveSHA256": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb"
+            },
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/cairo-1.18.4-COPYING-LGPL-2.1",
+              "describes": "cairo 1.18.4 GNU LGPL 2.1 text",
+              "origin": "https://gitlab.freedesktop.org/cairo/cairo/-/blob/4541e0cd3a751b85e52e2a83d02ac6145a5efa85/COPYING-LGPL-2.1",
+              "upstreamSHA256": "9e9e8608c4cdda51a78cc3a385f4ec9a2e4c96d5ecad74ac8bca5fca3e563b7d",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "dda7e476f710f6a88f47ca098754dbc9d6c031e8471c0915efaa53f09c33e4ef",
+              "archiveMember": "cairo-1.18.4/COPYING-LGPL-2.1",
+              "archiveSHA256": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb"
+            },
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/cairo-1.18.4-COPYING-MPL-1.1",
+              "describes": "cairo 1.18.4 Mozilla Public License 1.1 text",
+              "origin": "https://gitlab.freedesktop.org/cairo/cairo/-/blob/4541e0cd3a751b85e52e2a83d02ac6145a5efa85/COPYING-MPL-1.1",
+              "upstreamSHA256": "53692a2ed6c6a2c6ec9b32dd0b820dfae91e0a1fcdf625ca9ed0bdf8705fcc4f",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "10299420c1e8602c0daf5a59d022621cd72a9148d1f0f33501edb3db3445c7fe",
+              "archiveMember": "cairo-1.18.4/COPYING-MPL-1.1",
+              "archiveSHA256": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb"
+            }
+          ],
+          "note": "Upstream cairo is dual-licensed LGPL-2.1 / MPL-1.1; the sharp-libvips manifest's 'Mozilla Public License 2.0' entry does not match the shipped COPYING files. Both actual texts are bound."
+        },
+        {
+          "component": "cgif",
+          "versionKey": "cgif",
+          "version": "0.5.3",
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://github.com/dloebl/cgif",
+          "upstreamRevision": "b4fd26662122eefd53ed12e7ff9b89990455bbbe",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/cgif-0.5.3-LICENSE",
+              "describes": "cgif 0.5.3 MIT licence",
+              "origin": "https://github.com/dloebl/cgif/blob/b4fd26662122eefd53ed12e7ff9b89990455bbbe/LICENSE",
+              "upstreamSHA256": "7264dede477abab4ac3fe8236beb8153845c04ccd33b18f281085087e219fc6d",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "c4d83187601e8ea0c353a327248862be5232f64d8ab167a0bfbdc2a9bb79be8a",
+              "archiveMember": "cgif-0.5.3/LICENSE",
+              "archiveSHA256": "dcc7731e974ee77db75df26c99aca4d95f11ca2d267d870d42bce1e0d1e1e75f"
+            }
+          ]
+        },
+        {
+          "component": "expat",
+          "versionKey": "expat",
+          "version": "2.8.2",
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://github.com/libexpat/libexpat",
+          "upstreamRevision": "c61098da494eea1cbd091118118dcee417faacea",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/expat-2.8.2-COPYING",
+              "describes": "Expat 2.8.2 MIT licence and copyright notices",
+              "origin": "https://github.com/libexpat/libexpat/blob/c61098da494eea1cbd091118118dcee417faacea/expat/COPYING",
+              "upstreamSHA256": "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "de32d08f840d8ac43526c0174007f58319f4b3628805d9ac3e9adc28b26afb04",
+              "archiveMember": "expat-2.8.2/COPYING",
+              "archiveSHA256": "3ad89b8588e6644bd4e49981480d48b21289eebbcd4f0a1a4afb1c29f99b6ab4"
+            }
+          ]
+        },
+        {
+          "component": "fontconfig",
+          "versionKey": "fontconfig",
+          "version": "2.18.1",
+          "manifestLicense": "fontconfig License (BSD-like)",
+          "upstreamRepository": "https://gitlab.freedesktop.org/fontconfig/fontconfig",
+          "upstreamRevision": "d87ec67db56518e9e9c36ff38f151dfc9b728b2e",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/fontconfig-2.18.1-COPYING",
+              "describes": "fontconfig 2.18.1 COPYING (fontconfig licence and per-file notices)",
+              "origin": "https://gitlab.freedesktop.org/fontconfig/fontconfig/-/blob/d87ec67db56518e9e9c36ff38f151dfc9b728b2e/COPYING",
+              "upstreamSHA256": "51a51aa9823704fd90bccc616cdd17ebabb5b2b3e9cbde886ca02c7002288067",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "ceec0e8614bf53bf9d850922250a024445b7b02c675489aa2d4daee70e67bf1e",
+              "archiveMember": "fontconfig-2.18.1/COPYING",
+              "archiveSHA256": "e9309564717b6301230112b173f36c288489479d381d2f0add1210ca5b16ba7e"
+            }
+          ]
+        },
+        {
+          "component": "freetype",
+          "versionKey": "freetype",
+          "version": "2.14.3",
+          "manifestLicense": "freetype License (BSD-like)",
+          "upstreamRepository": "https://github.com/freetype/freetype",
+          "upstreamRevision": "0a0221a1347e2f1e07c395263540026e9a0aa7c7",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/freetype-2.14.3-LICENSE.TXT",
+              "describes": "FreeType 2.14.3 licence election statement (FTL or GPLv2; FTL is the option named by the upstream manifest)",
+              "origin": "https://github.com/freetype/freetype/blob/0a0221a1347e2f1e07c395263540026e9a0aa7c7/LICENSE.TXT",
+              "upstreamSHA256": "bd36c8b474855fa294c2ec5c184544478ef3720aad37d65a6296a4f264fd2d3b",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "2065b486aa1063b2a5494f80f0d9ff6b20fc8c5da3c914165983f3c71cdb02da",
+              "archiveMember": "freetype-VER-2-14-3/LICENSE.TXT",
+              "archiveSHA256": "dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261"
+            },
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/freetype-2.14.3-FTL.TXT",
+              "describes": "The FreeType Project LICENSE (FTL), 2006-Jan-27",
+              "origin": "https://github.com/freetype/freetype/blob/0a0221a1347e2f1e07c395263540026e9a0aa7c7/docs/FTL.TXT",
+              "upstreamSHA256": "5a5ee54c5001bbad1cdc1a57cc3dd4c42199b2da09d39c7ee41fab002d02967f",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "cec572cbc19b5de965d46a6c1c852e1d9fa9783f6efa8e02d1240b6d48a3edfc",
+              "archiveMember": "freetype-VER-2-14-3/docs/FTL.TXT",
+              "archiveSHA256": "dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261"
+            }
+          ],
+          "note": "FTL section 2 requires a credit to The FreeType Project in product documentation; the notice text alone does not place that credit."
+        },
+        {
+          "component": "fribidi",
+          "versionKey": "fribidi",
+          "version": "1.0.16",
+          "manifestLicense": "LGPLv3",
+          "upstreamRepository": "https://github.com/fribidi/fribidi",
+          "upstreamRevision": "68162babff4f39c4e2dc164a5e825af93bda9983",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/fribidi-1.0.16-COPYING",
+              "describes": "FriBidi 1.0.16 GNU LGPL 2.1 text (any-later-version clause exercised)",
+              "origin": "https://github.com/fribidi/fribidi/blob/68162babff4f39c4e2dc164a5e825af93bda9983/COPYING",
+              "upstreamSHA256": "32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "c36b0f6bb06861ab3034f30e8d125bbf17c2183beabecbeffbd3a644a8e7d2bd",
+              "archiveMember": "fribidi-1.0.16/COPYING",
+              "archiveSHA256": "1b1cde5b235d40479e91be2f0e88a309e3214c8ab470ec8a2744d82a5a9ea05c"
+            }
+          ]
+        },
+        {
+          "component": "glib",
+          "versionKey": "glib",
+          "version": "2.89.1",
+          "manifestLicense": "LGPLv3",
+          "upstreamRepository": "https://gitlab.gnome.org/GNOME/glib",
+          "upstreamRevision": "fc5e493ba42d81d51fca58ca3ce5fdfe318cc2e7",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/glib-2.89.1-LGPL-2.1-or-later.txt",
+              "describes": "GLib 2.89.1 LGPL-2.1-or-later text (the tarball's COPYING is a symbolic link to this file)",
+              "origin": "https://gitlab.gnome.org/GNOME/glib/-/blob/fc5e493ba42d81d51fca58ca3ce5fdfe318cc2e7/LICENSES/LGPL-2.1-or-later.txt",
+              "upstreamSHA256": "fa6f36630bb1e0c571d34b2bbdf188d08495c9dbf58f28cac112f303fc1f58fb",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "b5175666e4922d08572752d05b0203edd440dba74f8fd4920dfe11ed8d928296",
+              "archiveMember": "glib-2.89.1/LICENSES/LGPL-2.1-or-later.txt",
+              "archiveSHA256": "74447129c31afe141810f995626e8b99ab677413dae76ee3cf5a9cc6e75a486e"
+            }
+          ],
+          "note": "GLib is built with the glib-without-gregex.patch modification recorded in Config/SharpLibvipsSourceMaterials.json."
+        },
+        {
+          "component": "harfbuzz",
+          "versionKey": "harfbuzz",
+          "version": "14.2.1",
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://github.com/harfbuzz/harfbuzz",
+          "upstreamRevision": "56feae4035bdd48f62ba2b8d8c16232d4d89b3a4",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/harfbuzz-14.2.1-COPYING",
+              "describes": "HarfBuzz 14.2.1 COPYING (Old MIT licence and copyright holders)",
+              "origin": "https://github.com/harfbuzz/harfbuzz/blob/56feae4035bdd48f62ba2b8d8c16232d4d89b3a4/COPYING",
+              "upstreamSHA256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "fb2c274f596a283e164207a2669afc4c731d5032ea1b679cc5db79b20848052c",
+              "archiveMember": "harfbuzz-14.2.1/COPYING",
+              "archiveSHA256": "3c2a9006a7e1bf58737e557014d7882c554c628fb379a9f00008f5ea53dbbdfb"
+            }
+          ]
+        },
+        {
+          "component": "highway",
+          "versionKey": "highway",
+          "version": "1.4.0",
+          "manifestLicense": "BSD 3-Clause",
+          "upstreamRepository": "https://github.com/google/highway",
+          "upstreamRevision": "2607d3b5b0113992fe84d3848859eae13b3b52c1",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/highway-1.4.0-LICENSE",
+              "describes": "Highway 1.4.0 LICENSE (dual Apache-2.0 / BSD-3-Clause texts; BSD-3-Clause is the option named by the upstream manifest)",
+              "origin": "https://github.com/google/highway/blob/2607d3b5b0113992fe84d3848859eae13b3b52c1/LICENSE",
+              "upstreamSHA256": "e340270d4f64384569a91d546acb5b094d69ce47f0c015db77abb74dc6f815af",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "b8b1fae5894cfbe213b47f1378bb2269cf82de18b34447e871c0225ace0d3ad7",
+              "archiveMember": "highway-1.4.0/LICENSE",
+              "archiveSHA256": "e72241ac9524bb653ae52ced768b508045d4438726a303f10181a38f764a453c"
+            }
+          ]
+        },
+        {
+          "component": "lcms",
+          "versionKey": "lcms",
+          "version": "2.19.1",
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://github.com/mm2/Little-CMS",
+          "upstreamRevision": "21c582a594fe5279f90c0b93437c398f93bf62b0",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/lcms-2.19.1-LICENSE",
+              "describes": "Little-CMS 2.19.1 MIT licence",
+              "origin": "https://github.com/mm2/Little-CMS/blob/21c582a594fe5279f90c0b93437c398f93bf62b0/LICENSE",
+              "upstreamSHA256": "6dbd60437f8ef91d8de1f08ad75882547fd4931bfcc3566a0735f28db1484d31",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "16513471f2e3e79722ebe633690837f887e3d788350917a2caf0be16a88f9b8a",
+              "archiveMember": "lcms2-2.19.1/LICENSE",
+              "archiveSHA256": "bfc54f7bab59fbc921012014a8032e4cba4abd46db47d46b76416a8c0b2815c8"
+            }
+          ]
+        },
+        {
+          "component": "libarchive",
+          "versionKey": "archive",
+          "version": "3.8.8",
+          "manifestLicense": "BSD 2-Clause",
+          "upstreamRepository": "https://github.com/libarchive/libarchive",
+          "upstreamRevision": "7219b0134d771dc4b51bf86b4d01761b87398b1b",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libarchive-3.8.8-COPYING",
+              "describes": "libarchive 3.8.8 COPYING (BSD-2-Clause and per-file terms)",
+              "origin": "https://github.com/libarchive/libarchive/blob/7219b0134d771dc4b51bf86b4d01761b87398b1b/COPYING",
+              "upstreamSHA256": "30e556b3959e3985d66efefec5eaac51d4995053caa1d3cffe6eb916f146f229",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "311ece65af66e785f74ebaed5bd84ca64fc647a397be82ef27aef21c601d4895",
+              "archiveMember": "libarchive-3.8.8/COPYING",
+              "archiveSHA256": "3873a88801da067d0528a989af06877710529d50ee8fe6f3970cbb4302efb918"
+            }
+          ]
+        },
+        {
+          "component": "libexif",
+          "versionKey": "exif",
+          "version": "0.6.26",
+          "manifestLicense": "LGPLv3",
+          "upstreamRepository": "https://github.com/libexif/libexif",
+          "upstreamRevision": "b2edc5a8adf4d1b79ce9413a9c9d8f3ab871c082",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libexif-0.6.26-COPYING",
+              "describes": "libexif 0.6.26 GNU LGPL 2.1 text (any-later-version clause exercised)",
+              "origin": "https://github.com/libexif/libexif/blob/b2edc5a8adf4d1b79ce9413a9c9d8f3ab871c082/COPYING",
+              "upstreamSHA256": "36b6d3fa47916943fd5fec313c584784946047ec1337a78b440e5992cb595f89",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "547bb1dc5901f6fb95788742884eca9950a0505391c1f8d5124f7b3bfd472451",
+              "archiveMember": "libexif-0.6.26/COPYING",
+              "archiveSHA256": "4a055ed6575e61ca46c3172be3c753cc16c9becd0f99ec71d58dd0e471476c0c"
+            }
+          ]
+        },
+        {
+          "component": "libffi",
+          "versionKey": "ffi",
+          "version": "3.6.0",
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://github.com/libffi/libffi",
+          "upstreamRevision": "f6303b8b0dd6353c6a5bb4de2e855a13b86f22cf",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libffi-3.6.0-LICENSE",
+              "describes": "libffi 3.6.0 MIT licence",
+              "origin": "https://github.com/libffi/libffi/blob/f6303b8b0dd6353c6a5bb4de2e855a13b86f22cf/LICENSE",
+              "upstreamSHA256": "d5699fa516968e3a1550e6c902b7441c78856f2603d61bedd0b0662a26655366",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "ea3fdaddaedb1b00059ac277e30e351e3c26b1ea3e3a48eea3437cd784a42c27",
+              "archiveMember": "libffi-3.6.0/LICENSE",
+              "archiveSHA256": "31ff1fe32deaebfbb388727f32677bb254bf2a41382c51464c0b1837c9ee9828"
+            }
+          ]
+        },
+        {
+          "component": "libheif",
+          "versionKey": "heif",
+          "version": "1.23.1",
+          "manifestLicense": "LGPLv3",
+          "upstreamRepository": "https://github.com/strukturag/libheif",
+          "upstreamRevision": "2c4bbb54c2738d4a5efbbe3e5fa1d5d76bb88eb0",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libheif-1.23.1-COPYING",
+              "describes": "libheif 1.23.1 GNU LGPL 3.0 text with the GPL 3.0 text it incorporates",
+              "origin": "https://github.com/strukturag/libheif/blob/2c4bbb54c2738d4a5efbbe3e5fa1d5d76bb88eb0/COPYING",
+              "upstreamSHA256": "fa81ce652315b013359d6e8e4744335f31a50c7c192907176d3632f78a3b4596",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "4b409702dfd921b24a36eab8479eb121971ef7b0c0d8bafcb7ec23bc274e1cc6",
+              "archiveMember": "libheif-1.23.1/COPYING",
+              "archiveSHA256": "0de0327f60fcd47de90d5654c6fe152232738d60d84fe084ec3e0f35e03b166a"
+            }
+          ]
+        },
+        {
+          "component": "libimagequant",
+          "versionKey": "imagequant",
+          "version": "2.4.1",
+          "manifestLicense": "BSD 2-Clause",
+          "upstreamRepository": "https://github.com/lovell/libimagequant",
+          "upstreamRevision": "ce5fdeb1ccd9db288950faa21fd09c42c0a59bbb",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libimagequant-2.4.1-COPYRIGHT",
+              "describes": "libimagequant 2.4.1 (lovell fork) COPYRIGHT: BSD-2-Clause terms and copyright holders",
+              "origin": "https://github.com/lovell/libimagequant/blob/ce5fdeb1ccd9db288950faa21fd09c42c0a59bbb/COPYRIGHT",
+              "upstreamSHA256": "7391bfbcde4404cefb9849553362c3ab436f929f5cc1abb57071ec045590ee99",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "ddd85094719176c69ce3ae56a68fe4f5d0e50763e27032eaad841997f72ac917",
+              "archiveMember": "libimagequant-2.4.1/COPYRIGHT",
+              "archiveSHA256": "47d2a84b7b1052975c9d50a3d4e3cacbf57b43d84a4c3131210848ead9964dfb"
+            }
+          ]
+        },
+        {
+          "component": "libnsgif",
+          "versionKey": null,
+          "version": null,
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://github.com/libvips/libvips",
+          "upstreamRevision": "3664cfc5dc2c5661288f5bf5a85ccc51c64c1626",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libnsgif-vips-8.18.3-COPYING",
+              "describes": "libnsgif MIT licence as vendored in libvips 8.18.3 at libvips/foreign/libnsgif (Richard Wilson, Sean Fox, Michael Drake)",
+              "origin": "https://github.com/libvips/libvips/blob/3664cfc5dc2c5661288f5bf5a85ccc51c64c1626/libvips/foreign/libnsgif/COPYING",
+              "upstreamSHA256": "1469b759cf18e43c6e1b4ff892307d3962cbbb337ac497620d6690a219fad10c",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "beca1a37c6a29ecf5d75e2cc3c7748394e3953a428699a7e0e4807dc0b7587ce",
+              "archiveMember": "vips-8.18.3/libvips/foreign/libnsgif/COPYING",
+              "archiveSHA256": "f41285b61bfb495605494f074ca341f7791a1d406e2f157dcea606ef1ae1b146"
+            }
+          ],
+          "note": "libnsgif has no versions.json entry because it is not a separately downloaded component: libvips vendors it in libvips/foreign/libnsgif, copied from git://git.netsurf-browser.org/libnsgif.git by update.sh with the note 'Last updated 22 Jan 2023'. Neither the libvips tree nor the sharp-libvips recipe records the upstream libnsgif release or commit, so no libnsgif version is asserted."
+        },
+        {
+          "component": "libpng",
+          "versionKey": "png",
+          "version": "1.6.58",
+          "manifestLicense": "libpng License",
+          "upstreamRepository": "https://github.com/pnggroup/libpng",
+          "upstreamRevision": "3061454d980de7d53608f594194cfac722721d2a",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libpng-1.6.58-LICENSE",
+              "describes": "libpng 1.6.58 PNG Reference Library License version 2 and legacy notices",
+              "origin": "https://github.com/pnggroup/libpng/blob/3061454d980de7d53608f594194cfac722721d2a/LICENSE",
+              "upstreamSHA256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "1d91cee75cec84b209180c557c415c7534f42329a088ee495f57569af50c2a5e",
+              "archiveMember": "libpng-1.6.58/LICENSE",
+              "archiveSHA256": "a9d4df463d36a6e5f9c29bd6f4967312d17e996c1854f3511f833924eb1993cf"
+            }
+          ]
+        },
+        {
+          "component": "librsvg",
+          "versionKey": "rsvg",
+          "version": "2.62.90",
+          "manifestLicense": "LGPLv3",
+          "upstreamRepository": "https://gitlab.gnome.org/GNOME/librsvg",
+          "upstreamRevision": "1a830b1e34bab5c69aec7c5cf86812376b4e53e2",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/librsvg-2.62.90-COPYING.LIB",
+              "describes": "librsvg 2.62.90 GNU LGPL 2.1 text (any-later-version clause exercised)",
+              "origin": "https://gitlab.gnome.org/GNOME/librsvg/-/blob/1a830b1e34bab5c69aec7c5cf86812376b4e53e2/COPYING.LIB",
+              "upstreamSHA256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "7c6699c75f87b52bdc542db26d6b1b92892577cda46e20eceb79e2790a1c291b",
+              "archiveMember": "librsvg-2.62.90/COPYING.LIB",
+              "archiveSHA256": "5d108758255c225590d862d94f2591ee1f8cc976dc7b25b06eaba74f21850f08"
+            }
+          ],
+          "note": "librsvg is Rust; its tarball carries Cargo.lock but no vendored crates, so the statically linked Rust crate sources and their notices are not covered by this record. Built with the Cargo.toml feature edits recorded in Config/SharpLibvipsSourceMaterials.json."
+        },
+        {
+          "component": "libtiff",
+          "versionKey": "tiff",
+          "version": "d01a94b",
+          "manifestLicense": "libtiff License (BSD-like)",
+          "upstreamRepository": "https://gitlab.com/libtiff/libtiff",
+          "upstreamRevision": "d01a94be176f5f6a87f7ee1c0b32e65416aa2b4d",
+          "revisionEvidence": "GitLab commits API resolution of the short ref named by versions.properties, observed on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libtiff-d01a94b-LICENSE.md",
+              "describes": "LibTIFF licence (Sam Leffler / Silicon Graphics) and copyright notices",
+              "origin": "https://gitlab.com/libtiff/libtiff/-/blob/d01a94be176f5f6a87f7ee1c0b32e65416aa2b4d/LICENSE.md",
+              "upstreamSHA256": "0e27c2382d7b8147972bbb746e04059a1152c8d0fda9d03ef1399d1a433c4ade",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "ff39351b9ebf878025cc1ec6fd76b32cb5a7692edefaa927e395fa9d5d0cb1ba",
+              "archiveMember": "libtiff-d01a94b/LICENSE.md",
+              "archiveSHA256": "17f0a34707ebf05f884c980907abd1defbf6530285d585594cecdc3b19b43e6e"
+            }
+          ]
+        },
+        {
+          "component": "libultrahdr",
+          "versionKey": "uhdr",
+          "version": "1acdbed",
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://github.com/google/libultrahdr",
+          "upstreamRevision": "1acdbed8c712e6923ebf9de4e7c8d8dda06509e9",
+          "revisionEvidence": "GitHub codeload redirect target for the short ref named by versions.properties, observed on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libultrahdr-1acdbed-LICENSE",
+              "describes": "libultrahdr LICENSE (dual MIT / Apache-2.0 texts; MIT is the option named by the upstream manifest)",
+              "origin": "https://github.com/google/libultrahdr/blob/1acdbed8c712e6923ebf9de4e7c8d8dda06509e9/LICENSE",
+              "upstreamSHA256": "c9247b5cb07866938643cc238292434e6f2af8642e1fce10771c0e4cc7909316",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "dc3854d2bb23b68ea7adb3e2983124661aeb04a41c018bc067a9964ed6d8a3c3",
+              "archiveMember": "libultrahdr-1acdbed8c712e6923ebf9de4e7c8d8dda06509e9/LICENSE",
+              "archiveSHA256": "c5bdb5afc7cb8bc88cf8ba66f33f5cbfb540baaa22519d2e805fd998bb89af9c"
+            }
+          ],
+          "note": "Built with the pull-request 383 patch recorded in Config/SharpLibvipsSourceMaterials.json, whose URL is not an immutable revision."
+        },
+        {
+          "component": "libvips",
+          "versionKey": "vips",
+          "version": "8.18.3",
+          "manifestLicense": "LGPLv3",
+          "upstreamRepository": "https://github.com/libvips/libvips",
+          "upstreamRevision": "3664cfc5dc2c5661288f5bf5a85ccc51c64c1626",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE",
+              "describes": "libvips 8.18.3 GNU LGPL 2.1 text (already bound as the package-level libvips licence; release tarball member verified byte-identical)",
+              "origin": "https://github.com/libvips/libvips/blob/3664cfc5dc2c5661288f5bf5a85ccc51c64c1626/LICENSE",
+              "upstreamSHA256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "7c6699c75f87b52bdc542db26d6b1b92892577cda46e20eceb79e2790a1c291b",
+              "archiveMember": "vips-8.18.3/LICENSE",
+              "archiveSHA256": "f41285b61bfb495605494f074ca341f7791a1d406e2f157dcea606ef1ae1b146"
+            }
+          ],
+          "note": "Built with the libvips-cpp-soversion.patch and the static-link meson edits recorded in Config/SharpLibvipsSourceMaterials.json."
+        },
+        {
+          "component": "libwebp",
+          "versionKey": "webp",
+          "version": "1.6.0",
+          "manifestLicense": "New BSD License",
+          "upstreamRepository": "https://chromium.googlesource.com/webm/libwebp",
+          "upstreamRevision": "4fa21912338357f89e4fd51cf2368325b59e9bd9",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026 (github.com/webmproject/libwebp mirror)",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libwebp-1.6.0-COPYING",
+              "describes": "libwebp 1.6.0 BSD-3-Clause licence",
+              "origin": "https://github.com/webmproject/libwebp/blob/4fa21912338357f89e4fd51cf2368325b59e9bd9/COPYING",
+              "upstreamSHA256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "cc139bd50472cdbcf154cbcb07a5fbdf052e441c8a7a43951b47700325002390",
+              "archiveMember": "libwebp-1.6.0/COPYING",
+              "archiveSHA256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564"
+            },
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libwebp-1.6.0-PATENTS",
+              "describes": "libwebp 1.6.0 additional IP rights grant (patents)",
+              "origin": "https://github.com/webmproject/libwebp/blob/4fa21912338357f89e4fd51cf2368325b59e9bd9/PATENTS",
+              "upstreamSHA256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "a88b1a12d736c67661658b634fc09a8f3bf63f4fdacd58fcf6f9459a2f818688",
+              "archiveMember": "libwebp-1.6.0/PATENTS",
+              "archiveSHA256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564"
+            }
+          ]
+        },
+        {
+          "component": "libxml2",
+          "versionKey": "xml2",
+          "version": "2.15.3",
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://gitlab.gnome.org/GNOME/libxml2",
+          "upstreamRevision": "c94eb0210183b9d7cb43f8e7fddc6be55843ef49",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/libxml2-2.15.3-Copyright",
+              "describes": "libxml2 2.15.3 Copyright file (MIT licence)",
+              "origin": "https://gitlab.gnome.org/GNOME/libxml2/-/blob/c94eb0210183b9d7cb43f8e7fddc6be55843ef49/Copyright",
+              "upstreamSHA256": "5d4873884a890122a4b9b20ad56ac6f7da1d796a5bfcf04a427970ac96217626",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "fd67b52b8d6b09e5e7c5ec467406460834ea8a0ad82817f8fd91dd919e1ac8d2",
+              "archiveMember": "libxml2-2.15.3/Copyright",
+              "archiveSHA256": "78262a6e7ac170d6528ebfe2efccdf220191a5af6a6cd61ea4a9a9a5042c7a07"
+            }
+          ]
+        },
+        {
+          "component": "mozjpeg",
+          "versionKey": "mozjpeg",
+          "version": "0826579",
+          "manifestLicense": "zlib License, IJG License, BSD 3-Clause",
+          "upstreamRepository": "https://github.com/mozilla/mozjpeg",
+          "upstreamRevision": "08265790774cd0714832c9e675522acbe5581437",
+          "revisionEvidence": "GitHub codeload redirect target for the short ref named by versions.properties, observed on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/mozjpeg-0826579-LICENSE.md",
+              "describes": "mozjpeg LICENSE.md: IJG, zlib and Modified BSD terms and compliance summary",
+              "origin": "https://github.com/mozilla/mozjpeg/blob/08265790774cd0714832c9e675522acbe5581437/LICENSE.md",
+              "upstreamSHA256": "96f5b328adbb78eeaaec6980d73fd558cb1e4d62560ed615646bc3cf5e532430",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "0cee129d03a2a6225d0e1e0c60405ee50a45d09e2341e6cce29bf15e388de458",
+              "archiveMember": "mozjpeg-08265790774cd0714832c9e675522acbe5581437/LICENSE.md",
+              "archiveSHA256": "b680167bd5d9afebdd576a12f8c49d2c9066a3b92ef96a2b2c5f7829b8600fe5"
+            },
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/mozjpeg-0826579-README.ijg",
+              "describes": "mozjpeg README.ijg carrying the Independent JPEG Group licence and required acknowledgement",
+              "origin": "https://github.com/mozilla/mozjpeg/blob/08265790774cd0714832c9e675522acbe5581437/README.ijg",
+              "upstreamSHA256": "f4a85f8677ca4e41b185c0a9f7c31a30ddb9ce43c561483ee92ef12db37c2a10",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "c299a6d34c0b1785fa40d75e57ead9df0c52e63f66d6e73a0419b34f6c9898fa",
+              "archiveMember": "mozjpeg-08265790774cd0714832c9e675522acbe5581437/README.ijg",
+              "archiveSHA256": "b680167bd5d9afebdd576a12f8c49d2c9066a3b92ef96a2b2c5f7829b8600fe5"
+            }
+          ],
+          "note": "Built with the f90668e0e4fb79c81e1f24a0ccc0e2090af761bf patch and the JCP_FASTEST default recorded in Config/SharpLibvipsSourceMaterials.json. The IJG licence requires the statement 'this software is based in part on the work of the Independent JPEG Group' in accompanying documentation."
+        },
+        {
+          "component": "pango",
+          "versionKey": "pango",
+          "version": "1.58.0",
+          "manifestLicense": "LGPLv3",
+          "upstreamRepository": "https://gitlab.gnome.org/GNOME/pango",
+          "upstreamRevision": "f25cbfe376ce2550d89fb7b4eb989b6a6218efc6",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/pango-1.58.0-COPYING",
+              "describes": "Pango 1.58.0 GNU LGPL 2.0 text (any-later-version clause exercised)",
+              "origin": "https://gitlab.gnome.org/GNOME/pango/-/blob/f25cbfe376ce2550d89fb7b4eb989b6a6218efc6/COPYING",
+              "upstreamSHA256": "d245807f90032872d1438d741ed21e2490e1175dc8aa3afa5ddb6c8e529b58e5",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "45fcd6cebd93e46065e2ea38a05ec3862b588fe4ad35cdcb52b2447fcdc59361",
+              "archiveMember": "pango-1.58.0/COPYING",
+              "archiveSHA256": "bc5bad6213ad4886a47d1e80292fd850b64159b50db67917a43d9ea80ee2298a"
+            }
+          ]
+        },
+        {
+          "component": "pixman",
+          "versionKey": "pixman",
+          "version": "0.46.4",
+          "manifestLicense": "MIT License",
+          "upstreamRepository": "https://gitlab.freedesktop.org/pixman/pixman",
+          "upstreamRevision": "9cc163c9da0fb4da430641715313d95a6ec466d9",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/pixman-0.46.4-COPYING",
+              "describes": "pixman 0.46.4 MIT licence and copyright holders",
+              "origin": "https://gitlab.freedesktop.org/pixman/pixman/-/blob/9cc163c9da0fb4da430641715313d95a6ec466d9/COPYING",
+              "upstreamSHA256": "fac9270f0987b96ff4533fca3548c633e02083cbba4a0172a3b149b2e4019793",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "44a0c4f88ee77934da6f75f00a613bf8f777a167ea051be7e0a1dbec2be017f4",
+              "archiveMember": "pixman-0.46.4/COPYING",
+              "archiveSHA256": "d09c44ebc3bd5bee7021c79f922fe8fb2fb57f7320f55e97ff9914d2346a591c"
+            }
+          ]
+        },
+        {
+          "component": "proxy-libintl",
+          "versionKey": "proxy-libintl",
+          "version": "0.5",
+          "manifestLicense": "LGPLv3",
+          "upstreamRepository": "https://github.com/frida/proxy-libintl",
+          "upstreamRevision": "33934de09af6a6627eb44e310a8079df009abdbb",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/proxy-libintl-0.5-COPYING",
+              "describes": "proxy-libintl 0.5 GNU LGPL 2.0 text (any-later-version clause exercised)",
+              "origin": "https://github.com/frida/proxy-libintl/blob/33934de09af6a6627eb44e310a8079df009abdbb/COPYING",
+              "upstreamSHA256": "d245807f90032872d1438d741ed21e2490e1175dc8aa3afa5ddb6c8e529b58e5",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "45fcd6cebd93e46065e2ea38a05ec3862b588fe4ad35cdcb52b2447fcdc59361",
+              "archiveMember": "proxy-libintl-0.5/COPYING",
+              "archiveSHA256": "f7a1cbd7579baaf575c66f9d99fb6295e9b0684a28b095967cfda17857595303"
+            }
+          ]
+        },
+        {
+          "component": "zlib-ng",
+          "versionKey": "zlib-ng",
+          "version": "2.3.3",
+          "manifestLicense": "zlib License",
+          "upstreamRepository": "https://github.com/zlib-ng/zlib-ng",
+          "upstreamRevision": "12731092979c6d07f42da27da673a9f6c7b13586",
+          "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+          "materials": [
+            {
+              "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/zlib-ng-2.3.3-LICENSE.md",
+              "describes": "zlib-ng 2.3.3 zlib licence",
+              "origin": "https://github.com/zlib-ng/zlib-ng/blob/12731092979c6d07f42da27da673a9f6c7b13586/LICENSE.md",
+              "upstreamSHA256": "6c9f0d975b41afaa34d22f55bb8986ce69e5cb7ad327cb2b28820cd425edf5ee",
+              "normalization": "append-terminal-lf-v1",
+              "sha256": "18d228b78a0c5cf20da8f02514d329ef58598a4d5352919bf5fb2c354bac3cc2",
+              "archiveMember": "zlib-ng-2.3.3/LICENSE.md",
+              "archiveSHA256": "f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1"
+            }
+          ]
+        }
+      ],
       "obligations": [
         {
           "id": "lgpl-licence-text",
@@ -102,13 +787,13 @@
         },
         {
           "id": "per-component-copyright-and-permissive-notice-texts",
-          "status": "open",
-          "detail": "The tarball README names 29 bundled libraries and each licence family (versions.json pins 28 component versions) but carries no per-component copyright notice or licence text. MIT/BSD/MPL/zlib/IJG/FTL/libpng-style terms require their own notices to accompany the binary; they are not yet retained for the exact versions above."
+          "status": "material-bound",
+          "detail": "All 29 libraries named by the tarball README (28 versioned components plus the libnsgif vendored inside libvips) have their exact upstream copyright/licence files for the exact pinned revisions tracked under Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/, digest-bound (raw and normalized SHA-256) in componentNotices and embedded into the generated notices. Rust crates statically linked through librsvg are not covered; see Config/SharpLibvipsSourceMaterials.json unretained.rust-crates."
         },
         {
           "id": "corresponding-source",
           "status": "open",
-          "detail": "No corresponding-source archive or written offer exists for the exact 1.3.2 combined binary. The upstream build repository at the pinned commit defines how it was produced, but the exact source tarballs of every component version are not retained or offered by this project."
+          "detail": "Config/SharpLibvipsSourceMaterials.json pins the 28 upstream source archives, 4 patches and the build recipe of the exact 1.3.2 build commit by URL, size and SHA-256, acquirable into an ignored build directory by scripts/prepare-libvips-source-materials.mjs. That material is not shipped or offered with the binary, the Rust crate sources linked through librsvg are not identified, and no rebuild has been attempted, so no corresponding-source offer exists yet."
         },
         {
           "id": "relinking-and-installation-information",

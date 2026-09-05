@@ -12,6 +12,37 @@ const MAXIMUM_TEXT_BYTES = 8 * 1024 * 1024;
 const MAXIMUM_LOCK_BYTES = 64 * 1024 * 1024;
 const LICENSE_NAME = /^(?:licen[cs]e|copying|notice|copyright|patents|authors)(?:$|[._-])/iu;
 const SHA256 = /^[a-f0-9]{64}$/u;
+const COMMIT = /^[a-f0-9]{40}$/u;
+const COMPONENT_NAME = /^[a-z0-9][a-z0-9._+-]{0,63}$/u;
+const MAXIMUM_COMPONENT_NOTICES = 128;
+const MAXIMUM_MATERIALS_PER_COMPONENT = 8;
+const TRACKED_LICENCE_PREFIX = "Resources/ThirdPartyLicenses/";
+const NORMALIZATION = "append-terminal-lf-v1";
+
+function byCodePoint(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function boundedString(value, minimum, maximum, label) {
+  if (typeof value !== "string" || value.trim() !== value || value.length < minimum || value.length > maximum
+      || /[\0\r\n]/u.test(value)) {
+    throw new Error(`${label} must be one bounded single-line string`);
+  }
+  return value;
+}
+
+function cleanHTTPSOrigin(value, label) {
+  if (typeof value !== "string" || value.length < 16 || value.length > 1024 || /[\0\r\n]/u.test(value)) {
+    throw new Error(`${label} has invalid upstream provenance`);
+  }
+  let parsed;
+  try { parsed = new URL(value); }
+  catch { throw new Error(`${label} has invalid upstream provenance`); }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error(`${label} requires one clean HTTPS upstream provenance URL`);
+  }
+  return parsed.href;
+}
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -122,6 +153,22 @@ for (const entry of overridesDocument.overrides) {
   if (!Array.isArray(entry.materials) || entry.materials.length === 0 || entry.materials.length > 8) {
     throw new Error(`licence override must name one to eight materials: ${packagePath}`);
   }
+  let componentNotices;
+  if (entry.componentNotices !== undefined) {
+    const reference = entry.componentNotices;
+    if (!reference || typeof reference !== "object" || Array.isArray(reference)
+        || Object.keys(reference).sort(byCodePoint).join("\0") !== "component\0manifest") {
+      throw new Error(`licence override component-notice reference must name exactly a manifest and a component: ${packagePath}`);
+    }
+    const manifest = assertSafeRelativePath(reference.manifest, `component-notice manifest for ${packagePath}`);
+    if (!/^Config\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.json$/u.test(manifest)) {
+      throw new Error(`component-notice manifest must be one tracked JSON document under Config: ${packagePath}`);
+    }
+    if (typeof reference.component !== "string" || !COMPONENT_NAME.test(reference.component)) {
+      throw new Error(`component-notice reference names an invalid component: ${packagePath}`);
+    }
+    componentNotices = { manifest, component: reference.component };
+  }
   const seenMaterials = new Set();
   const materials = entry.materials.map((material) => {
     const hasRuntimePath = material?.path !== undefined;
@@ -178,7 +225,187 @@ for (const entry of overridesDocument.overrides) {
       sha256: material.sha256
     };
   });
-  overrides.set(packagePath, { reason: entry.reason, materials });
+  overrides.set(packagePath, { reason: entry.reason, materials, componentNotices });
+}
+
+// Reads one tracked source licence text and proves it equals the exact
+// upstream bytes plus one terminal LF. Shared by package-level override
+// materials and per-component binary notices so both obey one contract.
+async function boundTrackedSourceText(material, label) {
+  const absolute = join(projectRoot, ...material.path.split("/"));
+  if (await realpath(absolute) !== absolute) {
+    throw new Error(`tracked licence material must not traverse aliases or symbolic links: ${label} -> ${material.path}`);
+  }
+  const { bytes, text } = await boundedText(absolute, MAXIMUM_TEXT_BYTES, `tracked licence material for ${label}`);
+  const digest = sha256(bytes);
+  if (digest !== material.sha256) throw new Error(`override material SHA-256 drifted: ${label} -> ${material.path}`);
+  if (bytes.byteLength < 2 || bytes[bytes.byteLength - 1] !== 0x0a
+      || sha256(bytes.subarray(0, bytes.byteLength - 1)) !== material.upstreamSHA256) {
+    throw new Error(`tracked licence material no longer equals the exact upstream bytes plus one terminal LF: ${label} -> ${material.path}`);
+  }
+  return { bytes, text, digest };
+}
+
+function recordTrackedSourceMaterial(registry, material, digest, text) {
+  const existing = registry.get(material.path);
+  if (existing !== undefined && (existing.sha256 !== digest || existing.origin !== material.origin
+      || existing.upstreamSHA256 !== material.upstreamSHA256)) {
+    throw new Error(`tracked licence material has conflicting provenance: ${material.path}`);
+  }
+  registry.set(material.path, {
+    path: material.path,
+    sha256: digest,
+    origin: material.origin,
+    upstreamSHA256: material.upstreamSHA256,
+    text
+  });
+}
+
+// Binds the exact per-component copyright/licence notices of one redistributed
+// combined binary from a tracked provenance manifest. Every component named by
+// the upstream licence manifest must be present exactly once, every versioned
+// component must map to the exact pinned version, and every notice text must be
+// a tracked file proven equal to the immutable upstream bytes plus one LF.
+async function bindComponentNotices(lockPackagePath, reference, registry) {
+  const manifestPath = join(projectRoot, ...reference.manifest.split("/"));
+  if (await realpath(manifestPath) !== manifestPath) {
+    throw new Error(`component-notice manifest must not traverse aliases or symbolic links: ${lockPackagePath}`);
+  }
+  const { bytes: manifestBytes, text: manifestText } = await boundedText(manifestPath, MAXIMUM_TEXT_BYTES, `component-notice manifest for ${lockPackagePath}`);
+  const manifest = parseObject(manifestText, `component-notice manifest for ${lockPackagePath}`);
+  if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.components)) {
+    throw new Error(`component-notice manifest has an unsupported schema: ${lockPackagePath}`);
+  }
+  const matching = manifest.components.filter((component) => component?.id === reference.component);
+  if (matching.length !== 1) {
+    throw new Error(`component-notice manifest must describe the referenced component exactly once: ${lockPackagePath} -> ${reference.component}`);
+  }
+  const [component] = matching;
+  if (component.lockfilePath !== lockPackagePath) {
+    throw new Error(`component-notice manifest component does not describe this package: ${lockPackagePath} -> ${reference.component}`);
+  }
+  const versions = component.componentVersions;
+  if (!versions || typeof versions !== "object" || Array.isArray(versions)
+      || Object.values(versions).some((version) => typeof version !== "string" || version.length === 0)) {
+    throw new Error(`component-notice manifest lacks exact component versions: ${lockPackagePath}`);
+  }
+  if (!Array.isArray(component.manifestLibraries) || component.manifestLibraries.length === 0
+      || component.manifestLibraries.length > MAXIMUM_COMPONENT_NOTICES
+      || component.manifestLibraries.some((name) => typeof name !== "string" || !COMPONENT_NAME.test(name))
+      || new Set(component.manifestLibraries).size !== component.manifestLibraries.length) {
+    throw new Error(`component-notice manifest must list the upstream licence-manifest libraries exactly once each: ${lockPackagePath}`);
+  }
+  const withoutVersion = component.manifestDiscrepancy?.librariesWithoutVersionKey;
+  if (!Array.isArray(withoutVersion) || typeof component.manifestDiscrepancy?.resolution !== "string"
+      || component.manifestDiscrepancy.resolution.length < 40) {
+    throw new Error(`component-notice manifest must resolve the library/version discrepancy explicitly: ${lockPackagePath}`);
+  }
+  const notices = component.componentNotices;
+  if (!Array.isArray(notices) || notices.length === 0 || notices.length > MAXIMUM_COMPONENT_NOTICES) {
+    throw new Error(`component-notice manifest carries no bounded per-component notices: ${lockPackagePath}`);
+  }
+
+  const seenComponents = new Set();
+  const seenVersionKeys = new Set();
+  const seenPaths = new Set();
+  const records = [];
+  for (const notice of notices) {
+    if (!notice || typeof notice !== "object" || Array.isArray(notice)) {
+      throw new Error(`component notice is not an object: ${lockPackagePath}`);
+    }
+    const name = notice.component;
+    if (typeof name !== "string" || !COMPONENT_NAME.test(name) || seenComponents.has(name)) {
+      throw new Error(`component notice has a duplicate or invalid component name: ${lockPackagePath} -> ${String(name)}`);
+    }
+    seenComponents.add(name);
+    if (!component.manifestLibraries.includes(name)) {
+      throw new Error(`component notice names a component absent from the upstream licence manifest: ${lockPackagePath} -> ${name}`);
+    }
+    if (notice.versionKey === null) {
+      if (notice.version !== null || !withoutVersion.includes(name)) {
+        throw new Error(`component notice without a version key must be an explicitly resolved discrepancy: ${lockPackagePath} -> ${name}`);
+      }
+      boundedString(notice.note, 40, 1200, `component notice note for ${name}`);
+    } else {
+      if (typeof notice.versionKey !== "string" || !Object.hasOwn(versions, notice.versionKey) || seenVersionKeys.has(notice.versionKey)) {
+        throw new Error(`component notice has a duplicate or unknown version key: ${lockPackagePath} -> ${name}`);
+      }
+      if (notice.version !== versions[notice.versionKey]) {
+        throw new Error(`component notice version does not equal the exact pinned component version: ${lockPackagePath} -> ${name}`);
+      }
+      if (withoutVersion.includes(name)) {
+        throw new Error(`component notice is listed as version-less but carries a version key: ${lockPackagePath} -> ${name}`);
+      }
+      seenVersionKeys.add(notice.versionKey);
+      if (notice.note !== undefined) boundedString(notice.note, 40, 1200, `component notice note for ${name}`);
+    }
+    const manifestLicense = boundedString(notice.manifestLicense, 3, 200, `component notice licence declaration for ${name}`);
+    const upstreamRepository = cleanHTTPSOrigin(notice.upstreamRepository, `component notice repository for ${name}`);
+    if (typeof notice.upstreamRevision !== "string" || !COMMIT.test(notice.upstreamRevision)) {
+      throw new Error(`component notice must pin one full upstream revision: ${lockPackagePath} -> ${name}`);
+    }
+    boundedString(notice.revisionEvidence, 16, 400, `component notice revision evidence for ${name}`);
+    if (!Array.isArray(notice.materials) || notice.materials.length === 0 || notice.materials.length > MAXIMUM_MATERIALS_PER_COMPONENT) {
+      throw new Error(`component notice must bind one to ${MAXIMUM_MATERIALS_PER_COMPONENT} materials: ${lockPackagePath} -> ${name}`);
+    }
+    const materials = [];
+    for (const raw of notice.materials) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)
+          || Object.keys(raw).sort(byCodePoint).join("\0") !== "archiveMember\0archiveSHA256\0describes\0normalization\0origin\0sha256\0sourcePath\0upstreamSHA256") {
+        throw new Error(`component notice material has an unexpected shape: ${lockPackagePath} -> ${name}`);
+      }
+      const path = assertSafeRelativePath(raw.sourcePath, `component notice material for ${name}`);
+      if (!path.startsWith(TRACKED_LICENCE_PREFIX) || seenPaths.has(path)) {
+        throw new Error(`component notice material must be one unique tracked file under ${TRACKED_LICENCE_PREFIX}: ${lockPackagePath} -> ${name}`);
+      }
+      seenPaths.add(path);
+      if (!SHA256.test(raw.sha256 ?? "") || !SHA256.test(raw.upstreamSHA256 ?? "") || !SHA256.test(raw.archiveSHA256 ?? "")
+          || raw.normalization !== NORMALIZATION) {
+        throw new Error(`component notice material requires exact raw, tracked and archive SHA-256 values and the reviewed normalization: ${lockPackagePath} -> ${name}`);
+      }
+      const material = {
+        path,
+        describes: boundedString(raw.describes, 8, 400, `component notice description for ${name}`),
+        origin: cleanHTTPSOrigin(raw.origin, `component notice material for ${name}`),
+        upstreamSHA256: raw.upstreamSHA256,
+        sha256: raw.sha256,
+        archiveMember: assertSafeRelativePath(raw.archiveMember, `component notice archive member for ${name}`),
+        archiveSHA256: raw.archiveSHA256
+      };
+      const { text, digest } = await boundTrackedSourceText(material, `${lockPackagePath} component ${name}`);
+      recordTrackedSourceMaterial(registry, material, digest, text);
+      const packageLevel = trackedSourceMaterials.get(path);
+      if (packageLevel !== undefined && (packageLevel.sha256 !== digest || packageLevel.origin !== material.origin
+          || packageLevel.upstreamSHA256 !== material.upstreamSHA256)) {
+        throw new Error(`tracked licence material has conflicting provenance: ${path}`);
+      }
+      materials.push({ ...material, text });
+    }
+    records.push({
+      component: name,
+      version: notice.version,
+      manifestLicense,
+      upstreamRepository,
+      upstreamRevision: notice.upstreamRevision,
+      materials
+    });
+  }
+  const missing = component.manifestLibraries.filter((name) => !seenComponents.has(name));
+  if (missing.length > 0) {
+    throw new Error(`component notices are missing for upstream licence-manifest libraries: ${lockPackagePath} -> ${missing.sort(byCodePoint).join(", ")}`);
+  }
+  const unversioned = Object.keys(versions).filter((key) => !seenVersionKeys.has(key));
+  if (unversioned.length > 0) {
+    throw new Error(`component notices are missing for pinned component versions: ${lockPackagePath} -> ${unversioned.sort(byCodePoint).join(", ")}`);
+  }
+  records.sort((left, right) => byCodePoint(left.component, right.component));
+  return {
+    lockPackagePath,
+    manifestPath: reference.manifest,
+    manifestSHA256: sha256(manifestBytes),
+    componentId: reference.component,
+    records
+  };
 }
 
 const lockPath = join(runtimeRoot, "package-lock.json");
@@ -191,6 +418,8 @@ if (lock.lockfileVersion !== 3 || !lock.packages || typeof lock.packages !== "ob
 const rows = [];
 const usedOverrides = new Set();
 const trackedSourceMaterials = new Map();
+const componentNoticeMaterials = new Map();
+const componentNoticeSections = [];
 let omittedOptionalPackages = 0;
 let materialCount = 0;
 
@@ -257,21 +486,14 @@ for (const [lockPackagePath, locked] of Object.entries(lock.packages).sort(([lef
     usedOverrides.add(lockPackagePath);
     materials = [];
     for (const material of override.materials) {
-      const root = material.kind === "source" ? projectRoot : runtimeRoot;
-      const absolute = join(root, ...material.path.split("/"));
-      if (material.kind === "source" && await realpath(absolute) !== absolute) {
-        throw new Error(`tracked licence material must not traverse aliases or symbolic links: ${lockPackagePath} -> ${material.path}`);
-      }
-      const { bytes, text } = material.kind === "source"
-        ? await boundedText(absolute, MAXIMUM_TEXT_BYTES, `tracked licence material for ${lockPackagePath}`)
-        : { bytes: await boundedRegularBytes(absolute, MAXIMUM_TEXT_BYTES, `override material for ${lockPackagePath}`) };
-      const digest = sha256(bytes);
-      if (digest !== material.sha256) throw new Error(`override material SHA-256 drifted: ${lockPackagePath} -> ${material.path}`);
+      let digest;
+      let text;
       if (material.kind === "source") {
-        if (bytes.byteLength < 2 || bytes[bytes.byteLength - 1] !== 0x0a
-            || sha256(bytes.subarray(0, bytes.byteLength - 1)) !== material.upstreamSHA256) {
-          throw new Error(`tracked licence material no longer equals the exact upstream bytes plus one terminal LF: ${lockPackagePath} -> ${material.path}`);
-        }
+        ({ digest, text } = await boundTrackedSourceText(material, lockPackagePath));
+      } else {
+        const absolute = join(runtimeRoot, ...material.path.split("/"));
+        digest = sha256(await boundedRegularBytes(absolute, MAXIMUM_TEXT_BYTES, `override material for ${lockPackagePath}`));
+        if (digest !== material.sha256) throw new Error(`override material SHA-256 drifted: ${lockPackagePath} -> ${material.path}`);
       }
       const displayPath = material.kind === "source" ? `source:${material.path}` : material.path;
       materials.push({
@@ -280,20 +502,10 @@ for (const [lockPackagePath, locked] of Object.entries(lock.packages).sort(([lef
         origin: material.origin,
         upstreamSHA256: material.upstreamSHA256
       });
-      if (material.kind === "source") {
-        const existing = trackedSourceMaterials.get(material.path);
-        if (existing !== undefined && (existing.sha256 !== digest || existing.origin !== material.origin
-            || existing.upstreamSHA256 !== material.upstreamSHA256)) {
-          throw new Error(`tracked licence material has conflicting provenance: ${material.path}`);
-        }
-        trackedSourceMaterials.set(material.path, {
-          path: material.path,
-          sha256: digest,
-          origin: material.origin,
-          upstreamSHA256: material.upstreamSHA256,
-          text
-        });
-      }
+      if (material.kind === "source") recordTrackedSourceMaterial(trackedSourceMaterials, material, digest, text);
+    }
+    if (override.componentNotices !== undefined) {
+      componentNoticeSections.push(await bindComponentNotices(lockPackagePath, override.componentNotices, componentNoticeMaterials));
     }
   }
   materialCount += materials.length;
@@ -319,6 +531,70 @@ const trackedLicenceText = [...trackedSourceMaterials.values()]
     material.text.trimEnd(),
     ""
   ]);
+// Per-component notices for redistributed combined binaries. Texts are embedded
+// once per distinct tracked digest; a text already embedded above as a
+// package-level tracked material is referenced rather than repeated.
+function renderComponentNotices() {
+  if (componentNoticeSections.length === 0) return [];
+  const embeddedAbove = new Map([...trackedSourceMaterials.values()].map((material) => [material.sha256, material.path]));
+  const lines = [
+    "",
+    "## Exact per-component notices for redistributed binaries",
+    "",
+    "The combined binaries below statically bundle third-party components whose upstream packages ship no standalone notice files. Each row binds the exact upstream copyright/licence file of the exact pinned component revision, tracked in this repository and proven byte-identical to the immutable upstream origin plus one terminal LF. This is an auditable material inventory, not legal clearance."
+  ];
+  for (const section of [...componentNoticeSections].sort((left, right) => byCodePoint(left.lockPackagePath, right.lockPackagePath))) {
+    const materialCount = section.records.reduce((total, record) => total + record.materials.length, 0);
+    const distinct = new Set(section.records.flatMap((record) => record.materials.map((material) => material.sha256)));
+    lines.push(
+      "",
+      `### \`${escaped(section.lockPackagePath)}\``,
+      "",
+      `Component notice manifest: \`${escaped(section.manifestPath)}\` (\`sha256:${section.manifestSHA256}\`), component \`${escaped(section.componentId)}\`: ${section.records.length} components, ${materialCount} notice materials, ${distinct.size} distinct texts.`,
+      "",
+      "| Component | Version | Upstream licence declaration | Upstream revision | Notice material | Exact tracked SHA-256 | Upstream origin |",
+      "| --- | --- | --- | --- | --- | --- | --- |"
+    );
+    for (const record of section.records) {
+      const cell = (selector) => record.materials.map(selector).join("<br>");
+      lines.push(`| \`${escaped(record.component)}\` | ${record.version === null ? "vendored (no separate version)" : `\`${escaped(record.version)}\``} | ${escaped(record.manifestLicense)} | \`${escaped(record.upstreamRepository)}\` @ \`${record.upstreamRevision}\` | ${cell((material) => `\`${escaped(material.path)}\``)} | ${cell((material) => `\`${material.sha256}\``)} | ${cell((material) => `\`${escaped(material.origin)}\``)} |`);
+    }
+    lines.push("", `#### Notice texts for \`${escaped(section.lockPackagePath)}\``);
+    const rendered = new Set();
+    for (const record of section.records) {
+      for (const material of record.materials) {
+        if (rendered.has(material.sha256)) continue;
+        rendered.add(material.sha256);
+        const sharers = section.records
+          .flatMap((other) => other.materials
+            .filter((candidate) => candidate.sha256 === material.sha256)
+            .map((candidate) => `\`${escaped(candidate.path)}\` (${escaped(other.component)}${other.version === null ? "" : ` ${escaped(other.version)}`}: ${escaped(candidate.describes)})`));
+        lines.push(
+          "",
+          `##### ${escaped(record.component)}${record.version === null ? "" : ` ${escaped(record.version)}`}: \`${escaped(basename(material.path))}\``,
+          "",
+          `Bound as: ${sharers.join("; ")}`,
+          `Upstream: ${material.origin}`,
+          `Exact raw upstream SHA-256: \`${material.upstreamSHA256}\``,
+          `Exact tracked SHA-256: \`${material.sha256}\``,
+          `Source archive member: \`${escaped(material.archiveMember)}\` of archive \`sha256:${material.archiveSHA256}\``,
+          "Repository normalization: one terminal LF appended; all upstream text bytes are otherwise identical."
+        );
+        const above = embeddedAbove.get(material.sha256);
+        if (above !== undefined) {
+          lines.push("", `Text identical to \`${escaped(above)}\` embedded above; not repeated.`);
+        } else {
+          lines.push("", material.text.trimEnd());
+        }
+      }
+    }
+  }
+  return lines;
+}
+
+const componentNoticeLines = renderComponentNotices();
+const componentNoticeMaterialCount = componentNoticeSections
+  .reduce((total, section) => total + section.records.reduce((inner, record) => inner + record.materials.length, 0), 0);
 const inventory = [
   "",
   "## Complete bundled npm dependency inventory",
@@ -326,6 +602,9 @@ const inventory = [
   `This artifact-aware inventory contains ${rows.length} package paths actually present in the bundled runtime; ${omittedOptionalPackages} lockfile-only optional package paths are absent and intentionally omitted.`,
   `Pinned production lockfile SHA-256: \`${sha256(lockBytes)}\`. Reviewed override-config SHA-256: \`${sha256(overridesBytes)}\`.`,
   `It binds ${materialCount} npm licence/notice payloads by exact Runtime-relative path and SHA-256. The bundled Node.js consolidated licence is \`NODE_LICENSE\` (\`sha256:${sha256(nodeLicense)}\`).`,
+  ...(componentNoticeMaterialCount === 0 ? [] : [
+    `It additionally binds ${componentNoticeMaterialCount} exact per-component notice texts for redistributed combined binaries; see "Exact per-component notices for redistributed binaries" below.`
+  ]),
   "",
   "> This is an auditable material inventory, not legal clearance. In particular, the bundled libvips payload declares LGPL components; source-offer, replacement/relinking, signing, and other distribution obligations require independent legal review before publication.",
   "",
@@ -340,6 +619,7 @@ const inventory = [
     "",
     ...trackedLicenceText
   ]),
+  ...componentNoticeLines,
   ""
 ].join("\n");
 
