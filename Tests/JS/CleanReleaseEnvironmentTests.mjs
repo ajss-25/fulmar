@@ -28,7 +28,9 @@ fulmar_require_clean_release_environment public "$0" "$@"
       PATH: `${root}:/usr/bin:/bin`,
       NODE_OPTIONS: "--require=/private/tmp/fulmar-hostile-loader.cjs",
       NODE_PATH: "/private/tmp/fulmar-hostile-modules",
-      DYLD_INSERT_LIBRARIES: "/private/tmp/fulmar-hostile.dylib",
+      // A missing image can terminate the interpreter before this wrapper runs.
+      // libSystem is already loaded, so this remains a nonempty safe scrub sentinel.
+      DYLD_INSERT_LIBRARIES: "/usr/lib/libSystem.B.dylib",
       DYLD_LIBRARY_PATH: "/private/tmp/fulmar-hostile-libraries",
       HTTP_PROXY: "http://127.0.0.1:9",
       HTTPS_PROXY: "http://127.0.0.1:9",

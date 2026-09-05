@@ -34,6 +34,9 @@ test("JavaScript test runner isolates state and rejects hostile ambient environm
   `;
   const hostileEnvironment = { ...process.env };
   for (const key of forbidden) hostileEnvironment[key] = sentinel;
+  // A missing image can terminate the shebang interpreter before the runner starts.
+  // libSystem is already loaded, so this remains a nonempty safe scrub sentinel.
+  hostileEnvironment.DYLD_INSERT_LIBRARIES = "/usr/lib/libSystem.B.dylib";
   hostileEnvironment.HOME = "/Users/forbidden-live-home";
   hostileEnvironment.TMPDIR = "/private/tmp/forbidden-live-temp";
   hostileEnvironment.ZDOTDIR = startupRoot;

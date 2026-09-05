@@ -809,18 +809,24 @@ test("public verifier rejects the exact private candidate", async (context) => {
     unavailableCandidateFixture(context, "private release fixture predates the current source release identity");
     return;
   }
+  const retainedEvidence = join(
+    root,
+    "build",
+    `release-verify-${identity.appVersion}-build${identity.appBuild}-${currentManifest.sha256}.evidence`
+  );
+  await assert.rejects(stat(retainedEvidence), { code: "ENOENT" });
   const temporary = await mkdtemp(join(tmpdir(), "fulmar-public-negative."));
   try {
     const assets = {
       "Fulmar.app.zip": archive,
       "Fulmar.dSYMs.zip": symbols,
+      "LICENSE": join(root, "LICENSE"),
       "release-manifest.json": manifest,
       "static-security-summary.json": staticSecurity,
       "LocalHarness.sbom.cdx.json": join("/private/tmp", "LocalHarnessBuild", "Fulmar.app", "Contents", "Resources", "LocalHarness.sbom.cdx.json"),
       "THIRD_PARTY_NOTICES.md": join("/private/tmp", "LocalHarnessBuild", "Fulmar.app", "Contents", "Resources", "THIRD_PARTY_NOTICES.md")
     };
     for (const [name, source] of Object.entries(assets)) await copyFile(source, join(temporary, name));
-    await writeFile(join(temporary, "LICENSE"), "synthetic public terms\n", { mode: 0o644 });
     await writeFile(
       join(temporary, "Fulmar.app.zip.sha256"),
       `${await sha(join(temporary, "Fulmar.app.zip"))}  Fulmar.app.zip\n`,
@@ -836,7 +842,9 @@ test("public verifier rejects the exact private candidate", async (context) => {
       timeout: 120_000
     }));
     assert.notEqual(result.status, 0, "private candidate must never pass the public gate");
-    assert.match(result.stderr, /public distribution requires owner-selected LICENSE/u);
+    assert.match(result.stderr, /ENOENT: no such file or directory/u);
+    assert.ok(result.stderr.includes(retainedEvidence), result.stderr);
+    assert.match(result.stderr, /verify-retained-release-evidence\.mjs/u);
     assert.doesNotMatch(result.stderr, /release manifest|Info\.plist does not match/u);
   } finally {
     await rm(temporary, { recursive: true, force: true });
