@@ -346,7 +346,8 @@ Two options for distribution, either of which is a Codex-integrated delta, not
 something this record enables on its own:
 
 - **Option A — separate persistent artefact.** Publish the verified
-  `sharp-libvips-1.3.2-delivery-materials/` set (≈174 MB: the
+  `sharp-libvips-1.3.2-delivery-materials/` set (215 files, 175,873,353
+  bytes at the current manifests: the
   `sharp-libvips-1.3.2-corresponding-source-materials/` upstream archives plus
   recipe, patches, `INVENTORY.json`, `SHA256SUMS`; the
   `sharp-libvips-1.3.2-rust-crate-materials/` `.crate` files plus the complete
@@ -361,9 +362,9 @@ something this record enables on its own:
   maintained. Delta: one new asset outside the nine, one documented URL/digest
   pair, one owner commitment to keep it available.
 - **Option B — ship the inventory, host the archives.** Include only
-  `DELIVERY_INVENTORY.json`/`SHA256SUMS` (a few hundred kB) inside the app's
-  notices bundle and host the set as in Option A. Delta: one additional file
-  in the notices resource, plus Option A's hosting commitment.
+  `DELIVERY_INVENTORY.json`/`SHA256SUMS` (≈131 kB and ≈31 kB) inside the
+  app's notices bundle and host the set as in Option A. Delta: one additional
+  file in the notices resource, plus Option A's hosting commitment.
 
 In both options the Rust crate set is the observed compile set bound above;
 which crate code the shipped dylib actually incorporates remains unverified
