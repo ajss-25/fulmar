@@ -791,17 +791,17 @@
     {
       "id": "rust-crates",
       "component": "librsvg",
-      "detail": "librsvg 2.62.90 is implemented in Rust. Its release tarball carries Cargo.lock (357 package entries) but no vendored crates; the recipe runs cargo update --workspace and Cargo fetches crate sources from crates.io at build time. Config/SharpLibvipsRustProvenance.json pins, by crates.io checksum, the 159 registry crates a simplified resolver identifies for librsvg-c on aarch64-apple-darwin from that Cargo.lock and the recipe's edits, together with the licence texts each .crate carries; that set is an explicit approximation (resolved-approximation), not the historical compile log, and the crates actually incorporated into libvips-cpp remain unverified."
+      "detail": "librsvg 2.62.90 is implemented in Rust. Its release tarball carries Cargo.lock (357 package entries) but no vendored crates; the recipe runs cargo update --workspace and Cargo fetches crate sources from crates.io at build time. Config/SharpLibvipsRustProvenance.json pins, by crates.io checksum, the 159 registry crates a simplified resolver identifies for librsvg-c on aarch64-apple-darwin, together with the licence texts each .crate carries; the retained historical job log (raw sha256 b7b3362b\u2026) shows 157 of them compiling in the librsvg phase (the other two stay resolved-approximation). Observed compilation is not a linkage map: which crate code survived fat LTO and dead-stripping into libvips-cpp remains unverified."
     },
     {
       "id": "rust-toolchain",
       "component": "librsvg",
-      "detail": "The recipe installs a rustup 'nightly' toolchain and 'cargo install cargo-c --locked' at build time (posix.sh lines 113-116); neither the Rust compiler revision nor the cargo-c version is pinned, so the exact toolchain that produced the Rust object code is unknown."
+      "detail": "The recipe installs a rustup 'nightly' toolchain and 'cargo install cargo-c --locked' at build time (posix.sh lines 113-116), neither pinned by the recipe. The retained job log observed rustc 1.98.0-nightly (096694416 2026-06-29), cargo 1.98.0 and cargo-c 0.10.23+cargo-0.97.1; those are version strings as reported, not compiler or tool binary digests, and the full rustc commit is not expanded from the short revision."
     },
     {
       "id": "apple-toolchain",
       "component": "all",
-      "detail": "The darwin-arm64v8 build uses the Xcode clang, Apple SDK, Homebrew pkg-config and system frameworks (Quartz for cairo, CoreText for harfbuzz) of the GitHub Actions macOS runner that ran the release workflow; their versions are not recorded in the pinned recipe."
+      "detail": "The darwin-arm64v8 build uses the Xcode clang, Apple SDK, Homebrew pkg-config and system frameworks (Quartz for cairo, CoreText for harfbuzz) of the GitHub Actions macos-15 runner that ran the release workflow. The retained job log observed Apple clang 17.0.0 (clang-1700.0.13.5), ld64 1167.5, pkg-config 2.5.1 and Meson 1.11.1; the SDK version and the full toolchain closure remain unrecorded."
     },
     {
       "id": "libnsgif-upstream-revision",

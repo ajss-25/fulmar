@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "purpose": "Digest-pinned identification of the Rust crates that Cargo would build for the librsvg-c static library inside the redistributed @img/sharp-libvips-darwin-arm64 1.3.2 combined binary, approximated from the retained librsvg 2.62.90 Cargo.lock, the workspace manifests and the pinned recipe's edits, for acquisition into an ignored build directory by scripts/prepare-libvips-source-materials.mjs. It is an approximation of the historical build, explicitly partial, not a corresponding-source offer, and not legal clearance.",
+  "purpose": "Digest-pinned identification of the Rust crates compiled for the librsvg-c static library inside the redistributed @img/sharp-libvips-darwin-arm64 1.3.2 combined binary: a resolver approximation from the retained librsvg 2.62.90 Cargo.lock and recipe edits, cross-checked against the retained historical job log so that observed compilation is bound per crate, for acquisition into an ignored build directory by scripts/prepare-libvips-source-materials.mjs. Observed compilation is distinct from incorporation into the shipped binary; this is explicitly partial, not a corresponding-source offer, and not legal clearance.",
   "binary": {
     "packageName": "@img/sharp-libvips-darwin-arm64",
     "version": "1.3.2",
@@ -46,7 +46,7 @@
       "completedAt": "2026-06-30T09:17:03Z",
       "url": "https://github.com/lovell/sharp-libvips/actions/runs/28432216836/job/84249528353",
       "buildStep": "4 Build darwin-arm64v8",
-      "logStatus": "not-retrieved: the job log (which would list every 'Compiling <crate> v<version>' Cargo emitted) exists but requires an authenticated GitHub session; unauthenticated API and web requests returned 403/404 on 2026-09-05. GitHub retains public workflow logs for 90 days, so it is expected to expire around 2026-09-28."
+      "logStatus": "retrieved-and-retained: the complete job log (all steps, 08:52:28Z\u201309:16:58Z) was downloaded on 2026-09-05T23:53:59Z by the Codex review lane with normally configured GitHub CLI authentication (GET only, no new scopes) and retained as owner-private evidence; see historicalBuildEvidence.jobLog and observedCompilation."
     },
     "lockfile": {
       "archiveFileName": "librsvg-2.62.90.tar.xz",
@@ -70,7 +70,7 @@
         "CARGO_PROFILE_RELEASE_PANIC=abort"
       ],
       "target": "aarch64-apple-darwin (host target; the recipe sets -Dtriplet only when RUST_TARGET is defined, which it is not for darwin-arm64v8)",
-      "toolchain": "rustup nightly installed at build time (unpinned); cargo-c installed with cargo install cargo-c --locked (version unpinned)"
+      "toolchain": "rustup nightly installed at build time; observed as rustc 1.98.0-nightly (096694416 2026-06-29) with cargo-c 0.10.23+cargo-0.97.1 (see toolchainObserved)"
     },
     "recipeEdits": [
       {
@@ -88,7 +88,84 @@
         "file": "Cargo.lock",
         "edit": "cargo update --workspace: per Cargo's documented semantics this re-resolves only workspace members and leaves every existing non-workspace lock entry at its locked version; packages no longer required are pruned, packages not already present would be added (none are introduced by removing features)"
       }
-    ]
+    ],
+    "jobLog": {
+      "endpoint": "GET repos/lovell/sharp-libvips/actions/jobs/84249528353/logs",
+      "retrievedOn": "2026-09-05T23:53:59Z",
+      "retrievedBy": "Codex review lane, normally configured GitHub CLI authentication, GET only; no alternate credentials, scope changes or upstream code execution",
+      "rawBytes": 944166,
+      "lines": 10027,
+      "rawSHA256": "b7b3362b69a9dacebb3588502529cfa8f6b130854040213b928ad1011010158b",
+      "sanitizedSHA256": "c464b4d85d4293c231dedb0842991e66c4eacb949d455e369d08ef92d9fb682b",
+      "sanitization": "local filter removing the UTF-8 BOM, ANSI OSC/CSI sequences, carriage returns and C0 controls other than tab/newline; line numbering preserved",
+      "retention": "owner-private ignored build evidence directory claude-rust-handback-review-2026-09-06 of the coordination checkout, sealed by SHA256SUMS (manifest sha256 74c16427f8f9a5fd56b90855142b4f79c28ca9352fa31ecbdb9270603c9a1fb4); the log is not committed to source",
+      "firstTimestamp": "2026-06-30T08:52:28.7885980Z",
+      "lastTimestamp": "2026-06-30T09:16:58.5448680Z",
+      "truncationOrCacheMarkers": "none found for: truncated|truncating|log limit|maximum log|logs have been|output omitted|Cache restored|cache hit|actions/cache|Fresh; absence of markers is not proof that silent reuse was impossible"
+    },
+    "observedCompilation": {
+      "phase": "librsvg custom target: sanitized log lines 8721 ('Generating rsvg/librsvg-2') to 8985 (exact cargo cbuild invocation); release profile finished at line 8981",
+      "registryCrateCount": 157,
+      "workspaceCrates": [
+        {
+          "name": "librsvg",
+          "version": "2.63.0-beta.0",
+          "logLine": 8954,
+          "timestamp": "2026-06-30T09:15:08.1694030Z",
+          "note": "rsvg/Cargo.toml package version inside the retained librsvg-2.62.90 archive; the Meson project version and the archive name are 2.62.90"
+        },
+        {
+          "name": "librsvg-c",
+          "version": "2.62.90",
+          "logLine": 8965,
+          "timestamp": "2026-06-30T09:15:10.6996220Z",
+          "note": "workspace member built with cargo cbuild -p librsvg-c"
+        }
+      ],
+      "approximationNotObserved": [
+        {
+          "name": "rustc_version",
+          "version": "0.4.1"
+        },
+        {
+          "name": "semver",
+          "version": "1.0.28"
+        }
+      ],
+      "approximationNotObservedNote": "Retained as resolved-approximation. No 'Compiling' line for them appears in the librsvg phase; absence of a line alone does not prove exclusion from every intermediate artifact, and their approximated role is build-only/normal-not-linked respectively.",
+      "observedNotInApproximation": [],
+      "cargoInvocationLogLine": 8985,
+      "cargoInvocationObserved": "cargo cbuild --locked --prefix <target> --libdir <target>/lib --library-type staticlib --manifest-path <deps>/rsvg/Cargo.toml --target-dir <deps>/rsvg/_build/target --release -p librsvg-c with CARGO_PROFILE_RELEASE_LTO=true, PANIC=abort, CODEGEN_UNITS=1, OPT_LEVEL=z, DEBUG=false, INCREMENTAL=false",
+      "workspaceUpdateObserved": {
+        "logLines": "8632-8638",
+        "locking": "Locking 0 packages to latest Rust 1.92.0 compatible versions",
+        "removed": [
+          "color_quant 1.1.0",
+          "gif 0.14.2",
+          "image-webp 0.2.4"
+        ],
+        "unchangedBehindLatest": 15
+      },
+      "cargoCInstallPhase": {
+        "logLines": "223-954",
+        "compilingLines": 356,
+        "note": "tool-installation dependencies of cargo-c 0.10.23+cargo-0.97.1; not librsvg dependencies and not included here"
+      },
+      "futureIncompatibilityWarning": "line 8982: 'the following packages contain code that will be rejected by a future version of Rust: block v0.1.6'",
+      "statement": "An observed compile-event set bound to the retained log digest. It is not the resolved feature graph and not a linkage map: it does not show which crate code survived fat LTO and -dead_strip into libvips-cpp.8.18.3.dylib."
+    },
+    "toolchainObserved": {
+      "rustc": "1.98.0-nightly (096694416 2026-06-29)",
+      "rustcRevisionNote": "short revision exactly as reported by rustup at log line 195; not expanded into a full commit and not a binary digest",
+      "rustupChannel": "nightly-aarch64-apple-darwin (log lines 189-195)",
+      "cargo": "1.98.0 (Meson probe, log line 8656)",
+      "cargoC": "0.10.23+cargo-0.97.1 (installed at log lines 223-224/954; Meson probe 8658)",
+      "meson": "1.11.1 (log line 8640)",
+      "appleClang": "Apple clang version 17.0.0 (clang-1700.0.13.5) (log line 8646)",
+      "ld64": "1167.5 (log line 8647)",
+      "pkgConfig": "2.5.1 (log line 8663)",
+      "note": "Version strings observed in the retained log; none is a compiler or tool binary digest and the Apple SDK closure remains unrecorded."
+    }
   },
   "categories": {
     "lockfileListed": {
@@ -106,7 +183,7 @@
       "registryCrates": 159,
       "workspaceMembers": [
         "librsvg-c 2.62.90 (root)",
-        "librsvg 2.62.90"
+        "librsvg 2.63.0-beta.0 (rsvg/Cargo.toml package version inside the retained librsvg-2.62.90 archive)"
       ],
       "roles": {
         "normal": 143,
@@ -114,15 +191,17 @@
         "proc-macro": 11
       },
       "status": "approximation",
-      "detail": "Computed on 05/09/2026 by a simplified resolver over the exact Cargo.toml of every reached crate (read from its checksum-verified .crate file) with the recipe's feature edits applied: cfg(...) dependency tables evaluated for aarch64-apple-darwin, optional dependencies enabled only through activated features, dev-dependencies excluded, build-dependencies and proc-macro crates classified separately. Unknown cfg predicates were treated as true (superset direction). This is not Cargo's resolver and not the historical build log."
+      "detail": "Computed on 05/09/2026 by a simplified resolver over the exact Cargo.toml of every reached crate (read from its checksum-verified .crate file) with the recipe's feature edits applied: cfg(...) dependency tables evaluated for aarch64-apple-darwin, optional dependencies enabled only through activated features, dev-dependencies excluded, build-dependencies and proc-macro crates classified separately. Unknown cfg predicates were treated as true (superset direction). This is not Cargo's resolver and not the historical build log. Cross-checked on 2026-09-06 against the retained job log: 157 of the 159 registry crates were observed compiling in the librsvg phase; rustc_version 0.4.1 and semver 1.0.28 were not."
     },
     "compiledInHistoricalBuild": {
-      "status": "unverified",
-      "detail": "Requires the retained job log of run 28432216836 job 84249528353 (see historicalBuildEvidence.workflowJob.logStatus) or an SBOM the upstream did not publish."
+      "status": "observed",
+      "count": 159,
+      "registryCrates": 157,
+      "detail": "Observed compile events in the retained job log of run 28432216836 job 84249528353 (raw sha256 b7b3362b\u2026): 157 registry crates plus the two workspace packages. Bound per item as provenanceStatus compiled-per-build-log with log line and timestamp. Observed compilation is not a resolved feature graph, does not authenticate every source byte independently of the checksummed archives, and does not establish incorporation into the shipped dylib."
     },
     "incorporatedIntoShippedBinary": {
       "status": "unverified",
-      "detail": "librsvg-c is built with fat LTO, codegen-units=1, opt-level=z and linked with -Wl,-dead_strip; proc-macro and build-only crates are never linked, and any normal crate may be wholly or partly eliminated. No binary inspection was performed and strings alone would not prove inclusion."
+      "detail": "librsvg-c is built with fat LTO, codegen-units=1, opt-level=z and linked with -Wl,-dead_strip; proc-macro and build-only crates are never linked, and any normal crate may be wholly or partly eliminated. The retained compile log is not a linkage map; no binary inspection was performed and strings alone would not prove inclusion."
     }
   },
   "licenseExpressionSummary": {
@@ -159,7 +238,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "0BSD OR MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "adler2-2.0.1/LICENSE-0BSD",
@@ -181,7 +260,11 @@
       "authors": [
         "Jonas Schievink <jonasschievink@gmail.com>",
         "oyvindln <oyvindln@users.noreply.github.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8900,
+        "timestamp": "2026-06-30T09:14:40.3524730Z"
+      }
     },
     {
       "id": "crate-aho-corasick-1.1.4",
@@ -198,7 +281,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unlicense OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "aho-corasick-1.1.4/COPYING",
@@ -219,7 +302,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Andrew Gallant <jamslam@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8902,
+        "timestamp": "2026-06-30T09:14:40.5825850Z"
+      }
     },
     {
       "id": "crate-approx-0.5.1",
@@ -236,7 +323,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "approx-0.5.1/LICENSE",
@@ -247,7 +334,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Brendan Zabarauskas <bjzaba@yahoo.com.au>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8932,
+        "timestamp": "2026-06-30T09:14:54.2843770Z"
+      }
     },
     {
       "id": "crate-autocfg-1.5.1",
@@ -264,7 +355,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "build-only",
       "licenseExpression": "Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "autocfg-1.5.1/LICENSE-APACHE",
@@ -280,7 +371,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Josh Stone <cuviper@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8840,
+        "timestamp": "2026-06-30T09:14:29.0592900Z"
+      }
     },
     {
       "id": "crate-bitflags-2.13.0",
@@ -297,7 +392,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "bitflags-2.13.0/LICENSE-APACHE",
@@ -313,7 +408,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Rust Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8851,
+        "timestamp": "2026-06-30T09:14:30.8640910Z"
+      }
     },
     {
       "id": "crate-block-0.1.6",
@@ -330,12 +429,16 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [],
       "noticeStatus": "no-licence-text-in-crate",
       "authors": [
         "Steven Sheldon"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8936,
+        "timestamp": "2026-06-30T09:14:54.5850460Z"
+      }
     },
     {
       "id": "crate-bytemuck-1.25.0",
@@ -352,7 +455,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Zlib OR Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "bytemuck-1.25.0/LICENSE-APACHE",
@@ -373,7 +476,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Lokathor <zefria@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8894,
+        "timestamp": "2026-06-30T09:14:39.0714120Z"
+      }
     },
     {
       "id": "crate-byteorder-lite-0.1.0",
@@ -390,7 +497,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unlicense OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "byteorder-lite-0.1.0/LICENSE-MIT",
@@ -403,7 +510,11 @@
           "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8955,
+        "timestamp": "2026-06-30T09:15:08.1810560Z"
+      }
     },
     {
       "id": "crate-cairo-rs-0.22.0",
@@ -420,7 +531,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "cairo-rs-0.22.0/COPYRIGHT",
@@ -436,7 +547,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8951,
+        "timestamp": "2026-06-30T09:15:07.2495620Z"
+      }
     },
     {
       "id": "crate-cairo-sys-rs-0.22.0",
@@ -453,7 +568,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "cairo-sys-rs-0.22.0/LICENSE",
@@ -464,7 +579,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8890,
+        "timestamp": "2026-06-30T09:14:38.7842240Z"
+      }
     },
     {
       "id": "crate-cast-0.3.0",
@@ -481,7 +600,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "cast-0.3.0/LICENSE-APACHE",
@@ -497,7 +616,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Jorge Aparicio <jorge@japaric.io>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8976,
+        "timestamp": "2026-06-30T09:15:16.1543240Z"
+      }
     },
     {
       "id": "crate-cfg-expr-0.20.8",
@@ -514,7 +637,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "cfg-expr-0.20.8/LICENSE-APACHE",
@@ -531,7 +654,11 @@
       "authors": [
         "Embark <opensource@embark-studios.com>",
         "Jake Shadle <jake.shadle@embark-studios.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8832,
+        "timestamp": "2026-06-30T09:14:27.6314090Z"
+      }
     },
     {
       "id": "crate-cfg-if-1.0.4",
@@ -548,7 +675,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "cfg-if-1.0.4/LICENSE-APACHE",
@@ -564,7 +691,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Alex Crichton <alex@alexcrichton.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8845,
+        "timestamp": "2026-06-30T09:14:29.5059950Z"
+      }
     },
     {
       "id": "crate-crc32fast-1.5.0",
@@ -581,7 +712,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "crc32fast-1.5.0/LICENSE-APACHE",
@@ -598,7 +729,11 @@
       "authors": [
         "Sam Rijs <srijs@airpost.net>",
         "Alex Crichton <alex@alexcrichton.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8891,
+        "timestamp": "2026-06-30T09:14:38.7953120Z"
+      }
     },
     {
       "id": "crate-crossbeam-deque-0.8.6",
@@ -615,7 +750,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "crossbeam-deque-0.8.6/LICENSE-APACHE",
@@ -628,7 +763,11 @@
           "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8924,
+        "timestamp": "2026-06-30T09:14:50.4309270Z"
+      }
     },
     {
       "id": "crate-crossbeam-epoch-0.9.18",
@@ -645,7 +784,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "crossbeam-epoch-0.9.18/LICENSE-APACHE",
@@ -658,7 +797,11 @@
           "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8906,
+        "timestamp": "2026-06-30T09:14:41.8112930Z"
+      }
     },
     {
       "id": "crate-crossbeam-utils-0.8.21",
@@ -675,7 +818,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "crossbeam-utils-0.8.21/LICENSE-APACHE",
@@ -688,7 +831,11 @@
           "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8877,
+        "timestamp": "2026-06-30T09:14:36.0922530Z"
+      }
     },
     {
       "id": "crate-cssparser-0.37.0",
@@ -705,7 +852,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MPL-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "cssparser-0.37.0/LICENSE",
@@ -716,7 +863,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Simon Sapin <simon.sapin@exyr.org>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8920,
+        "timestamp": "2026-06-30T09:14:47.2248030Z"
+      }
     },
     {
       "id": "crate-cssparser-color-0.5.0",
@@ -733,7 +884,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MPL-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "cssparser-color-0.5.0/LICENSE",
@@ -744,7 +895,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Emilio Cobos \u00c1lvarez <emilio@crisal.io>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8970,
+        "timestamp": "2026-06-30T09:15:15.2779280Z"
+      }
     },
     {
       "id": "crate-cssparser-macros-0.7.0",
@@ -761,7 +916,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "MPL-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "cssparser-macros-0.7.0/LICENSE",
@@ -772,7 +927,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Simon Sapin <simon.sapin@exyr.org>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8909,
+        "timestamp": "2026-06-30T09:14:42.7349440Z"
+      }
     },
     {
       "id": "crate-data-url-0.3.2",
@@ -789,7 +948,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "data-url-0.3.2/LICENSE-APACHE",
@@ -805,7 +964,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Simon Sapin <simon.sapin@exyr.org>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8974,
+        "timestamp": "2026-06-30T09:15:15.7046920Z"
+      }
     },
     {
       "id": "crate-derive_more-2.1.1",
@@ -822,7 +985,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "derive_more-2.1.1/LICENSE",
@@ -833,7 +996,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Jelte Fennema <github-tech@jeltef.nl>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8946,
+        "timestamp": "2026-06-30T09:15:04.4626490Z"
+      }
     },
     {
       "id": "crate-derive_more-impl-2.1.1",
@@ -850,7 +1017,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "derive_more-impl-2.1.1/LICENSE",
@@ -861,7 +1028,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Jelte Fennema <github-tech@jeltef.nl>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8928,
+        "timestamp": "2026-06-30T09:14:52.5795120Z"
+      }
     },
     {
       "id": "crate-displaydoc-0.2.6",
@@ -878,7 +1049,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "displaydoc-0.2.6/LICENSE-APACHE",
@@ -894,7 +1065,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Jane Lusby <jlusby@yaah.dev>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8859,
+        "timestamp": "2026-06-30T09:14:31.9690910Z"
+      }
     },
     {
       "id": "crate-dtoa-1.0.11",
@@ -911,7 +1086,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "dtoa-1.0.11/LICENSE-APACHE",
@@ -927,7 +1102,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "David Tolnay <dtolnay@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8899,
+        "timestamp": "2026-06-30T09:14:40.2625990Z"
+      }
     },
     {
       "id": "crate-dtoa-short-0.3.5",
@@ -944,7 +1123,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MPL-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "dtoa-short-0.3.5/LICENSE",
@@ -955,7 +1134,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Xidorn Quan <me@upsuper.org>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8903,
+        "timestamp": "2026-06-30T09:14:41.0118500Z"
+      }
     },
     {
       "id": "crate-either-1.16.0",
@@ -972,7 +1155,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "either-1.16.0/LICENSE-APACHE",
@@ -985,7 +1168,11 @@
           "sha256": "7576269ea71f767b99297934c0b2367532690f8c4badc695edf8e04ab6a1e545"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8933,
+        "timestamp": "2026-06-30T09:14:54.3530550Z"
+      }
     },
     {
       "id": "crate-encoding_rs-0.8.35",
@@ -1002,7 +1189,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "(Apache-2.0 OR MIT) AND BSD-3-Clause",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "encoding_rs-0.8.35/COPYRIGHT",
@@ -1028,7 +1215,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Henri Sivonen <hsivonen@hsivonen.fi>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8973,
+        "timestamp": "2026-06-30T09:15:15.6060490Z"
+      }
     },
     {
       "id": "crate-fastrand-2.4.1",
@@ -1045,7 +1236,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "fastrand-2.4.1/LICENSE-APACHE",
@@ -1061,7 +1252,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Stjepan Glavina <stjepang@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8838,
+        "timestamp": "2026-06-30T09:14:28.9561320Z"
+      }
     },
     {
       "id": "crate-fdeflate-0.3.7",
@@ -1078,7 +1273,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "fdeflate-0.3.7/LICENSE-APACHE",
@@ -1094,7 +1289,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The image-rs Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8927,
+        "timestamp": "2026-06-30T09:14:51.9534690Z"
+      }
     },
     {
       "id": "crate-flate2-1.1.9",
@@ -1111,7 +1310,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "flate2-1.1.9/LICENSE-APACHE",
@@ -1128,7 +1327,11 @@
       "authors": [
         "Alex Crichton <alex@alexcrichton.com>",
         "Josh Triplett <josh@joshtriplett.org>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8922,
+        "timestamp": "2026-06-30T09:14:49.6379380Z"
+      }
     },
     {
       "id": "crate-float-cmp-0.10.0",
@@ -1145,7 +1348,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "float-cmp-0.10.0/LICENSE",
@@ -1156,7 +1359,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Mike Dilger <mike@mikedilger.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8972,
+        "timestamp": "2026-06-30T09:15:15.6012060Z"
+      }
     },
     {
       "id": "crate-form_urlencoded-1.2.2",
@@ -1173,7 +1380,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "form_urlencoded-1.2.2/LICENSE-APACHE",
@@ -1189,7 +1396,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The rust-url developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8939,
+        "timestamp": "2026-06-30T09:14:55.5401180Z"
+      }
     },
     {
       "id": "crate-futures-channel-0.3.32",
@@ -1206,7 +1417,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "futures-channel-0.3.32/LICENSE-APACHE",
@@ -1219,7 +1430,11 @@
           "sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8887,
+        "timestamp": "2026-06-30T09:14:38.1088600Z"
+      }
     },
     {
       "id": "crate-futures-core-0.3.32",
@@ -1236,7 +1451,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "futures-core-0.3.32/LICENSE-APACHE",
@@ -1249,7 +1464,11 @@
           "sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8850,
+        "timestamp": "2026-06-30T09:14:30.7838140Z"
+      }
     },
     {
       "id": "crate-futures-executor-0.3.32",
@@ -1266,7 +1485,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "futures-executor-0.3.32/LICENSE-APACHE",
@@ -1279,7 +1498,11 @@
           "sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8885,
+        "timestamp": "2026-06-30T09:14:36.8473890Z"
+      }
     },
     {
       "id": "crate-futures-io-0.3.32",
@@ -1296,7 +1519,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "futures-io-0.3.32/LICENSE-APACHE",
@@ -1309,7 +1532,11 @@
           "sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8917,
+        "timestamp": "2026-06-30T09:14:46.8605740Z"
+      }
     },
     {
       "id": "crate-futures-macro-0.3.32",
@@ -1326,7 +1553,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "futures-macro-0.3.32/LICENSE-APACHE",
@@ -1339,7 +1566,11 @@
           "sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8863,
+        "timestamp": "2026-06-30T09:14:34.0289040Z"
+      }
     },
     {
       "id": "crate-futures-task-0.3.32",
@@ -1356,7 +1587,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "futures-task-0.3.32/LICENSE-APACHE",
@@ -1369,7 +1600,11 @@
           "sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8864,
+        "timestamp": "2026-06-30T09:14:34.0953100Z"
+      }
     },
     {
       "id": "crate-futures-util-0.3.32",
@@ -1386,7 +1621,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "futures-util-0.3.32/LICENSE-APACHE",
@@ -1399,7 +1634,11 @@
           "sha256": "6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8872,
+        "timestamp": "2026-06-30T09:14:35.2392680Z"
+      }
     },
     {
       "id": "crate-gio-0.22.6",
@@ -1416,7 +1655,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "gio-0.22.6/COPYRIGHT",
@@ -1432,7 +1671,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8918,
+        "timestamp": "2026-06-30T09:14:46.9626350Z"
+      }
     },
     {
       "id": "crate-gio-sys-0.22.0",
@@ -1449,7 +1692,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "gio-sys-0.22.0/LICENSE",
@@ -1460,7 +1703,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8852,
+        "timestamp": "2026-06-30T09:14:30.8923950Z"
+      }
     },
     {
       "id": "crate-glib-0.22.7",
@@ -1477,7 +1724,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "glib-0.22.7/COPYRIGHT",
@@ -1493,7 +1740,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8897,
+        "timestamp": "2026-06-30T09:14:39.8458900Z"
+      }
     },
     {
       "id": "crate-glib-macros-0.22.6",
@@ -1510,7 +1761,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "glib-macros-0.22.6/COPYRIGHT",
@@ -1526,7 +1777,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8886,
+        "timestamp": "2026-06-30T09:14:37.2504250Z"
+      }
     },
     {
       "id": "crate-glib-sys-0.22.6",
@@ -1543,7 +1798,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "glib-sys-0.22.6/LICENSE",
@@ -1554,7 +1809,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8843,
+        "timestamp": "2026-06-30T09:14:29.3037100Z"
+      }
     },
     {
       "id": "crate-gobject-sys-0.22.6",
@@ -1571,7 +1830,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "gobject-sys-0.22.6/LICENSE",
@@ -1582,7 +1841,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8846,
+        "timestamp": "2026-06-30T09:14:29.6182650Z"
+      }
     },
     {
       "id": "crate-heck-0.5.0",
@@ -1599,7 +1862,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "heck-0.5.0/LICENSE-APACHE",
@@ -1612,7 +1875,11 @@
           "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8827,
+        "timestamp": "2026-06-30T09:14:27.3904260Z"
+      }
     },
     {
       "id": "crate-icu_collections-2.2.0",
@@ -1629,7 +1896,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "icu_collections-2.2.0/LICENSE",
@@ -1640,7 +1907,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8883,
+        "timestamp": "2026-06-30T09:14:36.6616220Z"
+      }
     },
     {
       "id": "crate-icu_locale_core-2.2.0",
@@ -1657,7 +1928,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "icu_locale_core-2.2.0/LICENSE",
@@ -1668,7 +1939,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8870,
+        "timestamp": "2026-06-30T09:14:35.1603670Z"
+      }
     },
     {
       "id": "crate-icu_normalizer-2.2.0",
@@ -1685,7 +1960,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "icu_normalizer-2.2.0/LICENSE",
@@ -1696,7 +1971,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8908,
+        "timestamp": "2026-06-30T09:14:42.1594890Z"
+      }
     },
     {
       "id": "crate-icu_normalizer_data-2.2.0",
@@ -1713,7 +1992,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "icu_normalizer_data-2.2.0/LICENSE",
@@ -1724,7 +2003,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8876,
+        "timestamp": "2026-06-30T09:14:35.9161580Z"
+      }
     },
     {
       "id": "crate-icu_properties-2.2.0",
@@ -1741,7 +2024,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "icu_properties-2.2.0/LICENSE",
@@ -1752,7 +2035,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8904,
+        "timestamp": "2026-06-30T09:14:41.1139550Z"
+      }
     },
     {
       "id": "crate-icu_properties_data-2.2.0",
@@ -1769,7 +2056,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "icu_properties_data-2.2.0/LICENSE",
@@ -1780,7 +2067,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8880,
+        "timestamp": "2026-06-30T09:14:36.5027680Z"
+      }
     },
     {
       "id": "crate-icu_provider-2.2.0",
@@ -1797,7 +2088,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "icu_provider-2.2.0/LICENSE",
@@ -1808,7 +2099,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8884,
+        "timestamp": "2026-06-30T09:14:36.7439970Z"
+      }
     },
     {
       "id": "crate-idna-1.1.0",
@@ -1825,7 +2120,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "idna-1.1.0/LICENSE-APACHE",
@@ -1841,7 +2136,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The rust-url developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8948,
+        "timestamp": "2026-06-30T09:15:05.7473020Z"
+      }
     },
     {
       "id": "crate-idna_adapter-1.2.2",
@@ -1858,7 +2157,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "idna_adapter-1.2.2/LICENSE-APACHE",
@@ -1874,7 +2173,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The rust-url developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8923,
+        "timestamp": "2026-06-30T09:14:50.3472720Z"
+      }
     },
     {
       "id": "crate-image-0.25.10",
@@ -1891,7 +2194,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "image-0.25.10/LICENSE-APACHE",
@@ -1907,7 +2210,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The image-rs Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8963,
+        "timestamp": "2026-06-30T09:15:09.9674680Z"
+      }
     },
     {
       "id": "crate-itertools-0.15.0",
@@ -1924,7 +2231,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "itertools-0.15.0/LICENSE-APACHE",
@@ -1940,7 +2247,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "bluss"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8969,
+        "timestamp": "2026-06-30T09:15:14.1704550Z"
+      }
     },
     {
       "id": "crate-itoa-1.0.18",
@@ -1957,7 +2268,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "itoa-1.0.18/LICENSE-APACHE",
@@ -1973,7 +2284,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "David Tolnay <dtolnay@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8915,
+        "timestamp": "2026-06-30T09:14:46.6275730Z"
+      }
     },
     {
       "id": "crate-language-tags-0.3.2",
@@ -1990,7 +2305,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT/Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "language-tags-0.3.2/LICENSE",
@@ -2002,7 +2317,11 @@
       "authors": [
         "Pyfisch <pyfisch@gmail.com>",
         "Tpt <thomas@pellissier-tanon.fr>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8978,
+        "timestamp": "2026-06-30T09:15:16.6306230Z"
+      }
     },
     {
       "id": "crate-lazy_static-1.5.0",
@@ -2019,7 +2338,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "lazy_static-1.5.0/LICENSE-APACHE",
@@ -2035,7 +2354,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Marvin L\u00f6bel <loebel.marvin@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8957,
+        "timestamp": "2026-06-30T09:15:08.5398040Z"
+      }
     },
     {
       "id": "crate-libc-0.2.186",
@@ -2052,7 +2375,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "libc-0.2.186/LICENSE-APACHE",
@@ -2068,7 +2391,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Rust Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8835,
+        "timestamp": "2026-06-30T09:14:28.0672970Z"
+      }
     },
     {
       "id": "crate-litemap-0.8.2",
@@ -2085,7 +2412,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "litemap-0.8.2/LICENSE",
@@ -2096,7 +2423,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8854,
+        "timestamp": "2026-06-30T09:14:31.1016800Z"
+      }
     },
     {
       "id": "crate-locale_config-0.3.0",
@@ -2113,7 +2444,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "locale_config-0.3.0/LICENSE",
@@ -2124,7 +2455,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Jan Hudec <bulb@ucw.cz>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8960,
+        "timestamp": "2026-06-30T09:15:08.7269600Z"
+      }
     },
     {
       "id": "crate-lock_api-0.4.14",
@@ -2141,7 +2476,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "lock_api-0.4.14/LICENSE-APACHE",
@@ -2157,7 +2492,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Amanieu d'Antras <amanieu@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8882,
+        "timestamp": "2026-06-30T09:14:36.5366860Z"
+      }
     },
     {
       "id": "crate-log-0.4.33",
@@ -2174,7 +2513,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "log-0.4.33/LICENSE-APACHE",
@@ -2190,7 +2529,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Rust Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8913,
+        "timestamp": "2026-06-30T09:14:44.5128080Z"
+      }
     },
     {
       "id": "crate-malloc_buf-0.0.6",
@@ -2207,12 +2550,16 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [],
       "noticeStatus": "no-licence-text-in-crate",
       "authors": [
         "Steven Sheldon"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8898,
+        "timestamp": "2026-06-30T09:14:40.1753520Z"
+      }
     },
     {
       "id": "crate-markup5ever-0.39.0",
@@ -2229,7 +2576,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "markup5ever-0.39.0/LICENSE-APACHE",
@@ -2245,7 +2592,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The html5ever Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8949,
+        "timestamp": "2026-06-30T09:15:06.2654980Z"
+      }
     },
     {
       "id": "crate-matrixmultiply-0.3.10",
@@ -2262,7 +2613,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT/Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "matrixmultiply-0.3.10/LICENSE-APACHE",
@@ -2279,7 +2630,11 @@
       "authors": [
         "bluss",
         "R. Janis Goldschmidt"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8910,
+        "timestamp": "2026-06-30T09:14:43.0565970Z"
+      }
     },
     {
       "id": "crate-memchr-2.8.2",
@@ -2296,7 +2651,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unlicense OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "memchr-2.8.2/COPYING",
@@ -2318,7 +2673,11 @@
       "authors": [
         "Andrew Gallant <jamslam@gmail.com>",
         "bluss"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8847,
+        "timestamp": "2026-06-30T09:14:29.8365800Z"
+      }
     },
     {
       "id": "crate-miniz_oxide-0.8.9",
@@ -2335,7 +2694,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Zlib OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "miniz_oxide-0.8.9/LICENSE",
@@ -2363,7 +2722,11 @@
         "Frommi <daniil.liferenko@gmail.com>",
         "oyvindln <oyvindln@users.noreply.github.com>",
         "Rich Geldreich richgel99@gmail.com"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8901,
+        "timestamp": "2026-06-30T09:14:40.4234400Z"
+      }
     },
     {
       "id": "crate-moxcms-0.8.1",
@@ -2380,7 +2743,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "BSD-3-Clause OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "moxcms-0.8.1/LICENSE-APACHE.md",
@@ -2396,7 +2759,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Radzivon Bartoshyk"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8943,
+        "timestamp": "2026-06-30T09:14:59.2201740Z"
+      }
     },
     {
       "id": "crate-mutants-0.0.4",
@@ -2413,9 +2780,13 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [],
-      "noticeStatus": "no-licence-text-in-crate"
+      "noticeStatus": "no-licence-text-in-crate",
+      "observedCompilation": {
+        "logLine": 8977,
+        "timestamp": "2026-06-30T09:15:16.3502560Z"
+      }
     },
     {
       "id": "crate-nalgebra-0.35.0",
@@ -2432,7 +2803,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "nalgebra-0.35.0/LICENSE",
@@ -2443,7 +2814,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "S\u00e9bastien Crozet <developer@crozet.re>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8962,
+        "timestamp": "2026-06-30T09:15:09.3561670Z"
+      }
     },
     {
       "id": "crate-nalgebra-macros-0.3.0",
@@ -2460,7 +2835,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "nalgebra-macros-0.3.0/LICENSE",
@@ -2472,7 +2847,11 @@
       "authors": [
         "Andreas Longva",
         "S\u00e9bastien Crozet <developer@crozet.re>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8952,
+        "timestamp": "2026-06-30T09:15:07.2887350Z"
+      }
     },
     {
       "id": "crate-new_debug_unreachable-1.0.6",
@@ -2489,7 +2868,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "new_debug_unreachable-1.0.6/LICENSE-MIT",
@@ -2501,7 +2880,11 @@
       "authors": [
         "Matt Brubeck <mbrubeck@limpet.net>",
         "Jonathan Reem <jonathan.reem@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8881,
+        "timestamp": "2026-06-30T09:14:36.5040050Z"
+      }
     },
     {
       "id": "crate-num-complex-0.4.6",
@@ -2518,7 +2901,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "num-complex-0.4.6/LICENSE-APACHE",
@@ -2534,7 +2917,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Rust Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8931,
+        "timestamp": "2026-06-30T09:14:53.9998150Z"
+      }
     },
     {
       "id": "crate-num-integer-0.1.46",
@@ -2551,7 +2938,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "num-integer-0.1.46/LICENSE-APACHE",
@@ -2567,7 +2954,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Rust Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8930,
+        "timestamp": "2026-06-30T09:14:53.9851000Z"
+      }
     },
     {
       "id": "crate-num-rational-0.4.2",
@@ -2584,7 +2975,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "num-rational-0.4.2/LICENSE-APACHE",
@@ -2600,7 +2991,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Rust Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8945,
+        "timestamp": "2026-06-30T09:15:03.8802770Z"
+      }
     },
     {
       "id": "crate-num-traits-0.2.19",
@@ -2617,7 +3012,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "num-traits-0.2.19/LICENSE-APACHE",
@@ -2633,7 +3028,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Rust Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8844,
+        "timestamp": "2026-06-30T09:14:29.3438110Z"
+      }
     },
     {
       "id": "crate-objc-0.2.7",
@@ -2650,7 +3049,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "objc-0.2.7/LICENSE.txt",
@@ -2661,7 +3060,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Steven Sheldon"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8905,
+        "timestamp": "2026-06-30T09:14:41.5688160Z"
+      }
     },
     {
       "id": "crate-objc-foundation-0.1.1",
@@ -2678,12 +3081,16 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [],
       "noticeStatus": "no-licence-text-in-crate",
       "authors": [
         "Steven Sheldon"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8940,
+        "timestamp": "2026-06-30T09:14:55.7249660Z"
+      }
     },
     {
       "id": "crate-objc_id-0.1.1",
@@ -2700,12 +3107,16 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [],
       "noticeStatus": "no-licence-text-in-crate",
       "authors": [
         "Steven Sheldon"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8925,
+        "timestamp": "2026-06-30T09:14:50.5406700Z"
+      }
     },
     {
       "id": "crate-pango-0.22.6",
@@ -2722,7 +3133,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "pango-0.22.6/COPYRIGHT",
@@ -2738,7 +3149,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8944,
+        "timestamp": "2026-06-30T09:15:02.6256580Z"
+      }
     },
     {
       "id": "crate-pango-sys-0.22.0",
@@ -2755,7 +3170,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "pango-sys-0.22.0/LICENSE",
@@ -2766,7 +3181,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8889,
+        "timestamp": "2026-06-30T09:14:38.5265880Z"
+      }
     },
     {
       "id": "crate-pangocairo-0.22.0",
@@ -2783,7 +3202,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "pangocairo-0.22.0/COPYRIGHT",
@@ -2799,7 +3218,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8964,
+        "timestamp": "2026-06-30T09:15:10.3126680Z"
+      }
     },
     {
       "id": "crate-pangocairo-sys-0.22.0",
@@ -2816,7 +3239,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "pangocairo-sys-0.22.0/LICENSE",
@@ -2827,7 +3250,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The gtk-rs Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8911,
+        "timestamp": "2026-06-30T09:14:43.2374870Z"
+      }
     },
     {
       "id": "crate-parking_lot-0.12.5",
@@ -2844,7 +3271,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "parking_lot-0.12.5/LICENSE-APACHE",
@@ -2860,7 +3287,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Amanieu d'Antras <amanieu@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8896,
+        "timestamp": "2026-06-30T09:14:39.7116040Z"
+      }
     },
     {
       "id": "crate-parking_lot_core-0.9.12",
@@ -2877,7 +3308,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "parking_lot_core-0.9.12/LICENSE-APACHE",
@@ -2893,7 +3324,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Amanieu d'Antras <amanieu@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8867,
+        "timestamp": "2026-06-30T09:14:34.7047830Z"
+      }
     },
     {
       "id": "crate-percent-encoding-2.3.2",
@@ -2910,7 +3345,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "percent-encoding-2.3.2/LICENSE-APACHE",
@@ -2926,7 +3361,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The rust-url developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8937,
+        "timestamp": "2026-06-30T09:14:54.6968240Z"
+      }
     },
     {
       "id": "crate-phf-0.13.1",
@@ -2943,7 +3382,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "phf-0.13.1/LICENSE",
@@ -2954,7 +3393,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Steven Fackler <sfackler@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8874,
+        "timestamp": "2026-06-30T09:14:35.5562110Z"
+      }
     },
     {
       "id": "crate-phf_codegen-0.13.1",
@@ -2971,7 +3414,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "build-only",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "phf_codegen-0.13.1/LICENSE",
@@ -2982,7 +3425,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Steven Fackler <sfackler@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8849,
+        "timestamp": "2026-06-30T09:14:30.7130890Z"
+      }
     },
     {
       "id": "crate-phf_generator-0.13.1",
@@ -2999,7 +3446,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "phf_generator-0.13.1/LICENSE",
@@ -3010,7 +3457,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Steven Fackler <sfackler@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8842,
+        "timestamp": "2026-06-30T09:14:29.2470510Z"
+      }
     },
     {
       "id": "crate-phf_macros-0.13.1",
@@ -3027,7 +3478,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "phf_macros-0.13.1/LICENSE",
@@ -3038,7 +3489,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Steven Fackler <sfackler@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8861,
+        "timestamp": "2026-06-30T09:14:32.0703080Z"
+      }
     },
     {
       "id": "crate-phf_shared-0.13.1",
@@ -3055,7 +3510,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "phf_shared-0.13.1/LICENSE",
@@ -3066,7 +3521,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Steven Fackler <sfackler@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8839,
+        "timestamp": "2026-06-30T09:14:29.0544990Z"
+      }
     },
     {
       "id": "crate-pin-project-lite-0.2.17",
@@ -3083,7 +3542,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "pin-project-lite-0.2.17/LICENSE-APACHE",
@@ -3096,7 +3555,11 @@
           "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8865,
+        "timestamp": "2026-06-30T09:14:34.5963820Z"
+      }
     },
     {
       "id": "crate-pkg-config-0.3.33",
@@ -3113,7 +3576,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "pkg-config-0.3.33/LICENSE-APACHE",
@@ -3129,7 +3592,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Alex Crichton <alex@alexcrichton.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8834,
+        "timestamp": "2026-06-30T09:14:28.0231940Z"
+      }
     },
     {
       "id": "crate-png-0.18.1",
@@ -3146,7 +3613,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "png-0.18.1/LICENSE-APACHE",
@@ -3162,7 +3629,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The image-rs Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8947,
+        "timestamp": "2026-06-30T09:15:04.5860030Z"
+      }
     },
     {
       "id": "crate-potential_utf-0.1.5",
@@ -3179,7 +3650,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "potential_utf-0.1.5/LICENSE",
@@ -3190,7 +3661,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8871,
+        "timestamp": "2026-06-30T09:14:35.1794350Z"
+      }
     },
     {
       "id": "crate-precomputed-hash-0.1.1",
@@ -3207,7 +3682,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "precomputed-hash-0.1.1/LICENSE",
@@ -3218,7 +3693,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Emilio Cobos \u00c1lvarez <emilio@crisal.io>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8892,
+        "timestamp": "2026-06-30T09:14:39.0271650Z"
+      }
     },
     {
       "id": "crate-proc-macro2-1.0.106",
@@ -3235,7 +3714,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "proc-macro2-1.0.106/LICENSE-APACHE",
@@ -3252,7 +3731,11 @@
       "authors": [
         "David Tolnay <dtolnay@gmail.com>",
         "Alex Crichton <alex@alexcrichton.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8820,
+        "timestamp": "2026-06-30T09:14:26.3311710Z"
+      }
     },
     {
       "id": "crate-pxfm-0.1.29",
@@ -3269,7 +3752,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "BSD-3-Clause OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "pxfm-0.1.29/LICENSE-APACHE.md",
@@ -3285,7 +3768,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Radzivon Bartoshyk"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8935,
+        "timestamp": "2026-06-30T09:14:54.5454300Z"
+      }
     },
     {
       "id": "crate-quote-1.0.46",
@@ -3302,7 +3789,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "quote-1.0.46/LICENSE-APACHE",
@@ -3318,7 +3805,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "David Tolnay <dtolnay@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8821,
+        "timestamp": "2026-06-30T09:14:26.3312040Z"
+      }
     },
     {
       "id": "crate-rawpointer-0.2.1",
@@ -3335,7 +3826,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT/Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "rawpointer-0.2.1/LICENSE-APACHE",
@@ -3351,7 +3842,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "bluss"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8938,
+        "timestamp": "2026-06-30T09:14:54.8793990Z"
+      }
     },
     {
       "id": "crate-rayon-1.12.0",
@@ -3368,7 +3863,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "rayon-1.12.0/LICENSE-APACHE",
@@ -3381,7 +3876,11 @@
           "sha256": "0621878e61f0d0fda054bcbe02df75192c28bde1ecc8289cbd86aeba2dd72720"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8968,
+        "timestamp": "2026-06-30T09:15:12.6985290Z"
+      }
     },
     {
       "id": "crate-rayon-core-1.13.0",
@@ -3398,7 +3897,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "rayon-core-1.13.0/LICENSE-APACHE",
@@ -3411,7 +3910,11 @@
           "sha256": "0621878e61f0d0fda054bcbe02df75192c28bde1ecc8289cbd86aeba2dd72720"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8914,
+        "timestamp": "2026-06-30T09:14:46.4019390Z"
+      }
     },
     {
       "id": "crate-rctree-0.6.0",
@@ -3428,7 +3931,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "rctree-0.6.0/LICENSE",
@@ -3440,7 +3943,11 @@
       "authors": [
         "Simon Sapin <simon.sapin@exyr.org>",
         "Yevhenii Reizner <razrfalcon@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8975,
+        "timestamp": "2026-06-30T09:15:16.0477060Z"
+      }
     },
     {
       "id": "crate-regex-1.12.4",
@@ -3457,7 +3964,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "regex-1.12.4/LICENSE-APACHE",
@@ -3474,7 +3981,11 @@
       "authors": [
         "The Rust Project Developers",
         "Andrew Gallant <jamslam@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8950,
+        "timestamp": "2026-06-30T09:15:06.6440710Z"
+      }
     },
     {
       "id": "crate-regex-automata-0.4.14",
@@ -3491,7 +4002,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "regex-automata-0.4.14/LICENSE-APACHE",
@@ -3508,7 +4019,11 @@
       "authors": [
         "The Rust Project Developers",
         "Andrew Gallant <jamslam@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8921,
+        "timestamp": "2026-06-30T09:14:47.4709360Z"
+      }
     },
     {
       "id": "crate-regex-syntax-0.8.11",
@@ -3525,7 +4040,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "regex-syntax-0.8.11/LICENSE-APACHE",
@@ -3542,7 +4057,11 @@
       "authors": [
         "The Rust Project Developers",
         "Andrew Gallant <jamslam@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8912,
+        "timestamp": "2026-06-30T09:14:43.4301440Z"
+      }
     },
     {
       "id": "crate-rgb-0.8.53",
@@ -3559,7 +4078,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "rgb-0.8.53/LICENSE",
@@ -3571,7 +4090,11 @@
       "authors": [
         "Kornel Lesi\u0144ski <kornel@geekhood.net>",
         "James Forster <james.forsterer@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8971,
+        "timestamp": "2026-06-30T09:15:15.3434120Z"
+      }
     },
     {
       "id": "crate-rustc-hash-2.1.2",
@@ -3588,7 +4111,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "rustc-hash-2.1.2/LICENSE-APACHE",
@@ -3604,7 +4127,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Rust Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8958,
+        "timestamp": "2026-06-30T09:15:08.5600290Z"
+      }
     },
     {
       "id": "crate-rustc_version-0.4.1",
@@ -3634,7 +4161,8 @@
           "sha256": "c9a75f18b9ab2927829a208fc6aa2cf4e63b8420887ba29cdb265d6619ae82d5"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": null
     },
     {
       "id": "crate-scopeguard-1.2.0",
@@ -3651,7 +4179,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "scopeguard-1.2.0/LICENSE-APACHE",
@@ -3667,7 +4195,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "bluss"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8879,
+        "timestamp": "2026-06-30T09:14:36.4152790Z"
+      }
     },
     {
       "id": "crate-selectors-0.38.0",
@@ -3684,12 +4216,16 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MPL-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [],
       "noticeStatus": "no-licence-text-in-crate",
       "authors": [
         "The Servo Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8929,
+        "timestamp": "2026-06-30T09:14:53.6135630Z"
+      }
     },
     {
       "id": "crate-semver-1.0.28",
@@ -3722,7 +4258,8 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "David Tolnay <dtolnay@gmail.com>"
-      ]
+      ],
+      "observedCompilation": null
     },
     {
       "id": "crate-serde-1.0.228",
@@ -3739,7 +4276,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "serde-1.0.228/LICENSE-APACHE",
@@ -3756,7 +4293,11 @@
       "authors": [
         "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
         "David Tolnay <dtolnay@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8875,
+        "timestamp": "2026-06-30T09:14:35.6942900Z"
+      }
     },
     {
       "id": "crate-serde_core-1.0.228",
@@ -3773,7 +4314,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "serde_core-1.0.228/LICENSE-APACHE",
@@ -3790,7 +4331,11 @@
       "authors": [
         "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
         "David Tolnay <dtolnay@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8868,
+        "timestamp": "2026-06-30T09:14:34.8511180Z"
+      }
     },
     {
       "id": "crate-serde_spanned-1.1.1",
@@ -3807,7 +4352,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "serde_spanned-1.1.1/LICENSE-APACHE",
@@ -3820,7 +4365,11 @@
           "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8829,
+        "timestamp": "2026-06-30T09:14:27.4950860Z"
+      }
     },
     {
       "id": "crate-servo_arc-0.4.3",
@@ -3837,7 +4386,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "servo_arc-0.4.3/LICENSE-APACHE",
@@ -3853,7 +4402,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Servo Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8953,
+        "timestamp": "2026-06-30T09:15:07.9796060Z"
+      }
     },
     {
       "id": "crate-simba-0.10.0",
@@ -3870,7 +4423,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "simba-0.10.0/LICENSE",
@@ -3881,7 +4434,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "sebcrozet <developer@crozet.re>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8942,
+        "timestamp": "2026-06-30T09:14:57.0186380Z"
+      }
     },
     {
       "id": "crate-simd-adler32-0.3.9",
@@ -3898,7 +4455,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "simd-adler32-0.3.9/LICENSE.md",
@@ -3909,7 +4466,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Marvin Countryman <me@maar.vin>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8893,
+        "timestamp": "2026-06-30T09:14:39.0613100Z"
+      }
     },
     {
       "id": "crate-siphasher-1.0.3",
@@ -3926,7 +4487,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT/Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "siphasher-1.0.3/COPYING",
@@ -3937,7 +4498,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Frank Denis <github@pureftpd.org>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8837,
+        "timestamp": "2026-06-30T09:14:28.9199110Z"
+      }
     },
     {
       "id": "crate-slab-0.4.12",
@@ -3954,7 +4519,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "slab-0.4.12/LICENSE",
@@ -3965,7 +4530,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Carl Lerche <me@carllerche.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8869,
+        "timestamp": "2026-06-30T09:14:35.1302300Z"
+      }
     },
     {
       "id": "crate-smallvec-1.15.2",
@@ -3982,7 +4551,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "smallvec-1.15.2/LICENSE-APACHE",
@@ -3998,7 +4567,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Servo Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8830,
+        "timestamp": "2026-06-30T09:14:27.4956050Z"
+      }
     },
     {
       "id": "crate-stable_deref_trait-1.2.1",
@@ -4015,7 +4588,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "stable_deref_trait-1.2.1/LICENSE-APACHE",
@@ -4031,7 +4604,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Robert Grosse <n210241048576@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8841,
+        "timestamp": "2026-06-30T09:14:29.2100300Z"
+      }
     },
     {
       "id": "crate-string_cache-0.9.0",
@@ -4048,7 +4625,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "string_cache-0.9.0/LICENSE-APACHE",
@@ -4064,7 +4641,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Servo Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8907,
+        "timestamp": "2026-06-30T09:14:42.0627270Z"
+      }
     },
     {
       "id": "crate-string_cache_codegen-0.6.1",
@@ -4081,7 +4662,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "build-only",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "string_cache_codegen-0.6.1/LICENSE-APACHE",
@@ -4097,7 +4678,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The Servo Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8888,
+        "timestamp": "2026-06-30T09:14:38.2722200Z"
+      }
     },
     {
       "id": "crate-syn-2.0.118",
@@ -4114,7 +4699,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "syn-2.0.118/LICENSE-APACHE",
@@ -4130,7 +4715,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "David Tolnay <dtolnay@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8828,
+        "timestamp": "2026-06-30T09:14:27.4728070Z"
+      }
     },
     {
       "id": "crate-synstructure-0.13.2",
@@ -4147,7 +4736,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "synstructure-0.13.2/LICENSE",
@@ -4158,7 +4747,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Nika Layzell <nika@thelayzells.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8848,
+        "timestamp": "2026-06-30T09:14:30.3117970Z"
+      }
     },
     {
       "id": "crate-system-deps-7.0.8",
@@ -4175,7 +4768,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "build-only",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "system-deps-7.0.8/LICENSE-APACHE",
@@ -4192,7 +4785,11 @@
       "authors": [
         "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
         "Josh Triplett <josh@joshtriplett.org>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8836,
+        "timestamp": "2026-06-30T09:14:28.3747340Z"
+      }
     },
     {
       "id": "crate-target-lexicon-0.13.5",
@@ -4209,7 +4806,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0 WITH LLVM-exception",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "target-lexicon-0.13.5/LICENSE",
@@ -4220,7 +4817,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Dan Gohman <sunfish@mozilla.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8823,
+        "timestamp": "2026-06-30T09:14:26.5801840Z"
+      }
     },
     {
       "id": "crate-tendril-0.5.0",
@@ -4237,7 +4838,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "tendril-0.5.0/LICENSE-APACHE",
@@ -4255,7 +4856,11 @@
         "Keegan McAllister <mcallister.keegan@gmail.com>",
         "Simon Sapin <simon.sapin@exyr.org>",
         "Chris Morgan <me@chrismorgan.info>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8919,
+        "timestamp": "2026-06-30T09:14:47.0242990Z"
+      }
     },
     {
       "id": "crate-tinystr-0.8.3",
@@ -4272,7 +4877,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "tinystr-0.8.3/LICENSE",
@@ -4283,7 +4888,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8866,
+        "timestamp": "2026-06-30T09:14:34.6940260Z"
+      }
     },
     {
       "id": "crate-tinyvec-1.11.0",
@@ -4300,7 +4909,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Zlib OR Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "tinyvec-1.11.0/LICENSE-APACHE.md",
@@ -4321,7 +4930,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Lokathor <zefria@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8961,
+        "timestamp": "2026-06-30T09:15:09.1745530Z"
+      }
     },
     {
       "id": "crate-tinyvec_macros-0.1.1",
@@ -4338,7 +4951,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0 OR Zlib",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "tinyvec_macros-0.1.1/LICENSE-APACHE.md",
@@ -4359,7 +4972,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Soveu <marx.tomasz@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8956,
+        "timestamp": "2026-06-30T09:15:08.4988950Z"
+      }
     },
     {
       "id": "crate-toml-1.1.2-spec-1.1.0",
@@ -4376,7 +4993,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "toml-1.1.2+spec-1.1.0/LICENSE-APACHE",
@@ -4389,7 +5006,11 @@
           "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8831,
+        "timestamp": "2026-06-30T09:14:27.5519610Z"
+      }
     },
     {
       "id": "crate-toml_datetime-1.1.1-spec-1.1.0",
@@ -4406,7 +5027,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "toml_datetime-1.1.1+spec-1.1.0/LICENSE-APACHE",
@@ -4419,7 +5040,11 @@
           "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8826,
+        "timestamp": "2026-06-30T09:14:27.2058350Z"
+      }
     },
     {
       "id": "crate-toml_parser-1.1.2-spec-1.1.0",
@@ -4436,7 +5061,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "toml_parser-1.1.2+spec-1.1.0/LICENSE-APACHE",
@@ -4449,7 +5074,11 @@
           "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8825,
+        "timestamp": "2026-06-30T09:14:27.1076530Z"
+      }
     },
     {
       "id": "crate-typenum-1.20.1",
@@ -4466,7 +5095,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "typenum-1.20.1/LICENSE",
@@ -4484,7 +5113,11 @@
           "sha256": "a825bd853ab71619a4923d7b4311221427848070ff44d990da39b0b274c1683f"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8959,
+        "timestamp": "2026-06-30T09:15:08.6406920Z"
+      }
     },
     {
       "id": "crate-unicode-ident-1.0.24",
@@ -4501,7 +5134,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "(MIT OR Apache-2.0) AND Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "unicode-ident-1.0.24/LICENSE-APACHE",
@@ -4522,7 +5155,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "David Tolnay <dtolnay@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8822,
+        "timestamp": "2026-06-30T09:14:26.3313990Z"
+      }
     },
     {
       "id": "crate-url-2.5.8",
@@ -4539,7 +5176,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "url-2.5.8/LICENSE-APACHE",
@@ -4555,7 +5192,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The rust-url developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8967,
+        "timestamp": "2026-06-30T09:15:11.8690650Z"
+      }
     },
     {
       "id": "crate-utf-8-0.7.6",
@@ -4572,7 +5213,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "utf-8-0.7.6/LICENSE-APACHE",
@@ -4588,7 +5229,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Simon Sapin <simon.sapin@exyr.org>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8916,
+        "timestamp": "2026-06-30T09:14:46.7611170Z"
+      }
     },
     {
       "id": "crate-utf8_iter-1.0.4",
@@ -4605,7 +5250,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "utf8_iter-1.0.4/COPYRIGHT",
@@ -4626,7 +5271,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Henri Sivonen <hsivonen@hsivonen.fi>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8878,
+        "timestamp": "2026-06-30T09:14:36.3852910Z"
+      }
     },
     {
       "id": "crate-version-compare-0.2.1",
@@ -4643,7 +5292,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "version-compare-0.2.1/LICENSE",
@@ -4654,7 +5303,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Tim Visee <3a4fb3964f@sinenomine.email>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8833,
+        "timestamp": "2026-06-30T09:14:27.9277620Z"
+      }
     },
     {
       "id": "crate-web_atoms-0.2.5",
@@ -4671,7 +5324,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "web_atoms-0.2.5/LICENSE-APACHE",
@@ -4687,7 +5340,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The html5ever Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8895,
+        "timestamp": "2026-06-30T09:14:39.2624130Z"
+      }
     },
     {
       "id": "crate-wide-1.5.0",
@@ -4704,7 +5361,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Zlib OR Apache-2.0 OR MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "wide-1.5.0/LICENSE-ZLIB.md",
@@ -4715,7 +5372,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Lokathor <zefria@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8926,
+        "timestamp": "2026-06-30T09:14:50.5898220Z"
+      }
     },
     {
       "id": "crate-winnow-1.0.3",
@@ -4732,7 +5393,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "winnow-1.0.3/LICENSE-MIT",
@@ -4740,7 +5401,11 @@
           "sha256": "cb5aedb296c5246d1f22e9099f925a65146f9f0d6b4eebba97fd27a6cdbbab2d"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8824,
+        "timestamp": "2026-06-30T09:14:26.8616620Z"
+      }
     },
     {
       "id": "crate-writeable-0.6.3",
@@ -4757,7 +5422,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "writeable-0.6.3/LICENSE",
@@ -4768,7 +5433,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8853,
+        "timestamp": "2026-06-30T09:14:31.0710800Z"
+      }
     },
     {
       "id": "crate-xml5ever-0.39.0",
@@ -4785,7 +5454,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "xml5ever-0.39.0/LICENSE-APACHE",
@@ -4801,7 +5470,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The xml5ever project developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8966,
+        "timestamp": "2026-06-30T09:15:11.2837890Z"
+      }
     },
     {
       "id": "crate-yoke-0.8.3",
@@ -4818,7 +5491,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "yoke-0.8.3/LICENSE",
@@ -4829,7 +5502,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Manish Goregaokar <manishsmail@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8860,
+        "timestamp": "2026-06-30T09:14:32.0602190Z"
+      }
     },
     {
       "id": "crate-yoke-derive-0.8.2",
@@ -4846,7 +5523,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "yoke-derive-0.8.2/LICENSE",
@@ -4857,7 +5534,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Manish Goregaokar <manishsmail@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8856,
+        "timestamp": "2026-06-30T09:14:31.2080730Z"
+      }
     },
     {
       "id": "crate-zerofrom-0.1.8",
@@ -4874,7 +5555,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "zerofrom-0.1.8/LICENSE",
@@ -4885,7 +5566,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8858,
+        "timestamp": "2026-06-30T09:14:31.9480730Z"
+      }
     },
     {
       "id": "crate-zerofrom-derive-0.1.7",
@@ -4902,7 +5587,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "zerofrom-derive-0.1.7/LICENSE",
@@ -4913,7 +5598,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Manish Goregaokar <manishsmail@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8855,
+        "timestamp": "2026-06-30T09:14:31.1117970Z"
+      }
     },
     {
       "id": "crate-zerotrie-0.2.4",
@@ -4930,7 +5619,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "zerotrie-0.2.4/LICENSE",
@@ -4941,7 +5630,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8873,
+        "timestamp": "2026-06-30T09:14:35.2820840Z"
+      }
     },
     {
       "id": "crate-zerovec-0.11.6",
@@ -4958,7 +5651,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "zerovec-0.11.6/LICENSE",
@@ -4969,7 +5662,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "The ICU4X Project Developers"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8862,
+        "timestamp": "2026-06-30T09:14:32.1896750Z"
+      }
     },
     {
       "id": "crate-zerovec-derive-0.11.3",
@@ -4986,7 +5683,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "proc-macro",
       "licenseExpression": "Unicode-3.0",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "zerovec-derive-0.11.3/LICENSE",
@@ -4997,7 +5694,11 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "Manish Goregaokar <manishsmail@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8857,
+        "timestamp": "2026-06-30T09:14:31.2127610Z"
+      }
     },
     {
       "id": "crate-zune-core-0.5.1",
@@ -5014,7 +5715,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0 OR Zlib",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "zune-core-0.5.1/LICENSE-APACHE",
@@ -5032,7 +5733,11 @@
           "sha256": "d201d14804d3bcd3b944147173175e4abfbd838b7c8069b6bd3452496bf13e6c"
         }
       ],
-      "noticeStatus": "crate-carries-licence-text"
+      "noticeStatus": "crate-carries-licence-text",
+      "observedCompilation": {
+        "logLine": 8934,
+        "timestamp": "2026-06-30T09:14:54.3669950Z"
+      }
     },
     {
       "id": "crate-zune-jpeg-0.5.15",
@@ -5049,7 +5754,7 @@
       "checksumSource": "Cargo.lock checksum of the pinned librsvg archive; equal to the crates.io sparse-index cksum observed 05/09/2026",
       "role": "normal",
       "licenseExpression": "MIT OR Apache-2.0 OR Zlib",
-      "provenanceStatus": "resolved-approximation",
+      "provenanceStatus": "compiled-per-build-log",
       "noticeMembers": [
         {
           "member": "zune-jpeg-0.5.15/LICENSE-APACHE",
@@ -5070,17 +5775,21 @@
       "noticeStatus": "crate-carries-licence-text",
       "authors": [
         "caleb <etemesicaleb@gmail.com>"
-      ]
+      ],
+      "observedCompilation": {
+        "logLine": 8941,
+        "timestamp": "2026-06-30T09:14:55.9663750Z"
+      }
     }
   ],
   "unretained": [
     {
-      "id": "historical-compile-log",
-      "detail": "The authoritative list of crates Cargo compiled for the shipped build is in the GitHub Actions job log, which needs an authenticated session and expires around 2026-09-28; it was not retrieved. Until it is, every crate here is 'resolved-approximation', not 'compiled'."
+      "id": "compile-log-coverage",
+      "detail": "The retained job log supplies observed 'Compiling' events for the librsvg phase (157 registry crates and two workspace packages). No explicit truncation, cache-hit or 'Fresh' markers were found, but that does not prove that silent reuse or unlogged activity was impossible, and the log does not enumerate the resolved feature graph."
     },
     {
       "id": "resolver-approximation",
-      "detail": "The simplified resolver may over-include crates whose enabling cfg predicate it could not evaluate, and may under-include crates enabled by feature-unification paths it does not model (for example weak 'dep?/feature' activations that occur only after the dependency is enabled elsewhere). Cross-check against the job log before treating the set as exact."
+      "detail": "The simplified resolver's 159-crate set was cross-checked against the observed compile events: every observed registry crate is in the set, and two set members (rustc_version 0.4.1, semver 1.0.28) were not observed. Those two stay resolved-approximation; they are not removed, and no exclusion from every intermediate artifact is asserted. The resolver still does not model Cargo's feature unification exactly."
     },
     {
       "id": "binary-incorporation",
@@ -5088,7 +5797,7 @@
     },
     {
       "id": "crates-without-licence-text",
-      "detail": "Crates whose .crate carries no licence text member (noticeStatus no-licence-text-in-crate) are identified only by their Cargo.toml license expression; the applicable SPDX licence text and the crate's copyright statement (if any) are not retained."
+      "detail": "Crates whose .crate carries no licence text member (noticeStatus no-licence-text-in-crate) are identified only by their Cargo.toml license expression; the applicable licence text and the crate's copyright statement (if any) are not retained here."
     },
     {
       "id": "workspace-members",

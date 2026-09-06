@@ -82,13 +82,14 @@ test("binary provenance manifest is strict, bounded and names its open obligatio
   const notices = component.obligations.find(({ id }) => id === "per-component-copyright-and-permissive-notice-texts");
   assert.equal(notices.status, "material-bound");
   assert.match(notices.detail, /29 libraries/u);
-  assert.match(notices.detail, /Rust crates .* only as an explicit approximation/u, "the notice obligation names what it does not fully cover");
-  assert.match(notices.detail, /not verified/u);
+  assert.match(notices.detail, /Rust crates .* 157 observed compiling in the retained build log/u, "the notice obligation states the observed coverage");
+  assert.match(notices.detail, /incorporation into the shipped dylib is not verified/u, "and names what it does not establish");
   const source = component.obligations.find(({ id }) => id === "corresponding-source");
   assert.match(source.detail, /Config\/SharpLibvipsSourceMaterials\.json/u);
   assert.match(source.detail, /no corresponding-source offer exists yet/u);
   assert.match(source.detail, /Config\/SharpLibvipsRustProvenance\.json/u);
-  assert.match(source.detail, /compiled crate set is unverified/u);
+  assert.match(source.detail, /157 observed compiling/u);
+  assert.match(source.detail, /incorporation into the dylib is unverified/u);
 });
 
 test("per-component notices cover every upstream manifest library exactly once with exact tracked upstream texts", async () => {
@@ -153,7 +154,11 @@ test("per-component notices cover every upstream manifest library exactly once w
   }
   const trackedDirectory = "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2";
   const { readdir } = await import("node:fs/promises");
-  const tracked = (await readdir(join(project, trackedDirectory))).map((name) => `${trackedDirectory}/${name}`).sort();
+  const tracked = (await readdir(join(project, trackedDirectory), { withFileTypes: true }))
+    .filter((entry) => entry.isFile())
+    .map((entry) => `${trackedDirectory}/${entry.name}`).sort();
+  const subdirectories = (await readdir(join(project, trackedDirectory), { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  assert.deepEqual(subdirectories, ["rust"], "only the Rust notice-material subdirectory (bound by Config/SharpLibvipsRustNoticeMaterials.json) may exist beside the component notices");
   const bound = [...seenPaths].filter((path) => path.startsWith(`${trackedDirectory}/`)).sort();
   assert.deepEqual(tracked, bound, "every tracked component notice file is bound and nothing untracked is present");
   const libvips = component.componentNotices.find(({ component: name }) => name === "libvips");

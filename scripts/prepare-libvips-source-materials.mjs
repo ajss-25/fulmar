@@ -194,6 +194,17 @@ function validateManifest(document) {
       if (item.provenanceStatus !== "resolved-approximation" && item.provenanceStatus !== "compiled-per-build-log") {
         fail(`rust-crate provenanceStatus must be resolved-approximation or compiled-per-build-log: ${id}`);
       }
+      if (item.provenanceStatus === "compiled-per-build-log") {
+        const observed = item.observedCompilation;
+        if (!observed || typeof observed !== "object" || Array.isArray(observed)
+            || Object.keys(observed).sort().join("\0") !== "logLine\0timestamp"
+            || !Number.isSafeInteger(observed.logLine) || observed.logLine < 1
+            || typeof observed.timestamp !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$/u.test(observed.timestamp)) {
+          fail(`rust-crate compiled-per-build-log items must carry the observed log line and timestamp: ${id}`);
+        }
+      } else if (item.observedCompilation !== undefined && item.observedCompilation !== null) {
+        fail(`rust-crate resolved-approximation items must not carry an observed compilation record: ${id}`);
+      }
       if (!Array.isArray(item.noticeMembers) || item.noticeMembers.length > MAXIMUM_NOTICE_MEMBERS) fail(`rust-crate noticeMembers must be a bounded array: ${id}`);
       const memberNames = new Set();
       for (const member of item.noticeMembers) {
@@ -251,6 +262,7 @@ function validateManifest(document) {
         role: item.role,
         licenseExpression: item.licenseExpression,
         provenanceStatus: item.provenanceStatus,
+        ...(item.provenanceStatus === "compiled-per-build-log" ? { observedCompilation: { logLine: item.observedCompilation.logLine, timestamp: item.observedCompilation.timestamp } } : {}),
         noticeStatus: item.noticeStatus,
         noticeMembers: item.noticeMembers.map((member) => ({ member: member.member, size: member.size, sha256: member.sha256 })),
         ...(item.authors === undefined ? {} : { authors: [...item.authors] })
@@ -266,14 +278,36 @@ function validateManifest(document) {
     const categories = document.categories;
     if (!categories || typeof categories !== "object" || Array.isArray(categories)) fail("a manifest with rust-crate items must record provenance categories");
     provenanceStatuses = {};
-    for (const name of ["compiledInHistoricalBuild", "incorporatedIntoShippedBinary"]) {
-      const status = categories[name]?.status;
-      if (status !== "unverified" && status !== "verified") fail(`categories.${name}.status must be verified or unverified`);
-      if (status === "verified" && items.some((item) => item.kind === "rust-crate" && item.provenanceStatus !== "compiled-per-build-log")) {
-        fail(`categories.${name} cannot be verified while any crate is only a resolved approximation`);
-      }
-      provenanceStatuses[name] = status;
+    const compiledItems = items.filter((item) => item.kind === "rust-crate" && item.provenanceStatus === "compiled-per-build-log");
+    const compiledStatus = categories.compiledInHistoricalBuild?.status;
+    if (compiledStatus !== "unverified" && compiledStatus !== "observed") fail("categories.compiledInHistoricalBuild.status must be unverified or observed");
+    if (compiledStatus === "unverified" && compiledItems.length > 0) {
+      fail("categories.compiledInHistoricalBuild cannot be unverified while items claim compiled-per-build-log");
     }
+    if (compiledStatus === "observed") {
+      const log = document.historicalBuildEvidence?.jobLog;
+      const observed = document.historicalBuildEvidence?.observedCompilation;
+      if (!log || typeof log !== "object" || !SHA256.test(log.rawSHA256 ?? "") || !Number.isSafeInteger(log.rawBytes) || log.rawBytes < 1
+          || !Number.isSafeInteger(log.lines) || log.lines < 1) {
+        fail("categories.compiledInHistoricalBuild observed requires historicalBuildEvidence.jobLog with the raw log digest, size and line count");
+      }
+      if (!observed || typeof observed !== "object" || observed.registryCrateCount !== compiledItems.length || compiledItems.length === 0
+          || !Array.isArray(observed.approximationNotObserved) || !Array.isArray(observed.observedNotInApproximation) || observed.observedNotInApproximation.length !== 0) {
+        fail("categories.compiledInHistoricalBuild observed requires an observedCompilation record whose registry crate count equals the compiled-per-build-log items and which lists no observed crate outside the manifest");
+      }
+      const notObserved = new Set(observed.approximationNotObserved.map((entry) => `${entry?.name} ${entry?.version}`));
+      const approximated = items.filter((item) => item.kind === "rust-crate" && item.provenanceStatus === "resolved-approximation").map((item) => `${item.crateName} ${item.crateVersion}`);
+      if (approximated.length !== notObserved.size || approximated.some((identity) => !notObserved.has(identity))) {
+        fail("categories.compiledInHistoricalBuild observed requires approximationNotObserved to name exactly the resolved-approximation items");
+      }
+      for (const item of compiledItems) {
+        if (item.observedCompilation.logLine > log.lines) fail(`observed compilation log line exceeds the retained log length: ${item.id}`);
+      }
+    }
+    provenanceStatuses.compiledInHistoricalBuild = compiledStatus;
+    const incorporatedStatus = categories.incorporatedIntoShippedBinary?.status;
+    if (incorporatedStatus !== "unverified") fail("categories.incorporatedIntoShippedBinary.status must remain unverified: observed compilation is not a linkage map");
+    provenanceStatuses.incorporatedIntoShippedBinary = incorporatedStatus;
   }
   return {
     binary: {
@@ -399,7 +433,7 @@ function renderRustNotices(manifest, manifestSHA256, noticeTexts) {
     "",
     `Package: \`${manifest.binary.packageName}\` ${manifest.binary.version}; build commit \`${manifest.binary.buildCommit}\`; manifest \`sha256:${manifestSHA256}\`.`,
     "",
-    `This file lists ${crates.length} crates.io crates identified by the manifest as a resolved approximation of the Rust dependencies compiled into the librsvg-c static library of this binary, with the exact licence texts each .crate archive carries (verified by SHA-256 against the crates.io checksum recorded in the pinned Cargo.lock). Historical build provenance: compiledInHistoricalBuild=${manifest.provenanceStatuses.compiledInHistoricalBuild}, incorporatedIntoShippedBinary=${manifest.provenanceStatuses.incorporatedIntoShippedBinary}. This is an auditable material inventory, explicitly partial where marked, not a corresponding-source offer and not legal clearance.`,
+    `This file lists ${crates.length} crates.io crates identified by the manifest for the Rust dependencies of the librsvg-c static library of this binary (${crates.filter((item) => item.provenanceStatus === "compiled-per-build-log").length} observed compiling in the retained historical build log, ${crates.filter((item) => item.provenanceStatus === "resolved-approximation").length} resolved by approximation only), with the exact licence texts each .crate archive carries (verified by SHA-256 against the crates.io checksum recorded in the pinned Cargo.lock). Historical build provenance: compiledInHistoricalBuild=${manifest.provenanceStatuses.compiledInHistoricalBuild}, incorporatedIntoShippedBinary=${manifest.provenanceStatuses.incorporatedIntoShippedBinary}. Observed compilation is not a linkage map. This is an auditable material inventory, explicitly partial where marked, not a corresponding-source offer and not legal clearance.`,
     "",
     "| Crate | Version | Role | Licence expression (Cargo.toml) | Provenance status | Notice material in crate | .crate SHA-256 |",
     "| --- | --- | --- | --- | --- | --- | --- |"
@@ -588,6 +622,7 @@ function renderInventory(manifest, manifestSHA256, acquisitions, transport, rust
       role: item.role,
       licenseExpression: item.licenseExpression,
       provenanceStatus: item.provenanceStatus,
+      ...(item.observedCompilation === undefined ? {} : { observedCompilation: item.observedCompilation }),
       noticeStatus: item.noticeStatus,
       noticeMembers: item.noticeMembers
     } : {})
@@ -752,7 +787,6 @@ async function verify(manifestArgument, destinationArgument) {
     const stored = await boundedRegularBytes(join(destination, RUST_NOTICES_NAME), MAXIMUM_MANIFEST_BYTES * 16, "rust notices");
     if (stored.toString("utf8") !== noticesText) fail("rust crate notices drifted from the verified crate archives");
   }
-
   const { inventoryText, sumsText } = renderInventory(manifest, manifestSHA256, acquisitions, inventory.transport, rustNoticesSHA256);
   if (inventoryText !== inventoryBytes.toString("utf8")) fail("inventory content drifted from the manifest");
   const sumsBytes = await boundedRegularBytes(join(destination, SUMS_NAME), MAXIMUM_MANIFEST_BYTES, "checksum list");
