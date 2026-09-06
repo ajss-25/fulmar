@@ -342,6 +342,20 @@ test("the installed-bundle MCP canary keeps its reviewed command under a private
   assert.ok(source.includes("await chmod(serverRuntimePath, 0o700)"));
   assert.ok(source.includes("auditedMCPFile(serverRuntimePath, true, core)"));
   assert.doesNotMatch(source, /auditedMCPFile\(layout\.node, true, core\)/u);
+
+  const packagedGuard = await readFile(
+    new URL("../../scripts/verify-mcp-guard-runtime.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.ok(packagedGuard.includes('const serverRuntimePath = join(projectPath, "reviewed-mcp-node")'));
+  assert.match(packagedGuard, /copyFileSync\(process\.execPath, serverRuntimePath, constants\.COPYFILE_EXCL\)/u);
+  assert.match(packagedGuard, /chmodSync\(serverRuntimePath, 0o700\)/u);
+  assert.match(packagedGuard, /assert\.deepEqual\(\s*readFileSync\(serverRuntimePath\),\s*readFileSync\(process\.execPath\)/u);
+  assert.ok(packagedGuard.includes("const executable = fileAudit(serverRuntimePath, true)"));
+  assert.match(packagedGuard, /dsh: \{[\s\S]*?command: serverRuntimePath,/u);
+  assert.doesNotMatch(packagedGuard, /fileAudit\(process\.execPath, true\)/u);
+  assert.ok(packagedGuard.includes("const child = spawn(process.execPath, [runnerPath], launchOptions)"));
+  assert.match(packagedGuard, /await upstream\.apply\(guardedContext, \{[\s\S]*?command: process\.execPath,\s*args: \[runnerPath\]/u);
 });
 
 test("the web canary requires the exact private adaptive thermal control plane", async () => {

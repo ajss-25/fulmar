@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { constants, copyFileSync, chmodSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -22,6 +22,15 @@ const projectPath = realpathSync(join(testRoot, "workspace"));
 const sandboxTemp = realpathSync(join(testRoot, "sandbox-temp"));
 const outsideSentinel = realpathSync(join(testRoot, "outside-sentinel.txt"));
 const serverPath = join(projectPath, "reviewed-mcp-server.mjs");
+// The generic MCP command policy rejects writable ancestors such as
+// /Applications. Keep the guard launcher on the exact bundled Node, but review
+// a byte-identical server runtime in this disposable private workspace, as the
+// installed-layout web/RPC canary does. Do not relax either trust boundary.
+const serverRuntimePath = join(projectPath, "reviewed-mcp-node");
+copyFileSync(process.execPath, serverRuntimePath, constants.COPYFILE_EXCL);
+chmodSync(serverRuntimePath, 0o700);
+assert.deepEqual(readFileSync(serverRuntimePath), readFileSync(process.execPath),
+  "The private MCP server runtime must match the signed candidate Node bytes.");
 
 writeFileSync(serverPath, [
   'import { createInterface } from "node:readline";',
@@ -71,7 +80,7 @@ const project = {
   fingerprint: ""
 };
 project.fingerprint = core.projectFingerprint(project);
-const executable = fileAudit(process.execPath, true);
+const executable = fileAudit(serverRuntimePath, true);
 const entrypoint = fileAudit(serverPath, false);
 const plan = core.validateActivationPlan({
   serverID: "packaged-security-canary",
@@ -84,7 +93,7 @@ const plan = core.validateActivationPlan({
     packageName: "@deepseek-ai/dsh-mcp-client",
     transport: "stdio",
     serverName: "security_canary",
-    command: process.execPath,
+    command: serverRuntimePath,
     arguments: [serverPath],
     environment: [{ variableName: "MCP_TEST_KEY", credential: "MCP_TEST_KEY" }],
     workingDirectory: projectPath,
