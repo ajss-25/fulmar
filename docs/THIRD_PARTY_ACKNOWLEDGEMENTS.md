@@ -4,9 +4,16 @@ Some licences bound for the redistributed `@img/sharp-libvips-darwin-arm64`
 1.3.2 combined binary (`lib/libvips-cpp.8.18.3.dylib`) require a statement in
 the documentation that accompanies the executable, over and above the licence
 text itself. This file holds the exact wording so that it can be placed
-verbatim. **Placing it is Codex integration work** (installation guide, about
-text, or the generated notices bundle — an owner decision); the existence of
-this file does not by itself satisfy those terms and is not legal clearance.
+verbatim. The statements are bound in `Config/ThirdPartyBinaryProvenance.json`
+(`deliveryMaterials.accompanyingDocumentation`, each tied to the tracked
+notice material it derives from) and `scripts/generate-third-party-notices.mjs`
+verifies that this file still carries them verbatim and renders them into the
+generated `THIRD_PARTY_NOTICES.md` (section "Acknowledgements required in
+accompanying documentation") whenever it runs with `--rust-crate-materials`;
+`scripts/stage-libvips-delivery-materials.mjs` copies this file into the
+delivery staging set. **Placing the wording in the installation guide or about
+text remains Codex integration work and an owner decision**; neither this file
+nor its rendering into the notices is legal clearance.
 
 Every statement below is derived from a licence text tracked under
 `Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/` and digest-bound in
@@ -65,4 +72,11 @@ is an owner decision (see `docs/LIBVIPS_CORRESPONDING_SOURCE.md`).
   `selectors 0.38.0` (MPL-2.0, per-file headers plus the SPDX text), and
   precise unresolved records for `block 0.1.6`, `malloc_buf 0.0.6`,
   `objc-foundation 0.1.1` and `objc_id 0.1.1`, whose upstream published no
-  licence text or copyright line for those versions.
+  licence text or copyright line for those versions. When
+  `scripts/prepare-libvips-source-materials.mjs` runs with
+  `--notice-materials Config/SharpLibvipsRustNoticeMaterials.json`, the
+  rendered `RUST_CRATE_NOTICES.md` carries the two external texts (labelled
+  external, never as archive members) and the four unresolved records with
+  their exact status; the generated `THIRD_PARTY_NOTICES.md` carries the same
+  when generated with `--rust-crate-materials`. The four unresolved notices
+  remain an owner/legal decision.

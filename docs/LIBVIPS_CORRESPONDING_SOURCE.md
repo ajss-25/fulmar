@@ -56,6 +56,30 @@ covered exactly once, and appends a deterministic section "Exact per-component
 notices for redistributed binaries" to the generated notices. Identical texts
 (pango/proxy-libintl; librsvg/libvips) are embedded once and cross-referenced.
 
+The same provenance component now also declares `deliveryMaterials`: the
+tracked corresponding-source manifest, the tracked crate manifest, the tracked
+notice-materials manifest for the six crates without archive licence text, and
+the accompanying-documentation statements (`docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md`,
+each tied to the bound FTL/IJG material). Because the record declares them,
+the generator **requires** an explicit operand
+`--rust-crate-materials <verified sharp-libvips-1.3.2-rust-crate-materials directory>`
+— the private acquisition produced by `prepare-libvips-source-materials.mjs`
+with `--notice-materials` (Part B) — and fails closed, naming that operand,
+when it is absent; nothing is inferred from the environment, a directory is
+never trusted by its file names alone (every archive is re-hashed and re-framed
+and the standalone notices are re-rendered and compared), and the operand is
+refused when no component declares a binding. With the operand the generated
+notices gain three deterministic sections: "Rust crate notices for redistributed
+binaries" (the 159-crate table, the six-crate section with the two exact
+external texts and the four unresolved records, and every archive-carried
+licence text embedded once per distinct digest, 90 distinct texts for 266
+members), "Acknowledgements required in accompanying documentation" (the exact
+FTL and IJG statements and the cairo retained-text clarification, verified
+verbatim against the documentation file) and "Delivery material inventory"
+(every consumed input and rendered output by SHA-256). The 29-component section
+and the first-party licence semantics are unchanged. Integration of the operand
+into `scripts/build-app.sh` is Codex work, see "Proposed packaging integration".
+
 Facts surfaced by the exact texts that the upstream README table does not show,
 returned for owner/legal review rather than resolved here:
 
@@ -222,6 +246,52 @@ record names the checks performed and the single fallback used (source-file
 headers at the tagged revision, none present). Their disposition is an
 owner/legal decision.
 
+`prepare-libvips-source-materials.mjs acquire|verify … --notice-materials
+Config/SharpLibvipsRustNoticeMaterials.json` binds that manifest to the crate
+manifest being processed (it must name it as `crateManifest`), re-verifies every
+external text (tracked bytes, size, digest, exact upstream bytes plus one LF,
+commit-pinned origin at the connected repository and revision, SPDX text only
+for the licence the archive itself designates), re-verifies the
+archive-contained `selectors` notice against the `.crate` member's digest and
+leading text, refuses anything unbound beside the tracked external files, and
+then renders `RUST_CRATE_NOTICES.md` with a "Crates whose archive carries no
+licence text" section that shows the two external texts (labelled external,
+never as archive members) and the four unresolved records with their exact
+status, missing evidence, checks and fallback. `INVENTORY.json` records the
+binding (`noticeMaterials`). Without the option the rendering is byte-identical
+to the earlier tool; a destination rendered one way is refused by a
+verification run the other way, so an incomplete acquisition is never
+relabelled as complete.
+
+### Delivery staging (private; not a source offer)
+
+`scripts/stage-libvips-delivery-materials.mjs stage Config/ThirdPartyBinaryProvenance.json
+<verified sharp-libvips-1.3.2-corresponding-source-materials> <verified
+sharp-libvips-1.3.2-rust-crate-materials> <private parent>/sharp-libvips-1.3.2-delivery-materials`
+assembles one deterministic delivery-material directory from inputs that pass
+their own current manifest-bound verification (the upstream directory against
+the corresponding-source manifest, the crate directory against the crate
+manifest **with** the notice-materials manifest): the 41 upstream items and the
+159 `.crate` archives with their `INVENTORY.json`/`SHA256SUMS` verbatim, the
+complete `RUST_CRATE_NOTICES.md`, the two external notice texts under
+`notices/rust-external/` with the notice-materials manifest as their
+provenance, the four tracked manifests under `manifests/`,
+`docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md` under `notices/`, and a generated
+`DELIVERY_INVENTORY.json`, `SHA256SUMS` and concise factual
+`DELIVERY_STATUS.md` (preparation set; four notices unresolved; compilation
+observed; dylib incorporation unverified; no legal clearance or public source
+offer inferred). Every file is re-read and re-hashed before the staging
+directory is renamed into place; a failure removes only that staging directory.
+The destination must be a new directory under a private canonical parent,
+named as the provenance record's `deliveryMaterials.outputDirectoryName`;
+existing `local-fixture`/non-authoritative flags are carried forward
+truthfully. `verify` re-checks a published set against the tracked manifests
+(never against the copies inside it) and rejects deletion, substitution, extra
+files, a changed manifest, a truncated archive, links and any edit to the
+generated files. Two independent stagings from identical inputs are
+byte-identical. No public ZIP/TAR asset, hosting URL or offer mechanism is
+created; the nine-asset public contract is unchanged.
+
 ### Explicitly unretained or unverifiable
 
 Recorded in the manifests' `unretained` arrays; summarised:
@@ -256,27 +326,44 @@ Because of items 8 and 9 (and the four unresolved crate notices),
 
 ## Proposed packaging integration (for Codex; not applied)
 
-The current nine-asset public package contract is unchanged. Two options,
-either of which is a Codex-integrated delta, not something this record enables
-on its own:
+The current nine-asset public package contract is unchanged. Two seams are
+now concrete and are Codex work:
+
+- **Notice generation.** `scripts/build-app.sh` (and the other release call
+  sites of the generator) must pass
+  `--rust-crate-materials <verified sharp-libvips-1.3.2-rust-crate-materials>`,
+  a private build input acquired by
+  `prepare-libvips-source-materials.mjs acquire Config/SharpLibvipsRustProvenance.json … --notice-materials Config/SharpLibvipsRustNoticeMaterials.json`
+  (HTTPS for an authoritative label, or an offline re-read of retained bytes
+  labelled non-authoritative). Until it does, the production invocation fails
+  closed by design rather than shipping notices without the Rust texts.
+- **Delivery set.** `scripts/stage-libvips-delivery-materials.mjs` produces the
+  verified `sharp-libvips-1.3.2-delivery-materials/` directory described above;
+  deterministic archive packaging (a single ZIP/TAR of that directory) is one
+  bounded further step once the owner chooses a distribution mechanism.
+
+Two options for distribution, either of which is a Codex-integrated delta, not
+something this record enables on its own:
 
 - **Option A — separate persistent artefact.** Publish the verified
-  `sharp-libvips-1.3.2-corresponding-source-materials/` directory (≈162 MB
-  of upstream archives plus recipe, patches, `INVENTORY.json`, `SHA256SUMS`)
-  together with `sharp-libvips-1.3.2-rust-crate-materials/` (≈12 MB of
-  `.crate` files plus `RUST_CRATE_NOTICES.md`, `INVENTORY.json`, `SHA256SUMS`,
-  with the observed-compilation status carried in the inventory) and the
-  external notice materials under `Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/`
-  as a distinct, versioned release asset or a stable download location, and
-  have the beta's installation guide and the generated notices name that
-  location together with the `INVENTORY.json` SHA-256. This keeps the app
-  package unchanged and makes the material available for as long as the
-  location is maintained. Delta: one new asset outside the nine, one
-  documented URL/digest pair, one owner commitment to keep it available.
+  `sharp-libvips-1.3.2-delivery-materials/` set (≈174 MB: the
+  `sharp-libvips-1.3.2-corresponding-source-materials/` upstream archives plus
+  recipe, patches, `INVENTORY.json`, `SHA256SUMS`; the
+  `sharp-libvips-1.3.2-rust-crate-materials/` `.crate` files plus the complete
+  `RUST_CRATE_NOTICES.md`, `INVENTORY.json`, `SHA256SUMS` with the
+  observed-compilation status carried in the inventory; the external notice
+  materials with their provenance manifest; the tracked manifests;
+  `DELIVERY_INVENTORY.json`, `SHA256SUMS`, `DELIVERY_STATUS.md`) as a distinct,
+  versioned release asset or a stable download location, and have the beta's
+  installation guide and the generated notices name that location together
+  with the `DELIVERY_INVENTORY.json` SHA-256. This keeps the app package
+  unchanged and makes the material available for as long as the location is
+  maintained. Delta: one new asset outside the nine, one documented URL/digest
+  pair, one owner commitment to keep it available.
 - **Option B — ship the inventory, host the archives.** Include only
-  `INVENTORY.json`/`SHA256SUMS` (a few kB) inside the app's notices bundle and
-  host the archives as in Option A. Delta: one additional file in the notices
-  resource, plus Option A's hosting commitment.
+  `DELIVERY_INVENTORY.json`/`SHA256SUMS` (a few hundred kB) inside the app's
+  notices bundle and host the set as in Option A. Delta: one additional file
+  in the notices resource, plus Option A's hosting commitment.
 
 In both options the Rust crate set is the observed compile set bound above;
 which crate code the shipped dylib actually incorporates remains unverified
