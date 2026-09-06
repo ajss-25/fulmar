@@ -27,7 +27,7 @@ test("binary provenance manifest is strict, bounded and names its open obligatio
   assert.ok(Array.isArray(manifest.components) && manifest.components.length === 1);
   const [component] = manifest.components;
   assert.deepEqual(Object.keys(component).sort(), [
-    "boundLicenseTexts", "componentNotices", "componentVersions", "declaredLicense", "id", "integrity", "lgplComponents",
+    "boundLicenseTexts", "componentNotices", "componentVersions", "declaredLicense", "deliveryMaterials", "id", "integrity", "lgplComponents",
     "lockfile", "lockfilePath", "manifestDiscrepancy", "manifestLibraries", "obligations", "packageName", "registryMetadata", "resolved",
     "shippedFiles", "upstream", "version"
   ]);
@@ -164,6 +164,68 @@ test("per-component notices cover every upstream manifest library exactly once w
   const libvips = component.componentNotices.find(({ component: name }) => name === "libvips");
   assert.equal(libvips.materials[0].sourcePath, "Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE", "libvips reuses the package-level tracked text");
   assert.equal(libvips.materials[0].origin, component.upstream.libvipsLicenseURL);
+});
+
+// The delivery material bindings name only tracked inputs, tie every accompanying
+// statement to a bound notice material, quote the acknowledgement documentation
+// verbatim, and leave every obligation state exactly as it was.
+test("delivery material bindings name tracked manifests, bound materials and the exact acknowledgement wording without promoting any obligation", async () => {
+  const manifest = await readJSON("Config/ThirdPartyBinaryProvenance.json");
+  const [component] = manifest.components;
+  const delivery = component.deliveryMaterials;
+  assert.deepEqual(Object.keys(delivery).sort(), ["accompanyingDocumentation", "outputDirectoryName", "purpose", "rustCrateMaterials", "rustNoticeMaterials", "sourceMaterials"]);
+  assert.match(delivery.purpose, /not legal clearance/u);
+  assert.match(delivery.purpose, /do not constitute a corresponding-source offer/u);
+  assert.doesNotMatch(JSON.stringify(delivery), /cleared|compliant|legally (?:sufficient|satisfied)/iu);
+  assert.equal(delivery.outputDirectoryName, "sharp-libvips-1.3.2-delivery-materials");
+  assert.equal(delivery.sourceMaterials, "Config/SharpLibvipsSourceMaterials.json");
+  assert.equal(delivery.rustCrateMaterials, "Config/SharpLibvipsRustProvenance.json");
+  assert.equal(delivery.rustNoticeMaterials, "Config/SharpLibvipsRustNoticeMaterials.json");
+  const source = await readJSON(delivery.sourceMaterials);
+  const crates = await readJSON(delivery.rustCrateMaterials);
+  const notices = await readJSON(delivery.rustNoticeMaterials);
+  assert.deepEqual(crates.binary, source.binary, "both manifests describe the same binary");
+  assert.equal(crates.binary.packageName, component.packageName);
+  assert.equal(crates.binary.version, component.version);
+  assert.equal(crates.binary.buildCommit, component.upstream.buildCommit);
+  assert.equal(crates.binary.provenanceRecord, "Config/ThirdPartyBinaryProvenance.json", "the crate manifest points back at this record");
+  assert.equal(notices.crateManifest, delivery.rustCrateMaterials, "the notice-materials manifest binds the same crate manifest");
+  assert.equal(source.items.length, 41);
+  assert.equal(crates.items.length, 159);
+  assert.deepEqual(notices.summary.unresolved, ["block 0.1.6", "malloc_buf 0.0.6", "objc-foundation 0.1.1", "objc_id 0.1.1"], "the four unresolved notices stay unresolved");
+
+  const documentation = delivery.accompanyingDocumentation;
+  assert.equal(documentation.path, "docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md");
+  const text = await readFile(join(project, documentation.path), "utf8");
+  const quoted = new Set();
+  let current = [];
+  for (const line of [...text.split("\n"), ""]) {
+    if (line.startsWith(">")) current.push(line.slice(1).trim());
+    else if (current.length > 0) { quoted.add(current.filter((part) => part.length > 0).join(" ")); current = []; }
+  }
+  const byComponent = new Map(component.componentNotices.map((notice) => [notice.component, notice]));
+  assert.deepEqual(documentation.statements.map(({ id }) => id), ["freetype-ftl-credit", "ijg-based-in-part"]);
+  for (const statement of documentation.statements) {
+    assert.deepEqual(Object.keys(statement).sort(), ["basis", "component", "id", "material", "statement"]);
+    const notice = byComponent.get(statement.component);
+    assert.ok(notice, `${statement.id} names a bound component`);
+    assert.ok(notice.materials.some(({ sourcePath }) => sourcePath === statement.material), `${statement.id} derives from a bound material`);
+    assert.ok(quoted.has(statement.statement), `${statement.id} is quoted verbatim in ${documentation.path}`);
+  }
+  assert.equal(documentation.statements[0].statement, "Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved.");
+  assert.equal(documentation.statements[1].statement, "This software is based in part on the work of the Independent JPEG Group.");
+  assert.deepEqual(documentation.clarifications.map(({ id }) => id), ["cairo-retained-texts"]);
+  const [cairo] = documentation.clarifications;
+  assert.deepEqual(Object.keys(cairo).sort(), ["component", "id", "retainedTexts", "statement", "upstreamLabel"]);
+  assert.equal(cairo.upstreamLabel, byComponent.get("cairo").manifestLicense);
+  assert.deepEqual([...cairo.retainedTexts].sort(), byComponent.get("cairo").materials.map(({ sourcePath }) => sourcePath).sort(),
+    "the cairo clarification names exactly the retained texts");
+  assert.match(cairo.statement, /LGPL 2\.1 or the Mozilla Public License 1\.1/u);
+  assert.match(cairo.statement, /'Mozilla Public License 2\.0' label is not the retained text/u);
+  // The bindings change no obligation: the three gates stay open and the wording is unchanged.
+  assert.deepEqual(component.obligations.filter(({ status }) => status === "open").map(({ id }) => id),
+    ["corresponding-source", "relinking-and-installation-information", "legal-clearance"]);
+  assert.equal(component.obligations.length, 6);
 });
 
 test("binary provenance hashes match the pinned lockfile and reviewed runtime inventory", async () => {

@@ -774,6 +774,45 @@
           ]
         }
       ],
+      "deliveryMaterials": {
+        "purpose": "Material bindings consumed by scripts/generate-third-party-notices.mjs (--rust-crate-materials) and scripts/stage-libvips-delivery-materials.mjs: the tracked corresponding-source and Rust crate manifests, the version-bound external notice material for the crates whose archives carry no licence text, and the accompanying-documentation statements. They identify and verify delivery material; they do not constitute a corresponding-source offer, do not close any obligation below and are not legal clearance.",
+        "outputDirectoryName": "sharp-libvips-1.3.2-delivery-materials",
+        "sourceMaterials": "Config/SharpLibvipsSourceMaterials.json",
+        "rustCrateMaterials": "Config/SharpLibvipsRustProvenance.json",
+        "rustNoticeMaterials": "Config/SharpLibvipsRustNoticeMaterials.json",
+        "accompanyingDocumentation": {
+          "path": "docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md",
+          "statements": [
+            {
+              "id": "freetype-ftl-credit",
+              "component": "freetype",
+              "material": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/freetype-2.14.3-FTL.TXT",
+              "basis": "The FreeType Project LICENSE (2006-Jan-27), section 2 'Redistribution', and its preferred credit wording; the year is the copyright year of the FreeType 2.14.3 sources actually bundled",
+              "statement": "Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved."
+            },
+            {
+              "id": "ijg-based-in-part",
+              "component": "mozjpeg",
+              "material": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/mozjpeg-0826579-README.ijg",
+              "basis": "Independent JPEG Group README, LEGAL ISSUES, condition (2): when only executable code is distributed, the accompanying documentation must state this",
+              "statement": "This software is based in part on the work of the Independent JPEG Group."
+            }
+          ],
+          "clarifications": [
+            {
+              "id": "cairo-retained-texts",
+              "component": "cairo",
+              "upstreamLabel": "Mozilla Public License 2.0",
+              "retainedTexts": [
+                "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/cairo-1.18.4-COPYING",
+                "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/cairo-1.18.4-COPYING-LGPL-2.1",
+                "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/cairo-1.18.4-COPYING-MPL-1.1"
+              ],
+              "statement": "cairo 1.18.4 is offered under either the GNU LGPL 2.1 or the Mozilla Public License 1.1, as its retained COPYING states, and both real texts are bound; the upstream licence table's 'Mozilla Public License 2.0' label is not the retained text and is not relied on here."
+            }
+          ]
+        }
+      },
       "obligations": [
         {
           "id": "lgpl-licence-text",

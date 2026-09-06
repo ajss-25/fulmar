@@ -2,10 +2,32 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { loadManifest as loadMaterialsManifest, renderBoundNoticeMaterials, verifyMaterials } from "./prepare-libvips-source-materials.mjs";
 
-const [templateArgument, runtimeArgument, overridesArgument, destinationArgument] = process.argv.slice(2);
-if (!templateArgument || !runtimeArgument || !overridesArgument || !destinationArgument) {
-  throw new Error("usage: generate-third-party-notices.mjs <template.md> <bundled-runtime-root> <override-config.json> <output.md>");
+const USAGE = "usage: generate-third-party-notices.mjs <template.md> <bundled-runtime-root> <override-config.json> <output.md> [--rust-crate-materials <verified-crate-materials-directory>]";
+
+// Explicit operands only: the verified Rust crate materials directory is named
+// on the command line when the provenance record declares that binding, and is
+// never inferred from the environment.
+const positionalArguments = [];
+const optionArguments = {};
+const rawArguments = process.argv.slice(2);
+for (let index = 0; index < rawArguments.length; index += 1) {
+  const argument = rawArguments[index];
+  if (argument === "--rust-crate-materials") {
+    const value = rawArguments[index + 1];
+    if (optionArguments.rustCrateMaterials !== undefined || value === undefined || value.length === 0 || value.startsWith("--")) throw new Error(USAGE);
+    optionArguments.rustCrateMaterials = value;
+    index += 1;
+  } else if (argument.startsWith("--")) {
+    throw new Error(USAGE);
+  } else {
+    positionalArguments.push(argument);
+  }
+}
+const [templateArgument, runtimeArgument, overridesArgument, destinationArgument] = positionalArguments;
+if (positionalArguments.length !== 4 || !templateArgument || !runtimeArgument || !overridesArgument || !destinationArgument) {
+  throw new Error(USAGE);
 }
 
 const MAXIMUM_TEXT_BYTES = 8 * 1024 * 1024;
@@ -399,13 +421,308 @@ async function bindComponentNotices(lockPackagePath, reference, registry) {
     throw new Error(`component notices are missing for pinned component versions: ${lockPackagePath} -> ${unversioned.sort(byCodePoint).join(", ")}`);
   }
   records.sort((left, right) => byCodePoint(left.component, right.component));
+  const deliveryMaterials = component.deliveryMaterials === undefined
+    ? undefined
+    : parseDeliveryMaterials(component.deliveryMaterials, lockPackagePath, records);
   return {
     lockPackagePath,
     manifestPath: reference.manifest,
     manifestSHA256: sha256(manifestBytes),
     componentId: reference.component,
-    records
+    packageName: typeof component.packageName === "string" ? component.packageName : undefined,
+    version: typeof component.version === "string" ? component.version : undefined,
+    buildCommit: typeof component.upstream?.buildCommit === "string" ? component.upstream.buildCommit : undefined,
+    records,
+    deliveryMaterials
   };
+}
+
+// ---------------------------------------------------------------------------
+// Delivery material bindings declared by the provenance record: the tracked
+// corresponding-source and Rust crate manifests, the version-bound external
+// notice material manifest, and the accompanying-documentation statements.
+// Declaring them makes the verified Rust crate materials a required, explicit
+// generator input; nothing here closes an obligation or asserts clearance.
+
+const MANIFEST_PATH = /^Config\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.json$/u;
+const DOCUMENT_PATH = /^docs\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.md$/u;
+const DIRECTORY_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$/u;
+const MAXIMUM_STATEMENTS = 8;
+
+function requireExactKeys(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort(byCodePoint).join("\0") !== keys.join("\0")) {
+    throw new Error(`${label} has an unexpected shape (expected exactly: ${keys.join(", ")})`);
+  }
+}
+
+function parseDeliveryMaterials(raw, lockPackagePath, records) {
+  const label = `delivery materials for ${lockPackagePath}`;
+  requireExactKeys(raw, ["accompanyingDocumentation", "outputDirectoryName", "purpose", "rustCrateMaterials", "rustNoticeMaterials", "sourceMaterials"], label);
+  boundedString(raw.purpose, 40, 1200, `${label} purpose`);
+  if (!/not legal clearance/u.test(raw.purpose)) throw new Error(`${label} purpose must state that it is not legal clearance`);
+  if (typeof raw.outputDirectoryName !== "string" || !DIRECTORY_NAME.test(raw.outputDirectoryName)) throw new Error(`${label} outputDirectoryName is invalid`);
+  const manifests = {};
+  for (const key of ["sourceMaterials", "rustCrateMaterials", "rustNoticeMaterials"]) {
+    const path = assertSafeRelativePath(raw[key], `${label} ${key}`);
+    if (!MANIFEST_PATH.test(path)) throw new Error(`${label} ${key} must be one tracked JSON document under Config`);
+    manifests[key] = path;
+  }
+  if (new Set(Object.values(manifests)).size !== 3) throw new Error(`${label} must name three distinct manifests`);
+  const documentation = raw.accompanyingDocumentation;
+  requireExactKeys(documentation, ["clarifications", "path", "statements"], `${label} accompanyingDocumentation`);
+  const documentPath = assertSafeRelativePath(documentation.path, `${label} accompanying documentation path`);
+  if (!DOCUMENT_PATH.test(documentPath)) throw new Error(`${label} accompanying documentation must be one tracked Markdown document under docs`);
+  const byComponent = new Map(records.map((record) => [record.component, record]));
+  const ids = new Set();
+  const statements = [];
+  if (!Array.isArray(documentation.statements) || documentation.statements.length === 0 || documentation.statements.length > MAXIMUM_STATEMENTS) {
+    throw new Error(`${label} must declare one to ${MAXIMUM_STATEMENTS} accompanying-documentation statements`);
+  }
+  for (const entry of documentation.statements) {
+    requireExactKeys(entry, ["basis", "component", "id", "material", "statement"], `${label} statement`);
+    const id = boundedString(entry.id, 3, 64, `${label} statement id`);
+    if (!COMPONENT_NAME.test(id) || ids.has(id)) throw new Error(`${label} statement has a duplicate or invalid id: ${id}`);
+    ids.add(id);
+    const record = byComponent.get(entry.component);
+    if (record === undefined) throw new Error(`${label} statement ${id} names a component without a bound notice: ${String(entry.component)}`);
+    const material = record.materials.find((candidate) => candidate.path === entry.material);
+    if (material === undefined) throw new Error(`${label} statement ${id} names a material that is not bound for component ${entry.component}: ${String(entry.material)}`);
+    statements.push({
+      id,
+      component: record.component,
+      version: record.version,
+      material: { path: material.path, sha256: material.sha256, describes: material.describes },
+      basis: boundedString(entry.basis, 16, 600, `${label} statement ${id} basis`),
+      statement: boundedString(entry.statement, 16, 600, `${label} statement ${id} text`)
+    });
+  }
+  const clarifications = [];
+  if (!Array.isArray(documentation.clarifications) || documentation.clarifications.length > MAXIMUM_STATEMENTS) {
+    throw new Error(`${label} clarifications must be a bounded array`);
+  }
+  for (const entry of documentation.clarifications) {
+    requireExactKeys(entry, ["component", "id", "retainedTexts", "statement", "upstreamLabel"], `${label} clarification`);
+    const id = boundedString(entry.id, 3, 64, `${label} clarification id`);
+    if (!COMPONENT_NAME.test(id) || ids.has(id)) throw new Error(`${label} clarification has a duplicate or invalid id: ${id}`);
+    ids.add(id);
+    const record = byComponent.get(entry.component);
+    if (record === undefined) throw new Error(`${label} clarification ${id} names a component without a bound notice: ${String(entry.component)}`);
+    if (entry.upstreamLabel !== record.manifestLicense) throw new Error(`${label} clarification ${id} does not quote the upstream licence declaration exactly`);
+    const bound = record.materials.map((material) => material.path).sort(byCodePoint);
+    if (!Array.isArray(entry.retainedTexts) || [...entry.retainedTexts].sort(byCodePoint).join("\0") !== bound.join("\0")) {
+      throw new Error(`${label} clarification ${id} must name exactly the retained texts bound for component ${record.component}`);
+    }
+    clarifications.push({
+      id,
+      component: record.component,
+      version: record.version,
+      upstreamLabel: record.manifestLicense,
+      retainedTexts: record.materials.map((material) => ({ path: material.path, sha256: material.sha256, describes: material.describes })),
+      statement: boundedString(entry.statement, 16, 600, `${label} clarification ${id} text`)
+    });
+  }
+  return {
+    purpose: raw.purpose,
+    outputDirectoryName: raw.outputDirectoryName,
+    ...manifests,
+    documentation: { path: documentPath, statements, clarifications }
+  };
+}
+
+// Blockquoted statements of one Markdown document: consecutive "> " lines are
+// joined with single spaces so a wrapped statement is compared as one sentence.
+function blockquotedStatements(text) {
+  const statements = new Set();
+  let current = [];
+  for (const line of [...text.split("\n"), ""]) {
+    if (line.startsWith(">")) {
+      current.push(line.slice(1).trim());
+    } else if (current.length > 0) {
+      statements.add(current.filter((part) => part.length > 0).join(" "));
+      current = [];
+    }
+  }
+  return statements;
+}
+
+async function requireTrackedPath(relativePath, label) {
+  const absolute = join(projectRoot, ...relativePath.split("/"));
+  if (await realpath(absolute) !== absolute) throw new Error(`${label} must not traverse aliases or symbolic links: ${relativePath}`);
+  return absolute;
+}
+
+async function bindDeliveryMaterials(section, directoryArgument) {
+  const declared = section.deliveryMaterials;
+  const label = `delivery materials for ${section.lockPackagePath}`;
+  const crateManifestPath = await requireTrackedPath(declared.rustCrateMaterials, `${label} crate manifest`);
+  const noticeManifestPath = await requireTrackedPath(declared.rustNoticeMaterials, `${label} notice-materials manifest`);
+  const sourceManifestPath = await requireTrackedPath(declared.sourceMaterials, `${label} corresponding-source manifest`);
+  const documentPath = await requireTrackedPath(declared.documentation.path, `${label} accompanying documentation`);
+  const directory = resolve(directoryArgument);
+  const verified = await verifyMaterials(crateManifestPath, directory, noticeManifestPath);
+  if (verified.manifest.provenanceStatuses === undefined) throw new Error(`${label} rustCrateMaterials must name a rust-crate manifest`);
+  const { binary } = verified.manifest;
+  if (binary.packageName !== section.packageName || binary.version !== section.version || binary.buildCommit !== section.buildCommit) {
+    throw new Error(`${label}: the crate manifest does not describe this component's package, version and build commit`);
+  }
+  if (verified.manifest.provenanceRecord !== section.manifestPath) {
+    throw new Error(`${label}: the crate manifest names ${verified.manifest.provenanceRecord} as its provenance record, not ${section.manifestPath}`);
+  }
+  const source = await loadMaterialsManifest(sourceManifestPath);
+  if (source.manifest.provenanceStatuses !== undefined) throw new Error(`${label} sourceMaterials must name the upstream corresponding-source manifest, not a crate manifest`);
+  if (JSON.stringify(source.manifest.binary) !== JSON.stringify(binary)) {
+    throw new Error(`${label}: the corresponding-source manifest and the crate manifest describe different binaries`);
+  }
+  const { bytes: documentBytes, text: documentText } = await boundedText(documentPath, MAXIMUM_TEXT_BYTES, `${label} accompanying documentation`);
+  const quoted = blockquotedStatements(documentText);
+  for (const statement of declared.documentation.statements) {
+    if (!quoted.has(statement.statement)) {
+      throw new Error(`${label}: accompanying documentation ${declared.documentation.path} does not carry the exact statement ${statement.id}`);
+    }
+  }
+  return {
+    section,
+    declared,
+    verified,
+    directoryName: basename(directory),
+    source: {
+      path: declared.sourceMaterials,
+      sha256: source.manifestSHA256,
+      itemCount: source.manifest.items.length,
+      totalBytes: source.manifest.totalBytes,
+      outputDirectoryName: source.manifest.outputDirectoryName
+    },
+    documentation: {
+      path: declared.documentation.path,
+      sha256: sha256(documentBytes),
+      statements: declared.documentation.statements,
+      clarifications: declared.documentation.clarifications
+    }
+  };
+}
+
+function renderRustCrateNotices(delivery) {
+  const { verified, section } = delivery;
+  const manifest = verified.manifest;
+  const materials = verified.noticeMaterials;
+  const crates = manifest.items.filter((item) => item.kind === "rust-crate");
+  const withoutText = crates.filter((item) => item.noticeStatus === "no-licence-text-in-crate");
+  const observed = crates.filter((item) => item.provenanceStatus === "compiled-per-build-log");
+  const approximated = crates.filter((item) => item.provenanceStatus === "resolved-approximation");
+  const statuses = manifest.provenanceStatuses;
+  const log = manifest.historicalBuildLog;
+  const transportNote = verified.authoritative ? "transport https (authoritative acquisition)" : `transport ${verified.transport} (NOT authoritative: an offline re-read of retained bytes whose digests equal the manifest pins)`;
+  const lines = [
+    "",
+    "## Rust crate notices for redistributed binaries",
+    "",
+    "The combined binary below statically links Rust crates through librsvg. Their notice texts are read from the exact crates.io archives pinned by a tracked manifest, re-verified by size, SHA-256 and complete archive framing at generation time, and embedded once per distinct text. This is an auditable material inventory, explicitly partial where marked, not a corresponding-source offer and not legal clearance.",
+    "",
+    `### \`${escaped(section.lockPackagePath)}\``,
+    "",
+    `Crate manifest: \`${escaped(delivery.declared.rustCrateMaterials)}\` (\`sha256:${verified.manifestSHA256}\`); notice-materials manifest: \`${escaped(delivery.declared.rustNoticeMaterials)}\` (\`sha256:${materials.sha256}\`); verified crate materials directory \`${escaped(delivery.directoryName)}\` (inventory \`sha256:${verified.inventorySHA256}\`, checksum list \`sha256:${verified.sumsSHA256}\`, complete standalone notices \`RUST_CRATE_NOTICES.md\` \`sha256:${verified.rustNoticesSHA256}\`; ${transportNote}).`,
+    "",
+    `${crates.length} crates.io registry crates are identified for the librsvg-c static library of this binary: ${observed.length} were observed compiling in the retained historical build log${log === undefined ? "" : ` (raw \`sha256:${log.rawSHA256}\`, ${log.rawBytes} bytes, ${log.lines} lines)`} and ${approximated.length} ${approximated.length === 1 ? "is" : "are"} resolved by approximation only${approximated.length === 0 ? "" : ` (${approximated.map((item) => `\`${escaped(item.crateName)} ${escaped(item.crateVersion)}\``).join(", ")})`}. ${manifest.workspaceMembers.length === 0 ? "" : `The workspace packages ${manifest.workspaceMembers.map((member) => `\`${escaped(member)}\``).join(" and ")} are not registry crates; they are covered by the librsvg source archive and its notice bound in the per-component table above. `}Historical build provenance: compiledInHistoricalBuild=${statuses.compiledInHistoricalBuild}, incorporatedIntoShippedBinary=${statuses.incorporatedIntoShippedBinary}. Observed compilation is not a linkage map: which crate code survives fat LTO and dead-stripping into the shipped dylib is unverified, and nothing here asserts it.`,
+    "",
+    "| Crate | Version | Role | Licence expression (Cargo.toml) | Provenance status | Notice material in crate | .crate SHA-256 |",
+    "| --- | --- | --- | --- | --- | --- | --- |"
+  ];
+  for (const item of crates) {
+    let members;
+    if (item.noticeMembers.length === 0) {
+      const record = materials.records.find((candidate) => candidate.itemId === item.id);
+      members = record.status === "established" ? "none in crate; external material bound (see below)" : "none in crate; UNRESOLVED (see below)";
+    } else {
+      members = item.noticeMembers.map((member) => `\`${escaped(member.member.split("/")[1])}\` (\`sha256:${member.sha256}\`)`).join("<br>");
+    }
+    lines.push(`| \`${escaped(item.crateName)}\` | \`${escaped(item.crateVersion)}\` | ${item.role} | ${escaped(item.licenseExpression)} | ${item.provenanceStatus} | ${members} | \`${item.sha256}\` |`);
+  }
+  lines.push(...renderBoundNoticeMaterials(withoutText, materials, 4));
+  lines.push("", "#### Licence texts carried by the crate archives", "",
+    "Each distinct text is embedded once, with every crate archive member that carries it; the member digests are the values pinned in the crate manifest and verified inside the archives.");
+  const embedded = new Map();
+  for (const item of crates) {
+    for (const member of item.noticeMembers) {
+      const binding = `\`${escaped(member.member)}\` (${escaped(item.crateName)} ${escaped(item.crateVersion)}, ${member.size} bytes)`;
+      if (embedded.has(member.sha256)) {
+        embedded.get(member.sha256).bindings.push(binding);
+      } else {
+        embedded.set(member.sha256, { item, member, bindings: [binding] });
+      }
+    }
+  }
+  for (const [digest, { item, member, bindings }] of embedded) {
+    lines.push("",
+      `##### \`${escaped(item.crateName)}\` ${escaped(item.crateVersion)}: \`${escaped(member.member.split("/")[1])}\``,
+      "",
+      `Bound as: ${bindings.join("; ")}`,
+      `Exact member SHA-256: \`${digest}\``,
+      "",
+      verified.noticeTexts.get(`${item.id}\0${member.member}`).replaceAll("\r\n", "\n").replaceAll("\r", "\n").trimEnd());
+  }
+  return { lines, distinctTexts: embedded.size, memberCount: crates.reduce((total, item) => total + item.noticeMembers.length, 0) };
+}
+
+function renderAccompanyingDocumentation(delivery) {
+  const { documentation } = delivery;
+  const lines = [
+    "",
+    "## Acknowledgements required in accompanying documentation",
+    "",
+    `Some licences bound above require a statement in the documentation that accompanies the executable, over and above the licence text itself. The exact wording below is held verbatim in \`${escaped(documentation.path)}\` (\`sha256:${documentation.sha256}\`) and is bound to the tracked notice material it derives from. Placing it in the installation guide or about text is a separate integration and owner decision; its presence here is not legal clearance.`
+  ];
+  for (const statement of documentation.statements) {
+    lines.push("",
+      `### ${escaped(statement.component)}${statement.version === null ? "" : ` ${escaped(statement.version)}`} — \`${escaped(basename(statement.material.path))}\` (\`sha256:${statement.material.sha256}\`)`,
+      "",
+      `Basis: ${escaped(statement.basis)}`,
+      "",
+      `> ${statement.statement}`);
+  }
+  for (const clarification of documentation.clarifications) {
+    lines.push("",
+      `### Clarification: ${escaped(clarification.component)}${clarification.version === null ? "" : ` ${escaped(clarification.version)}`} licence label versus retained texts`,
+      "",
+      `Upstream licence table label: ${escaped(clarification.upstreamLabel)}. Retained texts: ${clarification.retainedTexts.map((text) => `\`${escaped(text.path)}\` (\`sha256:${text.sha256}\`; ${escaped(text.describes)})`).join("; ")}.`,
+      "",
+      clarification.statement);
+  }
+  return lines;
+}
+
+function renderDeliveryInventory(delivery, rustSection) {
+  const { verified, section, source, documentation, declared } = delivery;
+  const materials = verified.noticeMaterials;
+  const crates = verified.manifest.items.filter((item) => item.kind === "rust-crate");
+  const row = (name, kind, digest, notes) => `| ${name} | ${kind} | ${digest} | ${notes} |`;
+  const hex = (digest) => `\`${digest}\``;
+  const lines = [
+    "",
+    `## Delivery material inventory for \`${escaped(section.lockPackagePath)}\``,
+    "",
+    "Every input consumed to render the Rust crate notices and accompanying acknowledgements above, and every rendered output, bound by exact SHA-256. The crate materials directory is the verified private acquisition named explicitly on the command line; no input was inferred from the environment, and an incomplete or unverifiable input fails generation rather than being omitted.",
+    "",
+    "| Input or output | Kind | SHA-256 | Notes |",
+    "| --- | --- | --- | --- |",
+    row(`\`${escaped(section.manifestPath)}\``, "tracked provenance record", hex(section.manifestSHA256), `component \`${escaped(section.componentId)}\`; declares the delivery bindings (\`${escaped(declared.outputDirectoryName)}\`)`),
+    row(`\`${escaped(declared.rustCrateMaterials)}\``, "tracked crate manifest", hex(verified.manifestSHA256), `${crates.length} rust-crate items, ${verified.manifest.totalBytes} bytes; compiledInHistoricalBuild=${verified.manifest.provenanceStatuses.compiledInHistoricalBuild}, incorporatedIntoShippedBinary=${verified.manifest.provenanceStatuses.incorporatedIntoShippedBinary}`),
+    row(`\`${escaped(declared.rustNoticeMaterials)}\``, "tracked notice-materials manifest", hex(materials.sha256), `established ${materials.summary.established.length}, unresolved ${materials.summary.unresolved.length}; researched ${escaped(materials.researchedOn)}`)
+  ];
+  for (const record of materials.records) {
+    for (const material of record.materials) {
+      lines.push(row(`\`${escaped(material.sourcePath)}\``, `tracked external notice material (${escaped(material.kind)})`, hex(material.sha256), `${escaped(record.identity)}; upstream \`${escaped(material.origin)}\` (raw \`sha256:${material.upstreamSHA256}\`)`));
+    }
+  }
+  lines.push(
+    row(`\`${escaped(source.path)}\``, "tracked corresponding-source manifest (referenced; its archives are not consumed by notice generation)", hex(source.sha256), `${source.itemCount} items, ${source.totalBytes} bytes; acquisition directory name \`${escaped(source.outputDirectoryName)}\``),
+    row(`\`${escaped(documentation.path)}\``, "tracked accompanying documentation", hex(documentation.sha256), `${documentation.statements.length} statement${documentation.statements.length === 1 ? "" : "s"}, ${documentation.clarifications.length} clarification${documentation.clarifications.length === 1 ? "" : "s"}`),
+    row(`\`${escaped(delivery.directoryName)}/INVENTORY.json\``, "verified crate materials inventory", hex(verified.inventorySHA256), `transport ${escaped(verified.transport)}${verified.authoritative ? "" : " (NOT authoritative)"}`),
+    row(`\`${escaped(delivery.directoryName)}/SHA256SUMS\``, "verified crate materials checksum list", hex(verified.sumsSHA256), `${crates.length} archives plus RUST_CRATE_NOTICES.md`),
+    row(`\`${escaped(delivery.directoryName)}/RUST_CRATE_NOTICES.md\``, "verified complete standalone Rust notices (re-rendered and compared at generation time)", hex(verified.rustNoticesSHA256), "rendered by scripts/prepare-libvips-source-materials.mjs with the notice-materials manifest"),
+    row(`${crates.length} \`.crate\` archives in \`${escaped(delivery.directoryName)}\``, "verified opaque crates.io archives", "see the per-crate table above", `${verified.manifest.totalBytes} bytes; each verified by size, SHA-256 and complete tar framing; only the manifest-named notice members were read`),
+    row("Rust crate notices section above", "rendered output", hex(sha256(rustSection.lines.join("\n"))), `${rustSection.memberCount} notice members, ${rustSection.distinctTexts} distinct texts embedded`)
+  );
+  return lines;
 }
 
 const lockPath = join(runtimeRoot, "package-lock.json");
@@ -517,6 +834,24 @@ for (const packagePath of overrides.keys()) {
   if (!usedOverrides.has(packagePath)) throw new Error(`licence override is stale or refers to an unshipped package: ${packagePath}`);
 }
 
+// A component that declares delivery material bindings makes the verified
+// Rust crate materials a required explicit input: without them generation
+// fails closed instead of silently omitting the Rust notices, and the operand
+// is refused when nothing declares a binding for it.
+const deliverySections = componentNoticeSections.filter((section) => section.deliveryMaterials !== undefined);
+if (deliverySections.length > 1) {
+  throw new Error(`at most one bound component may declare Rust crate delivery materials: ${deliverySections.map((section) => section.lockPackagePath).join(", ")}`);
+}
+if (deliverySections.length === 1 && optionArguments.rustCrateMaterials === undefined) {
+  const [section] = deliverySections;
+  const expected = await loadMaterialsManifest(await requireTrackedPath(section.deliveryMaterials.rustCrateMaterials, `delivery materials for ${section.lockPackagePath} crate manifest`));
+  throw new Error(`component ${section.componentId} (${section.lockPackagePath}) declares Rust crate delivery materials; pass --rust-crate-materials <verified ${expected.manifest.outputDirectoryName} directory> (acquired and verified by scripts/prepare-libvips-source-materials.mjs with --notice-materials ${section.deliveryMaterials.rustNoticeMaterials})`);
+}
+if (deliverySections.length === 0 && optionArguments.rustCrateMaterials !== undefined) {
+  throw new Error("--rust-crate-materials was given but no bound component declares Rust crate delivery materials");
+}
+const delivery = deliverySections.length === 1 ? await bindDeliveryMaterials(deliverySections[0], optionArguments.rustCrateMaterials) : undefined;
+
 const nodeLicense = await boundedRegularBytes(join(runtimeRoot, "NODE_LICENSE"), MAXIMUM_TEXT_BYTES, "bundled Node licence");
 const trackedLicenceText = [...trackedSourceMaterials.values()]
   .sort((left, right) => left.path.localeCompare(right.path))
@@ -595,6 +930,15 @@ function renderComponentNotices() {
 const componentNoticeLines = renderComponentNotices();
 const componentNoticeMaterialCount = componentNoticeSections
   .reduce((total, section) => total + section.records.reduce((inner, record) => inner + record.materials.length, 0), 0);
+const rustSection = delivery === undefined ? undefined : renderRustCrateNotices(delivery);
+const deliveryLines = delivery === undefined ? [] : [
+  ...rustSection.lines,
+  ...renderAccompanyingDocumentation(delivery),
+  ...renderDeliveryInventory(delivery, rustSection)
+];
+const deliverySummary = delivery === undefined ? [] : [
+  `It additionally binds ${rustSection.memberCount} Rust crate notice texts (${rustSection.distinctTexts} distinct) read from ${delivery.verified.manifest.items.length} verified crates.io archives, ${delivery.verified.noticeMaterials.records.reduce((total, record) => total + record.materials.length, 0)} version-bound external notice materials and ${delivery.documentation.statements.length} accompanying-documentation statements; ${delivery.verified.noticeMaterials.summary.unresolved.length} crate notices remain unresolved and are listed as such. See "Rust crate notices for redistributed binaries", "Acknowledgements required in accompanying documentation" and "Delivery material inventory" below.`
+];
 const inventory = [
   "",
   "## Complete bundled npm dependency inventory",
@@ -605,6 +949,7 @@ const inventory = [
   ...(componentNoticeMaterialCount === 0 ? [] : [
     `It additionally binds ${componentNoticeMaterialCount} exact per-component notice texts for redistributed combined binaries; see "Exact per-component notices for redistributed binaries" below.`
   ]),
+  ...deliverySummary,
   "",
   "> This is an auditable material inventory, not legal clearance. In particular, the bundled libvips payload declares LGPL components; source-offer, replacement/relinking, signing, and other distribution obligations require independent legal review before publication.",
   "",
@@ -620,6 +965,7 @@ const inventory = [
     ...trackedLicenceText
   ]),
   ...componentNoticeLines,
+  ...deliveryLines,
   ""
 ].join("\n");
 
