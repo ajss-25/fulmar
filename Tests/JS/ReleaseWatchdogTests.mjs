@@ -1170,6 +1170,149 @@ supervisorFixture("the cross-session self-test monitor preserves status and drai
   }
 });
 
+function verifyRetiredPIDAccounting(treeSource) {
+  const start = treeSource.indexOf("class RetiredPIDSet {");
+  const end = treeSource.indexOf("\nasync function establishChildIdentity()", start);
+  assert.ok(start >= 0 && end > start, "missing production ownership accounting");
+  const core = treeSource.slice(start, end);
+  const setup = `
+    childIdentity = { pid: 2, started: 'root' };
+    childIdentityActive = true;
+    const roots = [
+      { pid: 1, ppid: 0, pgid: 1, started: 'supervisor', rssBytes: 1 },
+      { pid: 2, ppid: 1, pgid: 1, started: 'root', rssBytes: 1 }
+    ];
+    const descendant = (pid, pgid = 1) => ({ pid, ppid: 2, pgid, started: 'descendant', rssBytes: 1 });
+  `;
+  function scenario(body) {
+    const allocation = { bytes: 0, fail: false };
+    class MeasuredPage extends Uint8Array {
+      constructor(length) {
+        if (allocation.fail) throw new Error("injected bitmap allocation failure");
+        super(length);
+        allocation.bytes += this.byteLength;
+      }
+    }
+    runInNewContext(`${core}\n${setup}\n${body}`, {
+      assert, allocation, Uint8Array: MeasuredPage,
+      process: { pid: 1, kill: () => assert.fail("ownership model must not signal real processes") },
+      child: { pid: 2 }, childExit: undefined
+    }, { timeout: 2_000 });
+  }
+
+  scenario(`
+    const bitmap = new RetiredPIDSet();
+    const reference = new Set();
+    assert.equal(allocation.bytes, 0, 'history pages must be lazy');
+    const boundaries = [1, 7, 8, 65535, 65536, 65537, 0x7fffffff];
+    for (const pid of boundaries) {
+      assert.equal(bitmap.has(pid), false);
+      assert.equal(bitmap.add(pid), bitmap);
+      bitmap.add(pid);
+      reference.add(pid);
+      assert.equal(bitmap.has(pid), true);
+      assert.equal(bitmap.size, reference.size);
+    }
+    assert.equal(allocation.bytes, 3 * 8192, 'boundary values occupy exactly three pages');
+    for (let i = 1; i <= 512; i++) {
+      const pid = (i * 7919) % 131072 + 1;
+      bitmap.add(pid);
+      reference.add(pid);
+    }
+    for (let pid = 1; pid < 131073; pid++) {
+      assert.equal(bitmap.has(pid), reference.has(pid), 'bitmap must have no aliases or false positives');
+    }
+    assert.equal(bitmap.has(0x7ffffffe), false);
+    assert.equal(bitmap.size, reference.size);
+    assert.equal(allocation.bytes, 3 * 8192);
+    for (const pid of [0, -1, 1.5, NaN, Infinity, 0x80000000, 0x100000001,
+      Number.MAX_SAFE_INTEGER, '1', null, undefined]) {
+      assert.equal(RetiredPIDSet.isPID(pid), false);
+      assert.throws(() => bitmap.add(pid), /invalid process-table value/);
+      assert.throws(() => bitmap.has(pid), /invalid process-table value/);
+    }
+    assert.equal(RetiredPIDSet.isPID(0, true), true);
+    assert.equal(RetiredPIDSet.isPID(-1, true), false);
+    assert.equal(RetiredPIDSet.isPID(0x80000000, true), false);
+    assert.equal(bitmap.size, reference.size);
+    assert.equal(allocation.bytes, 3 * 8192, 'invalid PIDs cannot allocate or alias a page');
+  `);
+
+  scenario(`
+    for (let pid = 1000; pid < 17384; pid++) {
+      const active = updateOwnership([...roots, descendant(pid)]);
+      assert.equal(active.owned.length, 2);
+      assert.equal(known.size, 1);
+      updateOwnership(roots);
+    }
+    assert.equal(known.size, 0);
+    assert.equal(retiredPIDs.size, 16384);
+    assert.equal(allocation.bytes, 8192, 'long sequential churn occupies a single history page');
+    for (const started of ['descendant', 'replacement']) {
+      assert.throws(() => updateOwnership([...roots, { ...descendant(1000), started }]),
+        /a retired descendant PID reappeared while supervised/,
+        'the earliest retired PID must remain rejected, including same-second reuse');
+    }
+    const unrelated = { ...descendant(1000), ppid: 999, started: 'unrelated' };
+    assert.equal(updateOwnership([...roots, unrelated]).owned.length, 1,
+      'an unrelated reused PID must never become an owned signal target');
+    childExit = { code: 0 };
+    assert.equal(updateOwnership([roots[0]]).owned.length, 0);
+    assert.equal(childIdentityActive, false);
+    assert.equal(retiredPIDs.size, 16385);
+    assert.equal(retiredPIDs.has(2), true);
+    assert.throws(() => updateOwnership(roots), /a retired test-runner PID reappeared/);
+  `);
+
+  scenario(`
+    const pid = 65536;
+    updateOwnership([...roots, descendant(pid)]);
+    allocation.fail = true;
+    assert.throws(() => updateOwnership(roots), /retired PID history storage failed/);
+    assert.equal(known.has(pid), true, 'allocation failure must not discard active identity');
+    assert.equal(retiredPIDs.size, 0);
+    allocation.fail = false;
+    for (const rows of [roots, [...roots, descendant(pid)],
+      [...roots, { ...descendant(pid), started: 'replacement' }]]) {
+      assert.throws(() => updateOwnership(rows), /retired PID history storage failed/,
+        'allocator recovery must not revive an observed-but-unrecorded retirement');
+    }
+    assert.throws(() => retiredPIDs.add(pid), /retired PID history storage failed/);
+    assert.throws(() => retiredPIDs.has(pid), /retired PID history storage failed/);
+    childExit = { code: 0 };
+    assert.throws(() => updateOwnership([roots[0]]), /retired PID history storage failed/,
+      'an uncertain history must never return a successful empty-tree proof');
+  `);
+  scenario(`
+    allocation.fail = true;
+    assert.throws(() => updateOwnership([roots[0]]), /retired PID history storage failed/);
+    assert.equal(childIdentityActive, true, 'root retirement must also be transactional');
+    allocation.fail = false;
+    assert.throws(() => updateOwnership(roots), /retired PID history storage failed/,
+      'root disappearance before its exit event must never permit same-second revival');
+    childExit = { code: 0 };
+    assert.throws(() => updateOwnership([roots[0]]), /retired PID history storage failed/);
+    assert.equal(retiredPIDs.size, 0);
+  `);
+
+  scenario(`
+    assert.throws(() => updateOwnership([...roots,
+      ...Array.from({ length: 8193 }, (_, i) => descendant(1000 + i))]),
+      /tracked descendant identity limit exceeded/);
+  `);
+  scenario(`
+    assert.throws(() => updateOwnership([...roots,
+      ...Array.from({ length: 2049 }, (_, i) => descendant(1000 + i, 10 + i))]),
+      /tracked descendant group limit exceeded/);
+  `);
+
+  assert.match(treeSource, /#pages = new Array\(0x8000\);/u,
+    "retired history directory must remain bounded to the signed pid_t namespace");
+  assert.match(treeSource, /!RetiredPIDSet\.isPID\(pid\) \|\| !RetiredPIDSet\.isPID\(ppid, true\)/u);
+  assert.match(treeSource, /!RetiredPIDSet\.isPID\(pgid\)/u,
+    "process-table fields must be range checked before bitmap indexing");
+}
+
 test("watchdog source contains no blocking reap fallback", async () => {
   const [source, treeSource, fixtureSource] = await Promise.all([
     readFile(watchdogInternal, "utf8"),
@@ -1208,7 +1351,7 @@ test("watchdog source contains no blocking reap fallback", async () => {
     ["a retired descendant PID reappeared while supervised", "descendant_retired_visible"],
     ["descendant PID identity changed while supervised", "descendant_identity_changed"],
     ["tracked descendant identity limit exceeded", "known_identity_limit"],
-    ["retired descendant identity limit exceeded", "retired_identity_limit"],
+    ["retired PID history storage failed", "retired_history_unavailable"],
     ["tracked descendant group limit exceeded", "known_group_limit"]
   ];
   for (const [message, code] of fixedCodes) {
@@ -1220,6 +1363,7 @@ test("watchdog source contains no blocking reap fallback", async () => {
   }
   assert.match(treeSource, /const maximumKnownIdentities = 8_192;/u);
   assert.match(treeSource, /const maximumKnownGroups = 2_048;/u);
+  verifyRetiredPIDAccounting(treeSource);
   assert.match(treeSource, /inspectionFailures >= 3/u);
   assert.equal(treeSource.split("inspectionFailureDiagnostic(error)").length - 1, 3,
     "fixed diagnostics must cover both inspection and drain failures");

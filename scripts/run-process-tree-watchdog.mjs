@@ -200,8 +200,8 @@ async function processTable() {
           const match = processRow.exec(line);
           if (!match) throw new Error("malformed process-table row");
           const [pid, ppid, pgid, rssKiB] = match.slice(1, 5).map(Number);
-          if (![pid, ppid, pgid, rssKiB].every(Number.isSafeInteger)
-              || pid < 1 || ppid < 0 || pgid < 1 || rssKiB < 0) {
+          if (!RetiredPIDSet.isPID(pid) || !RetiredPIDSet.isPID(ppid, true)
+              || !RetiredPIDSet.isPID(pgid) || !Number.isSafeInteger(rssKiB) || rssKiB < 0) {
             throw new Error("invalid process-table value");
           }
           return { pid, ppid, pgid, rssBytes: rssKiB * 1024, started: match[5] };
@@ -217,9 +217,63 @@ async function processTable() {
   });
 }
 
+// pid_t is signed 32-bit on Darwin. Preserve every retired numeric PID for the
+// lifetime of this monitor: ps start times have only second precision, so an
+// evicted PID could be mistaken for its replacement. History is not a count of
+// concurrent processes. A fixed directory of lazy exact bitmap pages bounds
+// its storage independently of churn: 32,768 slots, at most 256 MiB of payload,
+// and only 8 KiB allocated per occupied 65,536-PID range. No page is forgotten.
+class RetiredPIDSet {
+  #pages = new Array(0x8000);
+  #size = 0;
+  #failed = false;
+
+  static isPID(value, allowZero = false) {
+    return Number.isSafeInteger(value) && value >= (allowZero ? 0 : 1) && value <= 0x7fff_ffff;
+  }
+
+  get size() { return this.#size; }
+
+  assertAvailable() {
+    if (this.#failed) throw new Error("retired PID history storage failed");
+  }
+
+  add(pid) {
+    this.assertAvailable();
+    if (!RetiredPIDSet.isPID(pid)) throw new Error("invalid process-table value");
+    const pageIndex = pid >>> 16;
+    let page = this.#pages[pageIndex];
+    if (page === undefined) {
+      try {
+        page = new Uint8Array(8_192);
+        this.#pages[pageIndex] = page;
+      } catch {
+        // We observed a retirement but cannot remember it. Never let a later
+        // snapshot revive that identity, including same-second PID reuse.
+        this.#failed = true;
+        this.assertAvailable();
+      }
+    }
+    const byteIndex = (pid & 0xffff) >>> 3;
+    const mask = 1 << (pid & 7);
+    if ((page[byteIndex] & mask) === 0) {
+      page[byteIndex] |= mask;
+      this.#size += 1;
+    }
+    return this;
+  }
+
+  has(pid) {
+    this.assertAvailable();
+    if (!RetiredPIDSet.isPID(pid)) throw new Error("invalid process-table value");
+    const page = this.#pages[pid >>> 16];
+    return page !== undefined && (page[(pid & 0xffff) >>> 3] & (1 << (pid & 7))) !== 0;
+  }
+}
+
 const known = new Map();
 const knownGroups = new Set();
-const retiredPIDs = new Set();
+const retiredPIDs = new RetiredPIDSet();
 const maximumKnownIdentities = 8_192;
 const maximumKnownGroups = 2_048;
 // Only fixed diagnostic codes cross this boundary. Never print raw ps rows,
@@ -240,7 +294,7 @@ function inspectionFailureCode(error) {
     case "a retired descendant PID reappeared while supervised": return "descendant_retired_visible";
     case "descendant PID identity changed while supervised": return "descendant_identity_changed";
     case "tracked descendant identity limit exceeded": return "known_identity_limit";
-    case "retired descendant identity limit exceeded": return "retired_identity_limit";
+    case "retired PID history storage failed": return "retired_history_unavailable";
     case "tracked descendant group limit exceeded": return "known_group_limit";
     default: return "unknown_inspection_failure";
   }
@@ -255,6 +309,7 @@ function sameIdentity(row, identity) {
   return row?.pid === identity?.pid && row.started === identity.started;
 }
 function updateOwnership(rows) {
+  retiredPIDs.assertAvailable();
   const byPID = new Map(rows.map((row) => [row.pid, row]));
   const supervisor = byPID.get(process.pid);
   if (!supervisor) throw new Error("supervisor disappeared from the process table");
@@ -262,8 +317,8 @@ function updateOwnership(rows) {
   if (supervisor.pgid !== supervisorPGID) throw new Error("supervisor process group changed");
 
   if (childExit !== undefined && childIdentityActive) {
-    childIdentityActive = false;
     retiredPIDs.add(child.pid);
+    childIdentityActive = false;
   }
   const observedRoot = byPID.get(child.pid);
   if (observedRoot && !childIdentityActive) {
@@ -274,8 +329,8 @@ function updateOwnership(rows) {
     throw new Error("test-runner PID identity changed");
   }
   if (childIdentityActive && !root) {
-    childIdentityActive = false;
     retiredPIDs.add(child.pid);
+    childIdentityActive = false;
   }
 
   const frontier = new Set();
@@ -283,8 +338,9 @@ function updateOwnership(rows) {
   for (const [pid, identity] of known) {
     if (sameIdentity(byPID.get(pid), identity)) frontier.add(pid);
     else {
-      known.delete(pid);
+      // Publish retirement before dropping the last active identity record.
       retiredPIDs.add(pid);
+      known.delete(pid);
     }
   }
   let changed = true;
@@ -302,7 +358,6 @@ function updateOwnership(rows) {
       }
       known.set(row.pid, identity);
       if (known.size > maximumKnownIdentities) throw new Error("tracked descendant identity limit exceeded");
-      if (retiredPIDs.size > maximumKnownIdentities) throw new Error("retired descendant identity limit exceeded");
       frontier.add(row.pid);
       changed = true;
     }
