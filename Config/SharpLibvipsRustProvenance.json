@@ -5797,7 +5797,7 @@
     },
     {
       "id": "crates-without-licence-text",
-      "detail": "Crates whose .crate carries no licence text member (noticeStatus no-licence-text-in-crate) are identified only by their Cargo.toml license expression; the applicable licence text and the crate's copyright statement (if any) are not retained here."
+      "detail": "Six crates (block 0.1.6, malloc_buf 0.0.6, mutants 0.0.4, objc-foundation 0.1.1, objc_id 0.1.1, selectors 0.38.0) carry no licence text member in their .crate archive (noticeStatus no-licence-text-in-crate). Config/SharpLibvipsRustNoticeMaterials.json records the version-bound upstream investigation for each: mutants and selectors have exact external notice material retained under Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/ (labelled external; never archive members), while the four Steven Sheldon crates remain unresolved because neither their archives nor their tagged upstream revisions publish any licence text or copyright statement."
     },
     {
       "id": "workspace-members",

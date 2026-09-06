@@ -110,7 +110,7 @@ only; its output is labelled `"authoritative": false` in the inventory.
 Recommended location: `build/libvips-corresponding-source/` inside the ignored
 build directory. Nothing under `build/` is tracked.
 
-### Rust crates linked through librsvg (approximated, historical build unverified)
+### Rust crates linked through librsvg (observed compilation bound; incorporation unverified)
 
 librsvg 2.62.90 is Rust. Its tarball carries `Cargo.lock` (357 package entries,
 sha256 `e91fcc90…`) but no vendored crates; the recipe edits the workspace
@@ -119,60 +119,75 @@ manifests (drops the `image` features `gif`/`webp` and the `cairo-rs` features
 `cargo cbuild --locked -p librsvg-c --library-type staticlib` in release mode
 with fat LTO, codegen-units 1, opt-level z (`meson/cargo_wrapper.py`). No
 `avif` or `pixbuf` feature is enabled because the recipe builds neither dav1d nor
-gdk-pixbuf.
+gdk-pixbuf. The workspace package built from `rsvg/Cargo.toml` inside the
+`librsvg-2.62.90` archive is `librsvg 2.63.0-beta.0`; `librsvg-c` and the Meson
+project version are `2.62.90` (a metadata fact, not a version change).
 
-`Config/SharpLibvipsRustProvenance.json` records what could be established on
-05/09/2026 without executing Cargo, distinguishing five categories that must not
-be equated:
+`Config/SharpLibvipsRustProvenance.json` distinguishes five categories that
+must not be equated, each machine-checked:
 
 | Category | Count | Status |
 | --- | --- | --- |
 | Packages listed in the retained `Cargo.lock` | 357 | exact |
 | Reachable from `librsvg-c` in the lockfile graph (target/feature-agnostic) | 338 | exact superset |
-| Resolved for `aarch64-apple-darwin` with the recipe's feature edits (simplified resolver over each crate's checksum-verified `Cargo.toml`; dev-dependencies excluded) | 161 = 159 crates.io crates + 2 workspace members (143 normal, 11 proc-macro, 5 build-only) | **approximation** |
-| Compiled in the historical build | — | **unverified** |
+| Resolved for `aarch64-apple-darwin` with the recipe's feature edits (simplified resolver over each crate's checksum-verified `Cargo.toml`; dev-dependencies excluded) | 161 = 159 crates.io crates + 2 workspace members | approximation |
+| Observed compiling in the retained historical job log (librsvg phase) | 159 = 157 crates.io crates + 2 workspace members | **observed** |
 | Incorporated into the shipped dylib (after fat LTO and `-dead_strip`) | — | **unverified** |
 
-Every one of the 159 crates is pinned by its crates.io checksum as recorded in
-the lockfile (all 159 also equal the crates.io sparse-index `cksum` observed on
-05/09/2026; none yanked), with its Cargo.toml licence expression, its role, and
-the exact top-level licence members its `.crate` archive carries (266 texts;
-six crates — `block`, `malloc_buf`, `mutants`, `objc-foundation`, `objc_id`,
-`selectors` — carry none and are identified by licence expression only).
-Every item is marked `provenanceStatus: "resolved-approximation"`; the tool
-refuses a manifest that marks the historical build "verified" while any crate
-still carries that status.
-
-Historical evidence bindings that **are** established:
+Historical evidence bindings:
 
 - The npm provenance attestation (SLSA v1, retrieved 05/09/2026) binds the
   shipped tarball — sha512 equal to the `integrity` pinned in
   `VendorRuntime/package-lock.json` — to GitHub Actions run 28432216836,
   attempt 1, of commit `4da6d14c…` at `refs/tags/v1.3.2`.
 - That run's job `build-darwin-arm64v8` (id 84249528353, `macos-15`,
-  08:52–09:17 UTC on 30/06/2026) is the build that produced the dylib.
+  08:52:28–09:17:03 UTC on 30/06/2026) is the build that produced the dylib.
+- Its complete job log was retrieved on 05/09/2026 (23:53:59 UTC) by the Codex
+  review lane with normally configured GitHub CLI authentication (GET only)
+  and retained as owner-private evidence: 944,166 bytes, 10,027 lines, raw
+  sha256 `b7b3362b…`, sealed by a SHA256SUMS manifest (`74c16427…`). The log is
+  not committed to source; the manifest binds its digest, line count and the
+  per-crate observation.
+- In the librsvg phase of that log (lines 8721–8985) 157 registry crates and
+  the two workspace packages were observed compiling; every observed registry
+  crate is one of the 159 approximated crates, and each such item now carries
+  `provenanceStatus: "compiled-per-build-log"` with its log line and timestamp.
+  `rustc_version 0.4.1` and `semver 1.0.28` were not observed; they stay
+  `resolved-approximation` and are neither removed nor asserted excluded from
+  every intermediate artefact. The separate cargo-c installation phase (356
+  compile lines) is tool bootstrap, not part of the librsvg dependency set.
+- Observed tool versions (version strings, not binary digests): rustc
+  `1.98.0-nightly (096694416 2026-06-29)` — the short revision is recorded as
+  reported and not expanded — cargo 1.98.0, cargo-c `0.10.23+cargo-0.97.1`,
+  Meson 1.11.1, Apple clang 17.0.0 (clang-1700.0.13.5), ld64 1167.5,
+  pkg-config 2.5.1. The workspace update printed "Locking 0 packages" and removed
+  `color_quant 1.1.0`, `gif 0.14.2`, `image-webp 0.2.4`, matching the documented
+  Cargo semantics relied on earlier.
 
-The missing evidence is precise: **the log of step 4 of that job**, which lists
-every `Compiling <crate> v<version>` line Cargo emitted. It exists but requires
-an authenticated GitHub session (unauthenticated API and web requests returned
-403/404), and GitHub retains public workflow logs for 90 days, so it is expected
-to expire around **28/09/2026**. Retrieving it is the one action that would
-turn "approximation" into "compiled" for this binary; it needs the owner's
-decision to use a GitHub login for that purpose. Nothing else short of a
-controlled, pinned replacement build (a separate, separately approved lane that
-would change runtime bytes) can establish the compiled set.
+What the log does **not** establish: it is an observed compile-event set, not
+the resolved feature graph and not a linkage map. No truncation or cache-hit
+markers were found, which is not proof that silent reuse was impossible, and
+nothing in it shows which crate code survived fat LTO and dead-stripping into
+`libvips-cpp.8.18.3.dylib`. `incorporatedIntoShippedBinary` therefore stays
+`unverified`, and the tool refuses a manifest that promotes it.
 
 `scripts/prepare-libvips-source-materials.mjs acquire Config/SharpLibvipsRustProvenance.json
-build/libvips-corresponding-source/sharp-libvips-1.3.2-rust-crate-materials`
-acquires the 159 `.crate` files (≈12 MB, HTTPS to `static.crates.io` only, no
-redirects), verifies each against its checksum, reads only the manifest-named
-licence members from each archive through a bounded tar reader that rejects
-links, traversal, foreign roots, non-plain entries, oversized output and excess
-entries, verifies each member's size and SHA-256, and renders a deterministic
-`RUST_CRATE_NOTICES.md` (table of crates, the crates without licence text, and
-every licence text) next to `INVENTORY.json`/`SHA256SUMS`. The inventory carries
-`historicalBuildProvenance` verbatim from the manifest so a partial set can
-never be mistaken for complete corresponding source.
+<parent>/sharp-libvips-1.3.2-rust-crate-materials` acquires the 159 `.crate`
+files (≈12 MB, HTTPS to `static.crates.io` only, no redirects), verifies each
+against its checksum, reads only the manifest-named licence members through a
+bounded tar reader, and renders a deterministic `RUST_CRATE_NOTICES.md` (table
+of crates with their provenance status, the crates without licence text, and
+every licence text) next to `INVENTORY.json`/`SHA256SUMS`. The reader validates
+the complete ustar framing before anything is published: whole 512-byte
+blocks only, header checksum and `ustar` magic, complete payload and zero
+padding, the two zero end-of-archive blocks, and nothing but zero padding after
+them; links, traversal, foreign roots, non-plain entries, oversized output and
+excess entries fail closed. (A review on 06/09/2026 found that the earlier
+reader accepted a gzip whose only decompressed byte was `0x78` when no notice
+members were declared; that defect is fixed and pinned by regression tests
+bound to the sealed diagnostic fixtures.) `verify` re-validates the archives
+before trusting any inventory metadata. The inventory carries
+`historicalBuildProvenance` verbatim from the manifest.
 
 Licence expressions present: MIT OR Apache-2.0 (70), MIT (36), Unicode-3.0
 (18), Apache-2.0 OR MIT (6), MPL-2.0 (5), Apache-2.0 (4), MIT/Apache-2.0 (4),
@@ -183,14 +198,39 @@ Unicode-3.0 (1). MPL-2.0 crates carry a source-availability obligation for
 their own files (the pinned `.crate` archives are that source) and Unicode-3.0
 crates carry notice requirements; both are owner/legal items.
 
+#### Crates whose archive carries no licence text
+
+Six crates — all observed compiling — carry no licence member in their `.crate`.
+`Config/SharpLibvipsRustNoticeMaterials.json` records, for each, the exact
+upstream revision the archive was packaged from, the evidence tying the archive
+to it, and either exact external material under
+`Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/` (labelled external —
+never an archive member) or one precise unresolved record:
+
+| Crate | Connection to the packaged revision | Material |
+| --- | --- | --- |
+| `mutants 0.0.4` (MIT) | `.cargo_vcs_info.json` → `sourcefrog/cargo-mutants` @ `14011d08…`, `mutants_attrs`; `src/lib.rs` byte-identical | **established, external:** repository `LICENSE` at that commit ("Copyright (c) 2021 Martin Pool") |
+| `selectors 0.38.0` (MPL-2.0) | `.cargo_vcs_info.json` → `servo/stylo` @ `572ecba2…`, `selectors`; `lib.rs` and `matching.rs` byte-identical | **established:** archive-contained per-file MPL-2.0 header (every `.rs` member; no copyright line exists upstream) plus **external** MPL-2.0 text from SPDX 3.28.0 (commit `c4a7237e…`); the stylo README at that commit states "Stylo is licensed under MPL 2.0" |
+| `block 0.1.6` (MIT) | tag `0.1.6` = `SSheldon/rust-block` @ `47178790…`; README byte-identical | **unresolved:** no licence text, copyright line or licence statement in the archive or the tagged tree; only `license = "MIT"` and `authors = ["Steven Sheldon"]` |
+| `malloc_buf 0.0.6` (MIT) | tag `0.0.6` = `SSheldon/malloc_buf` @ `a7811e5f…` | **unresolved** (as above) |
+| `objc-foundation 0.1.1` (MIT) | tag `0.1.1` = `SSheldon/rust-objc-foundation` @ `0c157a59…` | **unresolved** (as above) |
+| `objc_id 0.1.1` (MIT) | tag `0.1.1` = `SSheldon/rust-objc-id` @ `6527cdf2…`; README byte-identical | **unresolved** (as above) |
+
+For the four unresolved crates a generic MIT text would need a copyright line
+the upstream never published for that version, so none is asserted; the
+record names the checks performed and the single fallback used (source-file
+headers at the tagged revision, none present). Their disposition is an
+owner/legal decision.
+
 ### Explicitly unretained or unverifiable
 
 Recorded in the manifests' `unretained` arrays; summarised:
 
-1. **Historical compile log** (see above) — the compiled Rust crate set is
-   unverified; the 159-crate set is a resolver approximation that may
-   over-include crates behind cfg predicates it could not evaluate and may
-   under-include crates enabled by feature-unification paths it does not model.
+1. **Compile-log coverage** — the retained log gives observed compile events
+   (157 registry crates + 2 workspace packages); it is not the resolved feature
+   graph, and the absence of truncation/cache markers is not proof that silent
+   reuse was impossible. The resolver approximation was cross-checked against
+   it (every observed crate is in the set; two set members were not observed).
 2. **Rust toolchain.** rustup `nightly` and `cargo install cargo-c --locked`
    at build time; compiler revision and cargo-c version unpinned.
 3. **Apple toolchain and system frameworks** of the GitHub Actions macOS runner
@@ -210,8 +250,9 @@ Recorded in the manifests' `unretained` arrays; summarised:
    code survives in the dylib are a subset of the compiled set; no binary
    inspection was performed, and strings alone would not prove inclusion.
 
-Because of items 1, 8 and 9, `Config/ThirdPartyBinaryProvenance.json` keeps
-`corresponding-source` and `relinking-and-installation-information` **open**.
+Because of items 8 and 9 (and the four unresolved crate notices),
+`Config/ThirdPartyBinaryProvenance.json` keeps `corresponding-source` and
+`relinking-and-installation-information` **open**.
 
 ## Proposed packaging integration (for Codex; not applied)
 
@@ -224,7 +265,8 @@ on its own:
   of upstream archives plus recipe, patches, `INVENTORY.json`, `SHA256SUMS`)
   together with `sharp-libvips-1.3.2-rust-crate-materials/` (≈12 MB of
   `.crate` files plus `RUST_CRATE_NOTICES.md`, `INVENTORY.json`, `SHA256SUMS`,
-  labelled as an approximation until the compile log is retrieved)
+  with the observed-compilation status carried in the inventory) and the
+  external notice materials under `Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/`
   as a distinct, versioned release asset or a stable download location, and
   have the beta's installation guide and the generated notices name that
   location together with the `INVENTORY.json` SHA-256. This keeps the app
@@ -236,9 +278,10 @@ on its own:
   host the archives as in Option A. Delta: one additional file in the notices
   resource, plus Option A's hosting commitment.
 
-In both options the Rust crate set remains an approximation until the
-historical compile log is retrieved (before ~28/09/2026) or the owner chooses a
-controlled, pinned replacement build; neither is performed here.
+In both options the Rust crate set is the observed compile set bound above;
+which crate code the shipped dylib actually incorporates remains unverified
+unless the owner chooses a controlled, pinned replacement build in a
+separately approved lane. Neither is performed here.
 
 ## Questions for owner/legal review
 
@@ -255,11 +298,11 @@ controlled, pinned replacement build; neither is performed here.
    installation guide / about text, and where?
 4. Is the upstream README's cairo "MPL 2.0" entry to be reported to
    `lovell/sharp-libvips` (the README invites error reports)?
-5. May a GitHub login be used to retrieve the retained `build-darwin-arm64v8`
-   job log of run 28432216836 (expires ~28/09/2026)? It is the only evidence
-   that can turn the 159-crate approximation into the compiled set. If not, is
-   the approximation acceptable for a beta, or is a controlled pinned
+5. Is observed compilation (157 + 2 crates from the retained log) plus the
+   two approximation-only crates an acceptable notice basis for a beta, given
+   that incorporation into the dylib is unverified, or is a controlled pinned
    replacement build (separately approved; changes runtime bytes) preferred?
+   How should the four unresolved Steven Sheldon crate notices be treated?
 6. How are the MPL-2.0 crate sources and Unicode-3.0 notices to be made
    available/presented, and where do the FTL and IJG acknowledgements in
    `docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md` go (Codex integration)?

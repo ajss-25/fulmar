@@ -55,6 +55,14 @@ is an owner decision (see `docs/LIBVIPS_CORRESPONDING_SOURCE.md`).
   respectively. Their combined licence files are tracked and embedded.
 - Rust crates statically linked through librsvg: see
   `Config/SharpLibvipsRustProvenance.json` and the generated
-  `RUST_CRATE_NOTICES.md`. Those are an explicitly partial approximation of the
-  historical build; they include MPL-2.0 and Unicode-3.0 crates whose terms
-  carry their own notice and source-availability requirements.
+  `RUST_CRATE_NOTICES.md`. 157 of the 159 crates were observed compiling in the
+  retained historical build log (two remain approximation-only); which crate
+  code the shipped dylib incorporates is unverified. They include MPL-2.0 and
+  Unicode-3.0 crates whose terms carry their own notice and source-availability
+  requirements. Six crates carry no licence text in their archive:
+  `Config/SharpLibvipsRustNoticeMaterials.json` holds exact external material
+  for `mutants 0.0.4` (MIT, "Copyright (c) 2021 Martin Pool") and
+  `selectors 0.38.0` (MPL-2.0, per-file headers plus the SPDX text), and
+  precise unresolved records for `block 0.1.6`, `malloc_buf 0.0.6`,
+  `objc-foundation 0.1.1` and `objc_id 0.1.1`, whose upstream published no
+  licence text or copyright line for those versions.
