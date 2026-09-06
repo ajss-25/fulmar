@@ -42,6 +42,17 @@ cleanup() {
      && "$TEMP_ROOT" == /private/tmp/fulmar-credential-broker-live.* \
      && "$(/usr/bin/stat -f '%d:%i:%u:%Lp' "$TEMP_ROOT" 2>/dev/null)" == "$ROOT_IDENTITY" \
      && "$ROOT_IDENTITY" == *":$EXPECTED_UID:700" ]]; then
+    if (( prior_status != 0 )); then
+      # Retain fixed outcomes in the gate log before deleting private files.
+      # Do not disclose arbitrary client output, process arguments or paths.
+      print -u2 "Credential broker canary outcome: client_exit=${STATUS:-not-reaped}; monitor_exit=${MONITOR_STATUS:-not-reaped}; client_contract=${CLIENT_CONTRACT:-not-evaluated}."
+      local diagnostic="$TEMP_ROOT/monitor.stderr"
+      if [[ -f "$diagnostic" && ! -L "$diagnostic" \
+         && "$(/usr/bin/stat -f '%u:%Lp:%l' "$diagnostic")" == "$EXPECTED_UID:600:1" \
+         && "$(/usr/bin/stat -f '%z' "$diagnostic")" -le 512 ]]; then
+        LC_ALL=C /usr/bin/sed -nE '/^Credential XPC exact-process evidence failed \((input-validation|preexisting-service-check|waiting-for-service|recording-service-identity|waiting-for-client|draining-service)\)\.$/p' "$diagnostic" >&2
+      fi
+    fi
     /bin/rm -rf -- "$TEMP_ROOT"
   else
     print -u2 "Credential broker live acceptance refused unsafe temporary cleanup."
@@ -87,6 +98,11 @@ wait "$PID"
 STATUS=$?
 set -e
 PID=0
+CLIENT_CONTRACT=failed
+if [[ "$STATUS" == 0 && ! -s "$TEMP_ROOT/stderr" \
+   && "$(/bin/cat "$TEMP_ROOT/stdout")" == "$EXPECTED" ]]; then
+  CLIENT_CONTRACT=satisfied
+fi
 ( set -o noclobber; print -r -- done > "$DONE_FILE" ) || exit 1
 
 MONITOR_STARTED=$SECONDS

@@ -12,17 +12,27 @@ private enum BrokerClientError: Error {
     case service(CredentialBrokerXPCStatus)
 }
 
+private func brokerHasCanonicalFileURL(_ url: URL) -> Bool {
+    // Do not normalize away /private: existing canonical temporary candidates
+    // are rewritten to /tmp by Foundation. Only realpath equality admits the
+    // caller's exact spelling, with real symlinks and aliases still rejected.
+    guard url.isFileURL,
+          url.path.hasPrefix("/"),
+          !url.path.contains("\0"),
+          let resolved = url.path.withCString({ Darwin.realpath($0, nil) }) else {
+        return false
+    }
+    defer { free(resolved) }
+    return String(cString: resolved) == url.path
+}
+
 private struct BrokerCodeIdentity {
     let identifier: String
     let designatedRequirement: Data
     let exactRequirement: String
 
     static func inspect(_ url: URL) throws -> BrokerCodeIdentity {
-        guard url.isFileURL,
-              url.path.hasPrefix("/"),
-              !url.path.contains("\0"),
-              url.path == url.standardizedFileURL.path,
-              url.path == url.resolvingSymlinksInPath().standardizedFileURL.path else {
+        guard brokerHasCanonicalFileURL(url) else {
             throw BrokerClientError.invalidBundle
         }
         var code: SecStaticCode?
@@ -207,13 +217,11 @@ func dispatchCredentialBrokerCommandIfNeeded(
 
 private func brokerIsPackagedHelper() -> Bool {
     let executable = URL(fileURLWithPath: CommandLine.arguments[0], isDirectory: false)
-        .standardizedFileURL
     let macOSDirectory = executable.deletingLastPathComponent()
     let contents = macOSDirectory.deletingLastPathComponent()
     let application = contents.deletingLastPathComponent()
-    return executable.path.hasPrefix("/")
+    return brokerHasCanonicalFileURL(executable)
         && executable.lastPathComponent == "LocalHarnessCredentialHelper"
-        && executable.path == executable.resolvingSymlinksInPath().standardizedFileURL.path
         && macOSDirectory.lastPathComponent == "MacOS"
         && contents.lastPathComponent == "Contents"
         && application.pathExtension == "app"
@@ -231,15 +239,13 @@ private func invokeBroker(
         throw BrokerClientError.invalidCommand
     }
     let executable = URL(fileURLWithPath: CommandLine.arguments[0], isDirectory: false)
-        .standardizedFileURL
     let macOSDirectory = executable.deletingLastPathComponent()
     let contents = macOSDirectory.deletingLastPathComponent()
     let application = contents.deletingLastPathComponent()
     let serviceBundle = contents.appendingPathComponent("XPCServices", isDirectory: true)
         .appendingPathComponent(CredentialBrokerXPCConstants.serviceBundleName, isDirectory: true)
-    guard executable.path.hasPrefix("/"),
+    guard brokerHasCanonicalFileURL(executable),
           executable.lastPathComponent == "LocalHarnessCredentialHelper",
-          executable.path == executable.resolvingSymlinksInPath().standardizedFileURL.path,
           macOSDirectory.lastPathComponent == "MacOS",
           contents.lastPathComponent == "Contents",
           application.pathExtension == "app",

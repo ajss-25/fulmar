@@ -4,9 +4,75 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import { rootWatchdogChildOptions } from "./RootWatchdogChildProcess.mjs";
 
 const root = process.cwd();
+
+function verifyMonitorCompletionHandling(source) {
+  const start = source.indexOf("\nvalidateInputs();");
+  assert.ok(start > 0, "the production monitor lifecycle must be present");
+  const lifecycle = source.slice(start);
+  const failStart = source.indexOf("\nfunction fail() {");
+  const failEnd = source.indexOf("\nfunction bounded(", failStart);
+  assert.ok(failStart > 0 && failEnd > failStart);
+  for (const phase of ["input-validation", "preexisting-service-check", "waiting-for-service",
+    "recording-service-identity", "waiting-for-client", "draining-service"]) {
+    let diagnostic = "";
+    const failure = new Error("fixture exit");
+    assert.throws(() => runInNewContext(`${source.slice(failStart, failEnd)}\nfail();`, {
+      phase,
+      process: {
+        stderr: { write(value) { diagnostic += value; } },
+        exit(code) { assert.equal(code, 1); throw failure; }
+      }
+    }, { timeout: 1_000 }), (error) => error === failure);
+    assert.equal(diagnostic, `Credential XPC exact-process evidence failed (${phase}).\n`);
+  }
+  for (const scenario of ["client-before-service", "normal", "service-between-snapshot-and-done",
+    "ambiguous", "launch-timeout", "completion-timeout"]) {
+    let now = 0;
+    let scans = 0;
+    let drained = false;
+    let evidenced = false;
+    let output = "";
+    const identity = { pid: 1234, started: "fixture" };
+    const failure = new Error("fixture monitor failure");
+    const context = {
+      Date: { now: () => now },
+      validateInputs() {}, writeReady() {},
+      exactProcesses() {
+        scans += 1;
+        if (scans === 1 || drained) return [];
+        if (scenario === "service-between-snapshot-and-done" && scans === 2) return [];
+        if (scenario === "client-before-service" || scenario === "launch-timeout") return [];
+        return scenario === "ambiguous" ? [identity, identity] : [identity];
+      },
+      validateDone: () => !["launch-timeout", "completion-timeout"].includes(scenario),
+      writeEvidence(value) { assert.equal(value, identity); evidenced = true; },
+      drainExactProcesses() { assert.ok(evidenced); drained = true; },
+      fail() { throw failure; },
+      sleep(milliseconds) { now += milliseconds; },
+      process: { stdout: { write(value) { output += value; } } }
+    };
+    if (scenario === "normal" || scenario === "service-between-snapshot-and-done") {
+      runInNewContext(lifecycle, context, { timeout: 1_000 });
+      assert.ok(evidenced && drained);
+      assert.equal(output, "FULMAR_CREDENTIAL_XPC_PROCESS_DRAIN_OK\n");
+    } else {
+      assert.throws(() => runInNewContext(lifecycle, context, { timeout: 1_000 }),
+        (error) => error === failure, scenario);
+      assert.equal(output, "", scenario);
+      assert.equal(drained, false, scenario);
+      if (scenario === "client-before-service") {
+        assert.equal(now, 0, "an exited client with no observed service must not masquerade as a drain timeout");
+        assert.equal(evidenced, false);
+      }
+      if (scenario === "launch-timeout") assert.equal(now, 10_000);
+      if (scenario === "completion-timeout") assert.equal(now, 20_000);
+    }
+  }
+}
 
 async function verifyCandidateAdmission(verifier) {
   const inspection = 'plutil -lint "$SERVICE_INFO" >/dev/null\n';
@@ -196,6 +262,7 @@ test("release assembly preserves helper ACL identity while pinning the exact ser
   assert.match(processMonitor, /reviewedCDHash/u);
   assert.match(processMonitor, /process\.kill\(identity\.pid, signal\)/u);
   assert.doesNotMatch(processMonitor, /pkill|killall|pgrep/u);
+  verifyMonitorCompletionHandling(processMonitor);
   assert.match(launcher, /arguments\.count == 2/u);
   assert.match(launcher, /genericFailure/u);
   assert.match(launcher, /CredentialMigrationXPCAcceptanceCoordinator\.run/u);

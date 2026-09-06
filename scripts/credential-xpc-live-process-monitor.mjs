@@ -16,9 +16,11 @@ const startedPattern = "[A-Z][a-z]{2}\\s+[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d
 const rowPattern = new RegExp(`^\\s*(\\d+)\\s+(${startedPattern})\\s+(.+)$`, "u");
 let reviewedExecutableIdentity;
 let reviewedCDHash;
+let phase = "input-validation";
 
 function fail() {
-  process.stderr.write("Credential XPC exact-process evidence failed.\n");
+  // Only a fixed lifecycle label is exposed; never process rows or credentials.
+  process.stderr.write(`Credential XPC exact-process evidence failed (${phase}).\n`);
   process.exit(1);
 }
 
@@ -211,22 +213,37 @@ function drainExactProcesses() {
 }
 
 validateInputs();
+phase = "preexisting-service-check";
 if (exactProcesses().length !== 0) fail();
 writeReady();
+phase = "waiting-for-service";
 const launchDeadline = Date.now() + 10_000;
 let captured;
 while (Date.now() < launchDeadline) {
   const current = exactProcesses();
   if (current.length === 1) { captured = current[0]; break; }
   if (current.length > 1) fail();
+  // Re-sample after completion: launch and reply can occur between the empty
+  // snapshot above and the done marker. That service still needs exact drain.
+  // If no service is observed, report failure here rather than obscure an
+  // early client failure behind the outer verifier's 8-second drain bound.
+  if (validateDone()) {
+    const completed = exactProcesses();
+    if (completed.length !== 1) fail();
+    captured = completed[0];
+    break;
+  }
   sleep(10);
 }
 if (!captured) fail();
+phase = "recording-service-identity";
 writeEvidence(captured);
 
+phase = "waiting-for-client";
 const completionDeadline = Date.now() + 20_000;
 while (Date.now() < completionDeadline && !validateDone()) sleep(10);
 if (!validateDone()) fail();
+phase = "draining-service";
 drainExactProcesses();
 if (exactProcesses().length !== 0) fail();
 process.stdout.write("FULMAR_CREDENTIAL_XPC_PROCESS_DRAIN_OK\n");

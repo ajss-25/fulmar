@@ -21,11 +21,7 @@ private struct CredentialMigrationXPCCodeIdentity {
     let exactRequirement: String
 
     static func inspect(_ url: URL, nested: Bool) throws -> CredentialMigrationXPCCodeIdentity {
-        guard url.isFileURL,
-              url.path.hasPrefix("/"),
-              !url.path.contains("\0"),
-              url.path == url.standardizedFileURL.path,
-              url.path == url.resolvingSymlinksInPath().standardizedFileURL.path else {
+        guard CredentialMigrationXPCClient.isCanonicalFileURL(url) else {
             throw CredentialMigrationXPCClientError.serviceIdentityMismatch
         }
         var code: SecStaticCode?
@@ -100,6 +96,20 @@ private final class CredentialMigrationXPCReplyGate: @unchecked Sendable {
 }
 
 enum CredentialMigrationXPCClient {
+    /// Foundation rewrites an existing `/private/tmp` URL to `/tmp`, although
+    /// realpath reports the former as canonical. Retain the supplied spelling
+    /// and reject actual aliases, symlinks and dot components with realpath.
+    static func isCanonicalFileURL(_ url: URL) -> Bool {
+        guard url.isFileURL,
+              url.path.hasPrefix("/"),
+              !url.path.contains("\0"),
+              let resolved = url.path.withCString({ Darwin.realpath($0, nil) }) else {
+            return false
+        }
+        defer { free(resolved) }
+        return String(cString: resolved) == url.path
+    }
+
     static func run(
         serviceBundleURL: URL,
         helperURL: URL,
@@ -294,14 +304,14 @@ enum CredentialMigrationXPCClient {
         return response
     }
 
-    private struct Capabilities {
+    struct Capabilities {
         let source: FileHandle
         let parent: FileHandle
         let lease: FileHandle
         let request: CredentialMigrationXPCRequest
     }
 
-    private static func makeCapabilities(
+    static func makeCapabilities(
         sourceURL: URL,
         leaseDescriptor: CredentialMigrationInheritedDescriptor,
         deadline: TimeInterval,
@@ -321,9 +331,8 @@ enum CredentialMigrationXPCClient {
         guard sourceURL.isFileURL,
               sourceURL.lastPathComponent == expectedSourceName,
               parentMatchesOperation,
-              sourceURL.path == sourceURL.standardizedFileURL.path,
-              parentURL.path == parentURL.standardizedFileURL.path,
-              parentURL.path == parentURL.resolvingSymlinksInPath().standardizedFileURL.path else {
+              isCanonicalFileURL(sourceURL),
+              isCanonicalFileURL(parentURL) else {
             throw CredentialMigrationXPCClientError.invalidCapabilities
         }
         let sourceDescriptor = Darwin.open(
@@ -462,9 +471,8 @@ enum CredentialMigrationXPCClient {
         )
         guard sourceURL.isFileURL,
               sourceURL.lastPathComponent == expectedSourceName,
-              sourceURL.path == sourceURL.standardizedFileURL.path,
-              parentURL.path == parentURL.standardizedFileURL.path,
-              parentURL.path == parentURL.resolvingSymlinksInPath().standardizedFileURL.path else {
+              isCanonicalFileURL(sourceURL),
+              isCanonicalFileURL(parentURL) else {
             return false
         }
         let source = Darwin.open(sourceURL.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
