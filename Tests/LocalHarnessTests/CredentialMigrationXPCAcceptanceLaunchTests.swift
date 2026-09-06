@@ -108,7 +108,39 @@ struct CredentialMigrationXPCAcceptanceLaunchTests {
             executable.path,
             CredentialMigrationXPCAcceptanceCoordinator.launchArgument,
         ]
-        for shouldFail in [false, true] {
+        let failures: [(any Error, String)] = [
+            (CredentialMigrationXPCClientError.serviceMissing, "client-service-missing"),
+            (CredentialMigrationXPCClientError.serviceIdentityMismatch, "client-service-identity-mismatch"),
+            (CredentialMigrationXPCClientError.invalidCapabilities, "client-invalid-capabilities"),
+            (CredentialMigrationXPCClientError.unavailable, "client-unavailable"),
+            (CredentialMigrationXPCClientError.interrupted, "client-interrupted"),
+            (CredentialMigrationXPCClientError.timedOut, "client-timed-out"),
+            (CredentialMigrationXPCClientError.sourceChanged, "client-source-changed"),
+            (CredentialMigrationXPCClientError.invalidResponse, "client-invalid-response"),
+            (CredentialMigrationXPCClientError.service(.success), "service-success"),
+            (CredentialMigrationXPCClientError.service(.busy), "service-busy"),
+            (CredentialMigrationXPCClientError.service(.invalidRequest), "service-invalidRequest"),
+            (CredentialMigrationXPCClientError.service(.identityMismatch), "service-identityMismatch"),
+            (CredentialMigrationXPCClientError.service(.sourceChanged), "service-sourceChanged"),
+            (CredentialMigrationXPCClientError.service(.invalidYAML), "service-invalidYAML"),
+            (CredentialMigrationXPCClientError.service(.keychainFailure), "service-keychainFailure"),
+            (CredentialMigrationXPCClientError.service(.timedOut), "service-timedOut"),
+            (CredentialMigrationXPCClientError.service(.interrupted), "service-interrupted"),
+            (CredentialMigrationXPCClientError.service(.recoveryRequired), "service-recoveryRequired"),
+            (CredentialMigrationXPCClientError.service(.internalFailure), "service-internalFailure"),
+            (CredentialMigrationXPCAcceptanceError.invalidConfiguration, "canary-invalid-configuration"),
+            (CredentialMigrationXPCAcceptanceError.unsafeFixture, "canary-unsafe-fixture"),
+            (CredentialMigrationXPCAcceptanceError.invalidResponse, "canary-invalid-response"),
+            (CredentialMigrationXPCAcceptanceError.cleanupFailed, "canary-cleanup-failed"),
+            (NSError(
+                domain: "private-provider-reference",
+                code: 78,
+                userInfo: [NSLocalizedDescriptionKey: "/private/secret\nFORGED_SUCCESS\u{202e}"]
+            ), ""),
+        ]
+        let cases: [((any Error)?, String)] = [(nil, "")]
+            + failures.map { (Optional($0.0), $0.1) }
+        for (failure, category) in cases {
             let output = Pipe()
             let error = Pipe()
             let status = CredentialMigrationXPCAcceptanceLaunch.runIfRequested(
@@ -117,18 +149,21 @@ struct CredentialMigrationXPCAcceptanceLaunchTests {
                 standardOutput: output.fileHandleForWriting,
                 standardError: error.fileHandleForWriting,
                 invocation: { _, _ in
-                    if shouldFail { throw CredentialMigrationXPCAcceptanceError.invalidResponse }
+                    if let failure { throw failure }
                 }
             )
             try output.fileHandleForWriting.close()
             try error.fileHandleForWriting.close()
             let outputData = output.fileHandleForReading.readDataToEndOfFile()
             let errorData = error.fileHandleForReading.readDataToEndOfFile()
-            if shouldFail {
+            if failure != nil {
                 #expect(status == EX_CONFIG)
                 #expect(outputData.isEmpty)
-                #expect(String(data: errorData, encoding: .utf8)
-                    == CredentialMigrationXPCAcceptanceLaunch.genericFailure)
+                let expected = CredentialMigrationXPCAcceptanceLaunch.genericFailure
+                    + (category.isEmpty ? "" : "FULMAR_CREDENTIAL_XPC_FAILURE=\(category)\n")
+                #expect(String(data: errorData, encoding: .utf8) == expected)
+                #expect(!String(decoding: errorData, as: UTF8.self).contains("private"))
+                #expect(!String(decoding: errorData, as: UTF8.self).contains("FORGED_SUCCESS"))
             } else {
                 #expect(status == EX_OK)
                 #expect(String(data: outputData, encoding: .utf8)
