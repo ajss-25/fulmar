@@ -776,3 +776,291 @@ test("rust crate verification fails when the rendered notices or a crate archive
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// External notice material (--notice-materials): the version-bound manifest
+// for crates whose archive carries no licence text is verified before its
+// exact text is rendered, kept explicitly distinct from archive-contained
+// members, recorded in the inventory, and a destination rendered one way is
+// refused by a verification run the other way. Fixture-only; no network.
+
+const MPL_HEADER = "/* This Source Code Form is subject to the terms of the Mozilla Public\n * License, v. 2.0. If a copy of the MPL was not distributed with this\n * file, You can obtain one at https://mozilla.org/MPL/2.0/. */";
+const BETA_COMMIT = "2".repeat(40);
+const SPDX_COMMIT = "4".repeat(40);
+
+async function noticeMaterialsFixture(status = "established") {
+  const betaLib = Buffer.from(`${MPL_HEADER}\n\npub fn beta() {}\n`);
+  const files = await fixture({
+    betaEntries: [
+      ["beta-0.9.0/Cargo.toml", Buffer.from("[package]\nname = \"beta\"\nversion = \"0.9.0\"\nlicense = \"MPL-2.0\"\n")],
+      ["beta-0.9.0/src/lib.rs", betaLib]
+    ]
+  });
+  const beta = await readFile(join(files.upstream, "static.crates.io", "crates", "beta", "beta-0.9.0.crate"));
+  files.manifest.items[1].size = beta.byteLength;
+  files.manifest.items[1].sha256 = digest(beta);
+  await writeManifest(files);
+  await mkdir(join(files.root, "Config"), { mode: 0o700 });
+  const rustDirectory = join(files.root, "Resources", "ThirdPartyLicenses", "fixture-binary-1.0.0", "rust");
+  await mkdir(rustDirectory, { recursive: true, mode: 0o700 });
+  const mpl = Buffer.from("Mozilla Public License Version 2.0 (fixture text)\n\n1. Definitions\n\nThis fixture stands in for the SPDX licence text; permission terms follow.\n");
+  const mplPath = "Resources/ThirdPartyLicenses/fixture-binary-1.0.0/rust/beta-0.9.0-external-spdx-MPL-2.0.txt";
+  await writeFile(join(files.root, ...mplPath.split("/")), mpl);
+  const connection = {
+    kind: "cargo-vcs-info", repository: "https://github.com/fixture/beta", revision: BETA_COMMIT, pathInVcs: "beta",
+    revisionEvidence: `the crate archive member beta-0.9.0/.cargo_vcs_info.json (sha256 ${"5".repeat(64)}) records git sha1 ${BETA_COMMIT} and path_in_vcs beta; beta/Cargo.toml at that commit declares version = "0.9.0"; the crate member src/lib.rs is byte-identical to beta/src/lib.rs at that commit`
+  };
+  const record = status === "established"
+    ? {
+      crateName: "beta", crateVersion: "0.9.0", crateSHA256: digest(beta), licenseExpression: "MPL-2.0", status: "established", connection,
+      archiveNotice: { member: "beta-0.9.0/src/lib.rs", memberSHA256: digest(betaLib), text: MPL_HEADER, note: "Per-file MPL-2.0 notice carried by the crate archive member (archive-contained); no LICENSE file exists upstream." },
+      materials: [{
+        kind: "external-spdx-licence-text", sourcePath: mplPath,
+        describes: "MPL-2.0 text as published by SPDX, the licence the crate's per-file notices designate (external to the archive)",
+        origin: `https://github.com/spdx/license-list-data/blob/${SPDX_COMMIT}/text/MPL-2.0.txt`,
+        upstreamSHA256: digest(mpl.subarray(0, mpl.byteLength - 1)), upstreamSize: mpl.byteLength - 1, normalization: "append-terminal-lf-v1",
+        sha256: digest(mpl), size: mpl.byteLength, retrievedOn: "2026-09-06"
+      }]
+    }
+    : {
+      crateName: "beta", crateVersion: "0.9.0", crateSHA256: digest(beta), licenseExpression: "MPL-2.0", status: "unresolved",
+      connection: { kind: "version-tag", repository: "https://github.com/fixture/beta", revision: BETA_COMMIT, revisionEvidence: `lightweight tag 0.9.0 resolved with git ls-remote on 2026-09-06; Cargo.toml at that commit carries version = "0.9.0" and license = "MPL-2.0"` },
+      materials: [],
+      unresolved: {
+        missingEvidence: "An upstream-published licence text and copyright statement for this exact version. Neither the crate archive nor the tagged upstream revision carries a licence file; none is asserted.",
+        checksPerformed: [
+          { check: "crate archive top-level members", result: "Cargo.toml only; no licence member" },
+          { check: "upstream repository tag for this exact version", result: `tag 0.9.0 = commit ${BETA_COMMIT}` },
+          { check: "repository tree at that commit", result: "no LICENSE file at any path" },
+          { check: "source file header (fallback)", result: "src/lib.rs carries a per-file notice but no copyright line" }
+        ],
+        fallbackUsed: "source file headers at the tagged revision; research stopped per the bounded scope"
+      }
+    };
+  if (status !== "established") await rm(join(files.root, ...mplPath.split("/")));
+  const noticeMaterials = {
+    schemaVersion: 1,
+    purpose: "Fixture version-bound notice material for crates whose archives carry no licence text. External material is labelled as such and was never a member of the original archive. This is material identification, not legal clearance.",
+    crateManifest: "manifest.json",
+    researchedOn: "2026-09-06",
+    summary: status === "established" ? { established: ["beta 0.9.0"], unresolved: [] } : { established: [], unresolved: ["beta 0.9.0"] },
+    records: [record]
+  };
+  const noticeMaterialsPath = join(files.root, "Config", "notice-materials.json");
+  const saveNoticeMaterials = () => writeFile(noticeMaterialsPath, `${JSON.stringify(noticeMaterials, null, 2)}\n`);
+  await saveNoticeMaterials();
+  return { ...files, beta, betaLib, mpl, mplPath, noticeMaterials, noticeMaterialsPath, saveNoticeMaterials };
+}
+
+function acquireWithNotices(files, destination = files.destination) {
+  return run(["acquire", files.manifestPath, destination, "--transport", `local-fixture:${files.upstream}`, "--notice-materials", files.noticeMaterialsPath]);
+}
+
+test("external notice material is verified, rendered distinct from archive members, recorded in the inventory, and never relabelled", async () => {
+  const files = await noticeMaterialsFixture();
+  try {
+    const acquired = acquireWithNotices(files);
+    assert.equal(acquired.status, 0, acquired.stderr);
+    assert.match(acquired.stderr, /external notice material bound from Config\/notice-materials\.json \(sha256:[a-f0-9]{64}; established 1, unresolved 0\)/u);
+    const notices = await readFile(join(files.destination, "RUST_CRATE_NOTICES.md"), "utf8");
+    assert.match(notices, /\| `beta` \| `0\.9\.0` \| proc-macro \| MPL-2\.0 \| resolved-approximation \| none in crate; external material bound \(see below\) \|/u);
+    assert.match(notices, /## Crates whose archive carries no licence text\n\nThese 1 crates are identified by their Cargo\.toml licence expression/u);
+    assert.match(notices, /### `beta` 0\.9\.0 — established \(archive-contained notice plus external licence text\)/u);
+    assert.match(notices, /Packaged from: `https:\/\/github\.com\/fixture\/beta` @ `2{40}` \(cargo-vcs-info, path `beta`\)\./u);
+    assert.match(notices, /Archive-contained notice: member `beta-0\.9\.0\/src\/lib\.rs` \(`sha256:[a-f0-9]{64}`, verified in the \.crate archive\) begins with:\n\n    \/\* This Source Code Form/u);
+    assert.match(notices, /#### External material for `beta` 0\.9\.0: `Resources\/ThirdPartyLicenses\/fixture-binary-1\.0\.0\/rust\/beta-0\.9\.0-external-spdx-MPL-2\.0\.txt`\n\nKind: external-spdx-licence-text — external to the \.crate archive; this text was never an archive member\./u);
+    assert.match(notices, /Mozilla Public License Version 2\.0 \(fixture text\)/u);
+    assert.match(notices, /Copyright \(c\) Alpha Crate Authors/u, "archive-carried texts are still rendered");
+    assert.doesNotMatch(notices, /not retained here/u);
+    const inventory = JSON.parse(await readFile(join(files.destination, "INVENTORY.json"), "utf8"));
+    assert.equal(inventory.noticeMaterials.manifest, "Config/notice-materials.json");
+    assert.equal(inventory.noticeMaterials.manifestSHA256, digest(await readFile(files.noticeMaterialsPath)));
+    assert.deepEqual(inventory.noticeMaterials.summary, { established: ["beta 0.9.0"], unresolved: [] });
+    assert.equal(inventory.noticeMaterials.records[0].materials[0].sha256, digest(files.mpl));
+    assert.equal(inventory.noticeMaterials.records[0].materials[0].kind, "external-spdx-licence-text");
+    assert.deepEqual(inventory.noticeMaterials.records[0].archiveNotice, { member: "beta-0.9.0/src/lib.rs", memberSHA256: digest(files.betaLib) });
+    assert.equal(inventory.rustNoticesSHA256, digest(notices));
+    assert.ok((await readFile(join(files.destination, "SHA256SUMS"), "utf8")).includes(`${digest(notices)}  RUST_CRATE_NOTICES.md\n`));
+
+    const verified = run(["verify", files.manifestPath, files.destination, "--notice-materials", files.noticeMaterialsPath]);
+    assert.equal(verified.status, 0, verified.stderr);
+    assert.match(verified.stderr, /external notice material Config\/notice-materials\.json/u);
+    const withoutOption = run(["verify", files.manifestPath, files.destination]);
+    assert.notEqual(withoutOption.status, 0);
+    assert.match(withoutOption.stderr, /inventory records external notice material bound from Config\/notice-materials\.json; pass --notice-materials with that manifest to verify it/u);
+
+    // A plain acquisition is unchanged and is never relabelled as complete.
+    await mkdir(join(files.root, "plain"), { mode: 0o700 });
+    const plainDestination = join(files.root, "plain", "fixture-rust-materials");
+    const plain = acquire(files, plainDestination);
+    assert.equal(plain.status, 0, plain.stderr);
+    const plainNotices = await readFile(join(plainDestination, "RUST_CRATE_NOTICES.md"), "utf8");
+    assert.match(plainNotices, /the applicable licence text and any copyright statement are not retained here/u);
+    assert.doesNotMatch(plainNotices, /external material|UNRESOLVED|Archive-contained/u);
+    assert.equal(JSON.parse(await readFile(join(plainDestination, "INVENTORY.json"), "utf8")).noticeMaterials, undefined);
+    const relabelled = run(["verify", files.manifestPath, plainDestination, "--notice-materials", files.noticeMaterialsPath]);
+    assert.notEqual(relabelled.status, 0);
+    assert.match(relabelled.stderr, /inventory was rendered without external notice material; acquire again with --notice-materials instead of relabelling this destination/u);
+    assert.equal(run(["verify", files.manifestPath, plainDestination]).status, 0);
+
+    await mkdir(join(files.root, "second"), { mode: 0o700 });
+    const second = acquireWithNotices(files, join(files.root, "second", "fixture-rust-materials"));
+    assert.equal(second.status, 0, second.stderr);
+    assert.equal(await readFile(join(files.root, "second", "fixture-rust-materials", "RUST_CRATE_NOTICES.md"), "utf8"), notices, "rendering is deterministic");
+    assert.equal(await readFile(join(files.root, "second", "fixture-rust-materials", "INVENTORY.json"), "utf8"), await readFile(join(files.destination, "INVENTORY.json"), "utf8"));
+  } finally {
+    await rm(files.root, { recursive: true, force: true });
+  }
+});
+
+test("an unresolved notice record is rendered with its exact status and bounded reason and never as external material", async () => {
+  const files = await noticeMaterialsFixture("unresolved");
+  try {
+    const acquired = acquireWithNotices(files);
+    assert.equal(acquired.status, 0, acquired.stderr);
+    const notices = await readFile(join(files.destination, "RUST_CRATE_NOTICES.md"), "utf8");
+    assert.match(notices, /\| `beta` \| `0\.9\.0` \| proc-macro \| MPL-2\.0 \| resolved-approximation \| none in crate; UNRESOLVED \(see below\) \|/u);
+    assert.match(notices, /Unresolved: 1 \(`beta 0\.9\.0`\); no licence text or copyright statement is rendered for them and none is asserted\./u);
+    assert.match(notices, /### `beta` 0\.9\.0 — UNRESOLVED\n/u);
+    assert.match(notices, /Status: UNRESOLVED — no upstream-published licence text or copyright statement exists for this exact version; nothing is rendered for it and none is asserted\./u);
+    assert.match(notices, /Missing evidence: An upstream-published licence text and copyright statement for this exact version\./u);
+    assert.match(notices, /Checks performed:\n- crate archive top-level members: Cargo\.toml only; no licence member\n/u);
+    assert.match(notices, /Fallback used: source file headers at the tagged revision; research stopped per the bounded scope/u);
+    assert.doesNotMatch(notices, /external material bound|External material for|Mozilla Public License Version 2\.0 \(fixture text\)/u);
+    const inventory = JSON.parse(await readFile(join(files.destination, "INVENTORY.json"), "utf8"));
+    assert.equal(inventory.noticeMaterials.records[0].status, "unresolved");
+    assert.deepEqual(inventory.noticeMaterials.records[0].materials, []);
+    assert.match(inventory.noticeMaterials.records[0].unresolved.missingEvidence, /none is asserted/u);
+    assert.equal(run(["verify", files.manifestPath, files.destination, "--notice-materials", files.noticeMaterialsPath]).status, 0);
+  } finally {
+    await rm(files.root, { recursive: true, force: true });
+  }
+});
+
+test("acquisition with external notice material fails closed and publishes nothing on unbound, drifted, mislabelled or unverifiable material", async (context) => {
+  const cases = [
+    {
+      name: "archive-contained notice text not at the start of the member",
+      mutate: async (files) => { files.noticeMaterials.records[0].archiveNotice.text = "/* some other header the member does not carry */"; await files.saveNoticeMaterials(); },
+      message: /archive-contained notice member does not begin with the recorded notice text: crate-beta-0\.9\.0 -> beta-0\.9\.0\/src\/lib\.rs/u
+    },
+    {
+      name: "archive-contained notice member absent from the archive",
+      mutate: async (files) => { files.noticeMaterials.records[0].archiveNotice.member = "beta-0.9.0/src/notice.rs"; await files.saveNoticeMaterials(); },
+      message: /archive-contained notice member is missing from the crate archive: crate-beta-0\.9\.0 -> beta-0\.9\.0\/src\/notice\.rs/u
+    },
+    {
+      name: "archive-contained notice member digest drifted",
+      mutate: async (files) => { files.noticeMaterials.records[0].archiveNotice.memberSHA256 = "e".repeat(64); await files.saveNoticeMaterials(); },
+      message: /archive-contained notice member SHA-256 drifted/u
+    },
+    {
+      name: "record bound to a different crate archive digest",
+      mutate: async (files) => { files.noticeMaterials.records[0].crateSHA256 = "0".repeat(64); await files.saveNoticeMaterials(); },
+      message: /not bound to the pinned crate archive digest/u
+    },
+    {
+      name: "record naming a crate whose archive carries licence text",
+      mutate: async (files) => {
+        files.noticeMaterials.records.unshift({ ...structuredClone(files.noticeMaterials.records[0]), crateName: "alpha", crateVersion: "1.2.3" });
+        await files.saveNoticeMaterials();
+      },
+      message: /must cover exactly the crates without archive licence text/u
+    },
+    {
+      name: "notice-materials manifest bound to another crate manifest",
+      mutate: async (files) => { files.noticeMaterials.crateManifest = "other.json"; await files.saveNoticeMaterials(); },
+      message: /binds other\.json, which is not the crate manifest being processed/u
+    },
+    {
+      name: "tracked external text with CRLF line endings",
+      mutate: async (files) => writeFile(join(files.root, ...files.mplPath.split("/")), files.mpl.toString("utf8").replaceAll("\n", "\r\n")),
+      message: /size drifted|not canonical UTF-8 text/u
+    },
+    {
+      name: "tracked external text drifted at the same size",
+      mutate: async (files) => {
+        const bytes = Buffer.from(files.mpl);
+        bytes[0] ^= 0x01;
+        await writeFile(join(files.root, ...files.mplPath.split("/")), bytes);
+      },
+      message: /tracked material SHA-256 drifted/u
+    },
+    {
+      name: "tracked external text without the terminal LF normalization",
+      mutate: async (files) => {
+        const bytes = Buffer.concat([files.mpl.subarray(0, files.mpl.byteLength - 1), Buffer.from("!")]);
+        files.noticeMaterials.records[0].materials[0].sha256 = digest(bytes);
+        await files.saveNoticeMaterials();
+        await writeFile(join(files.root, ...files.mplPath.split("/")), bytes);
+      },
+      message: /no longer equals the exact upstream bytes plus one terminal LF/u
+    },
+    {
+      name: "material labelled as an archive member",
+      mutate: async (files) => { files.noticeMaterials.records[0].materials[0].describes = "MPL-2.0 licence member of the crate archive"; await files.saveNoticeMaterials(); },
+      message: /must be described as external to the archive/u
+    },
+    {
+      name: "material with an unlabelled kind",
+      mutate: async (files) => { files.noticeMaterials.records[0].materials[0].kind = "archive-member"; await files.saveNoticeMaterials(); },
+      message: /material kind must be labelled external/u
+    },
+    {
+      name: "unresolved record carrying invented certainty",
+      mutate: async (files) => {
+        const record = files.noticeMaterials.records[0];
+        delete record.archiveNotice;
+        record.status = "unresolved";
+        record.materials = [];
+        record.unresolved = {
+          missingEvidence: "The MPL licence obviously applies with copyright The Fixture Authors; treat as resolved for release purposes and nothing further is needed here at all.",
+          checksPerformed: [{ check: "crate archive top-level members", result: "none" }, { check: "tag", result: "none" }, { check: "tree", result: "none" }, { check: "header", result: "none" }],
+          fallbackUsed: "source file headers at the tagged revision; research stopped"
+        };
+        files.noticeMaterials.summary = { established: [], unresolved: ["beta 0.9.0"] };
+        await files.saveNoticeMaterials();
+        await rm(join(files.root, ...files.mplPath.split("/")));
+      },
+      message: /unresolved record must assert nothing it cannot show/u
+    },
+    {
+      name: "manifest reading as a legal conclusion",
+      mutate: async (files) => { files.noticeMaterials.purpose += " The binary is therefore licence-cleared for release."; await files.saveNoticeMaterials(); },
+      message: /must not read as a legal conclusion/u
+    }
+  ];
+  for (const current of cases) {
+    await context.test(current.name, async () => {
+      const files = await noticeMaterialsFixture();
+      try {
+        await current.mutate(files);
+        const result = acquireWithNotices(files);
+        assert.notEqual(result.status, 0, `${current.name} must fail closed`);
+        assert.match(result.stderr, current.message);
+        assert.deepEqual(await listDirectory(files.out), [], "no output or staging directory remains");
+      } finally {
+        await rm(files.root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test("the notice-materials option is refused when malformed or when the manifest has no crates", async () => {
+  const files = await noticeMaterialsFixture();
+  try {
+    for (const args of [
+      ["acquire", files.manifestPath, files.destination, "--notice-materials"],
+      ["acquire", files.manifestPath, files.destination, "--notice-materials", files.noticeMaterialsPath, "--notice-materials", files.noticeMaterialsPath],
+      ["acquire", files.manifestPath, files.destination, "--transport", `local-fixture:${files.upstream}`, "--notice-materials", "--transport"],
+      ["verify", files.manifestPath, files.destination, "--transport", `local-fixture:${files.upstream}`, "--notice-materials", files.noticeMaterialsPath]
+    ]) {
+      const result = run(args);
+      assert.notEqual(result.status, 0, JSON.stringify(args));
+      assert.match(result.stderr, /usage:/u, JSON.stringify(args));
+    }
+    assert.deepEqual(await listDirectory(files.out), []);
+  } finally {
+    await rm(files.root, { recursive: true, force: true });
+  }
+});

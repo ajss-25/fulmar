@@ -10,6 +10,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { loadManifest, loadRustNoticeMaterials } from "../../scripts/prepare-libvips-source-materials.mjs";
 
 const project = process.cwd();
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -145,8 +146,7 @@ async function privateCopy() {
   return { root, manifest, save: () => writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`) };
 }
 
-test("missing or drifted material bytes, misattributed origins and unbound files are rejected", async (context) => {
-  const cases = [
+const cases = [
     {
       name: "tracked material bytes drifted",
       mutate: async ({ root }) => writeFile(join(root, RUST_PREFIX, "mutants-0.0.4-external-cargo-mutants-LICENSE"), "MIT License\n\nCopyright (c) 2021 Somebody Else\n"),
@@ -252,13 +252,73 @@ test("missing or drifted material bytes, misattributed origins and unbound files
       },
       message: /asserts nothing it cannot show/u
     }
-  ];
+];
+
+test("missing or drifted material bytes, misattributed origins and unbound files are rejected", async (context) => {
   for (const current of cases) {
     await context.test(current.name, async () => {
       const copy = await privateCopy();
       try {
         await current.mutate(copy);
         await assert.rejects(() => validate(copy.root), current.message, current.name);
+      } finally {
+        await rm(copy.root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+// The materials tool carries its own verifier for the same manifest (used by
+// acquire/verify --notice-materials, the notice generator and the delivery
+// staging tool). It must accept the real tree and reject every drift above.
+async function loadWithTool(root) {
+  const crateManifest = await loadManifest(join(root, "Config", "SharpLibvipsRustProvenance.json"));
+  return loadRustNoticeMaterials(join(root, "Config", "SharpLibvipsRustNoticeMaterials.json"), crateManifest.manifest, crateManifest.manifestPath);
+}
+
+test("the materials tool's notice-material verifier accepts the real tree and rejects the same drift as the pure validator", async (context) => {
+  const loaded = await loadWithTool(project);
+  assert.equal(loaded.relativePath, "Config/SharpLibvipsRustNoticeMaterials.json");
+  assert.equal(loaded.sha256, digest(await readFile(join(project, "Config", "SharpLibvipsRustNoticeMaterials.json"))));
+  assert.deepEqual(loaded.summary, {
+    established: ["mutants 0.0.4", "selectors 0.38.0"],
+    unresolved: ["block 0.1.6", "malloc_buf 0.0.6", "objc-foundation 0.1.1", "objc_id 0.1.1"]
+  });
+  assert.deepEqual(loaded.records.map(({ identity, status }) => `${identity}:${status}`),
+    ["block 0.1.6:unresolved", "malloc_buf 0.0.6:unresolved", "mutants 0.0.4:established", "objc-foundation 0.1.1:unresolved", "objc_id 0.1.1:unresolved", "selectors 0.38.0:established"]);
+  const mutants = loaded.records.find(({ crateName }) => crateName === "mutants");
+  assert.equal(mutants.materials[0].kind, "external-upstream-file");
+  assert.match(mutants.materials[0].text, /^MIT License\n\nCopyright \(c\) 2021 Martin Pool\n/u);
+  const selectors = loaded.records.find(({ crateName }) => crateName === "selectors");
+  assert.equal(selectors.archiveNotice.member, "selectors-0.38.0/lib.rs");
+  assert.equal(selectors.materials[0].kind, "external-spdx-licence-text");
+  assert.match(selectors.materials[0].text, /^Mozilla Public License Version 2\.0\n/u);
+  for (const record of loaded.records.filter(({ status }) => status === "unresolved")) {
+    assert.deepEqual(record.materials, [], record.identity);
+    assert.match(record.unresolved.missingEvidence, /none is asserted/u, record.identity);
+  }
+  const toolMessages = {
+    "tracked material bytes drifted": /tracked material (?:size|SHA-256) drifted/u,
+    "tracked material missing": /ENOENT|no such file/u,
+    "material origin points at a later revision than the crate was packaged from": /must come from the connected repository at the connected revision/u,
+    "material origin points at a different repository": /must come from the connected repository at the connected revision/u,
+    "material origin on a mutable branch": /must be pinned to one full commit/u,
+    "SPDX text substituted for a licence the archive does not designate": /may only stand in for a licence the archive itself designates/u,
+    "SPDX text for a different licence than the crate declares": /must be the text of the crate's own licence expression/u,
+    "material described as if it were an archive member": /must be described as external to the archive/u,
+    "record bound to a different crate archive digest": /not bound to the pinned crate archive digest/u,
+    "unresolved record silently upgraded without material": /established record cannot carry an unresolved record|must bind one to/u,
+    "a crate without archive licence text dropped from the manifest": /must cover exactly the crates without archive licence text/u,
+    "unbound file under the Rust notice directory": /unbound entry beside the tracked Rust notice material/u,
+    "unresolved record with invented certainty": /must assert nothing it cannot show/u
+  };
+  assert.deepEqual(Object.keys(toolMessages).sort(), cases.map(({ name }) => name).sort(), "every pure-validator case has a tool expectation");
+  for (const current of cases) {
+    await context.test(`tool: ${current.name}`, async () => {
+      const copy = await privateCopy();
+      try {
+        await current.mutate(copy);
+        await assert.rejects(() => loadWithTool(copy.root), toolMessages[current.name], current.name);
       } finally {
         await rm(copy.root, { recursive: true, force: true });
       }

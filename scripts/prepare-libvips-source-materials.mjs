@@ -19,14 +19,27 @@
 //   files from a directory instead of the network and is recorded in the
 //   inventory as the transport, so fixture output is never mistakable for an
 //   authoritative acquisition.
+// - `--notice-materials <Config/…NoticeMaterials.json>` binds the version-bound
+//   external notice material (or precise unresolved record) for every crate
+//   whose archive carries no licence text. When given, every tracked material
+//   is re-verified (bytes, digests, crate/revision binding, external
+//   provenance) before its exact text is rendered, clearly distinct from the
+//   archive-contained members; the inventory records the binding. Without it
+//   the rendering is unchanged, and a destination rendered one way is refused
+//   by a verification run the other way.
+//
+// The verification and rendering functions are exported for the notice
+// generator and the delivery staging tool; the CLI runs only when this file is
+// the entry point.
 import { createHash, randomBytes } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, realpathSync } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, rename, rm } from "node:fs/promises";
 import { request as httpsRequest } from "node:https";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 
-const USAGE = "usage: prepare-libvips-source-materials.mjs <acquire|verify> <manifest.json> <destination-directory> [--transport https|local-fixture:<directory>]";
+const USAGE = "usage: prepare-libvips-source-materials.mjs <acquire|verify> <manifest.json> <destination-directory> [--transport https|local-fixture:<directory>] [--notice-materials <notice-materials.json>]";
 const MAXIMUM_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAXIMUM_ITEMS = 512;
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -47,6 +60,14 @@ const MAXIMUM_CRATE_UNPACKED_BYTES = 256 * 1024 * 1024;
 const MAXIMUM_TAR_ENTRIES = 50000;
 const MAXIMUM_NOTICE_MEMBER_BYTES = 1024 * 1024;
 const MAXIMUM_NOTICE_MEMBERS = 8;
+const MAXIMUM_NOTICE_RECORDS = 64;
+const MAXIMUM_NOTICE_MATERIAL_BYTES = 4 * 1024 * 1024;
+const TRACKED_LICENCE_PREFIX = "Resources/ThirdPartyLicenses/";
+const NOTICE_MATERIAL_KINDS = new Set(["external-upstream-file", "external-spdx-licence-text"]);
+const NOTICE_NORMALIZATION = "append-terminal-lf-v1";
+const CONNECTION_KINDS = new Set(["cargo-vcs-info", "version-tag"]);
+const GITHUB_BLOB = /^\/([^/]+)\/([^/]+)\/blob\/([a-f0-9]{40})\/(.+)$/u;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -110,6 +131,16 @@ async function boundedRegularBytes(path, maximumBytes, label) {
   } finally {
     await handle?.close();
   }
+}
+
+// Reads one bounded regular file that must be canonical UTF-8 text without NUL
+// or CR bytes, reachable without traversing any alias or symbolic link.
+async function boundedCanonicalText(path, maximumBytes, label) {
+  if (await realpath(path) !== path) fail(`${label} must not traverse aliases or symbolic links`);
+  const bytes = await boundedRegularBytes(path, maximumBytes, label);
+  const text = bytes.toString("utf8");
+  if (text.includes("\0") || text.includes("\r") || Buffer.from(text, "utf8").compare(bytes) !== 0) fail(`${label} is not canonical UTF-8 text`);
+  return { bytes, text };
 }
 
 async function requireCanonicalDirectory(path, label) {
@@ -274,6 +305,8 @@ function validateManifest(document) {
   if (document.buildTimeModifications !== undefined && !Array.isArray(document.buildTimeModifications)) fail("manifest buildTimeModifications must be an array");
   const hasCrates = items.some((item) => item.kind === "rust-crate");
   let provenanceStatuses;
+  let historicalBuildLog;
+  let workspaceMembers = [];
   if (hasCrates) {
     const categories = document.categories;
     if (!categories || typeof categories !== "object" || Array.isArray(categories)) fail("a manifest with rust-crate items must record provenance categories");
@@ -303,11 +336,21 @@ function validateManifest(document) {
       for (const item of compiledItems) {
         if (item.observedCompilation.logLine > log.lines) fail(`observed compilation log line exceeds the retained log length: ${item.id}`);
       }
+      historicalBuildLog = { rawSHA256: log.rawSHA256, rawBytes: log.rawBytes, lines: log.lines };
     }
     provenanceStatuses.compiledInHistoricalBuild = compiledStatus;
     const incorporatedStatus = categories.incorporatedIntoShippedBinary?.status;
     if (incorporatedStatus !== "unverified") fail("categories.incorporatedIntoShippedBinary.status must remain unverified: observed compilation is not a linkage map");
     provenanceStatuses.incorporatedIntoShippedBinary = incorporatedStatus;
+    // Workspace packages are recorded for the notice rendering only; they are
+    // never items and never counted as registry crates.
+    const members = categories.resolvedForTargetApproximation?.workspaceMembers;
+    if (members !== undefined) {
+      if (!Array.isArray(members) || members.length > 16 || members.some((member) => typeof member !== "string" || member.trim() !== member || member.length === 0 || member.length > 400 || /[\0\r\n]/u.test(member))) {
+        fail("categories.resolvedForTargetApproximation.workspaceMembers must be a bounded list of single-line strings");
+      }
+      workspaceMembers = [...members];
+    }
   }
   return {
     binary: {
@@ -320,19 +363,250 @@ function validateManifest(document) {
       shippedBinary: binary.shippedBinary,
       shippedBinarySHA256: binary.shippedBinarySHA256
     },
+    provenanceRecord: binary.provenanceRecord,
     outputDirectoryName: document.outputDirectoryName,
     limits: { maximumFileBytes, maximumTotalBytes, maximumRedirects, requestTimeoutMilliseconds },
     items,
     totalBytes: total,
-    provenanceStatuses
+    provenanceStatuses,
+    ...(historicalBuildLog === undefined ? {} : { historicalBuildLog }),
+    workspaceMembers
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Version-bound external notice material for crates whose archive carries no
+// licence text (Config/…NoticeMaterials.json). The manifest must name exactly
+// those crates, bind each record to the pinned .crate digest and licence
+// expression, connect the archive to one exact upstream revision, and either
+// bind tracked external material proven equal to the immutable upstream bytes
+// plus one terminal LF, or carry one precise unresolved record. External
+// material is never presented as an archive member; an archive-contained
+// notice is recorded separately and is re-verified against the archive itself
+// when the crates are read.
+
+function cleanGitHubBlob(value, label) {
+  const url = cleanHTTPSURL(value, label);
+  if (url.hostname !== "github.com") fail(`${label} must be a github.com file URL pinned to one commit`);
+  const pinned = GITHUB_BLOB.exec(url.pathname);
+  if (!pinned) fail(`${label} must be pinned to one full commit, not a branch or tag`);
+  return { href: url.href, repository: `https://github.com/${pinned[1]}/${pinned[2]}`, revision: pinned[3], path: pinned[4] };
+}
+
+function requireKeys(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort().join("\0") !== keys.join("\0")) {
+    fail(`${label} has an unexpected shape (expected exactly: ${keys.join(", ")})`);
+  }
+}
+
+export async function loadRustNoticeMaterials(noticeManifestArgument, crateManifest, crateManifestPath) {
+  const noticeManifestPath = resolve(noticeManifestArgument);
+  const configDirectory = dirname(noticeManifestPath);
+  await requireCanonicalDirectory(configDirectory, "notice-materials manifest directory");
+  const projectRoot = dirname(configDirectory);
+  await requireCanonicalDirectory(projectRoot, "project root inferred from the notice-materials manifest");
+  const { bytes, text } = await boundedCanonicalText(noticeManifestPath, MAXIMUM_MANIFEST_BYTES, "notice-materials manifest");
+  let document;
+  try { document = JSON.parse(text); }
+  catch (error) { fail(`notice-materials manifest is not valid JSON: ${error.message}`); }
+  requireKeys(document, ["crateManifest", "purpose", "records", "researchedOn", "schemaVersion", "summary"], "notice-materials manifest");
+  if (document.schemaVersion !== 1) fail("notice-materials manifest has an unsupported schema version");
+  boundedString(document.purpose, 40, 2000, "notice-materials manifest purpose");
+  if (!/not legal clearance/u.test(document.purpose) || !/never a member of the original archive/u.test(document.purpose)) {
+    fail("notice-materials manifest purpose must state that it is not legal clearance and that external material was never an archive member");
+  }
+  if (/cleared|compliant|legally (?:sufficient|satisfied)/iu.test(text)) fail("notice-materials manifest must not read as a legal conclusion");
+  const crateManifestReference = assertSafeRelativePath(document.crateManifest, "notice-materials crateManifest");
+  const referenced = join(projectRoot, ...crateManifestReference.split("/"));
+  const boundCrateManifest = resolve(crateManifestPath);
+  if (referenced !== boundCrateManifest || await realpath(boundCrateManifest) !== boundCrateManifest) {
+    fail(`notice-materials manifest binds ${crateManifestReference}, which is not the crate manifest being processed`);
+  }
+  if (!ISO_DATE.test(document.researchedOn ?? "")) fail("notice-materials manifest researchedOn must be one ISO date");
+  const summary = document.summary;
+  requireKeys(summary, ["established", "unresolved"], "notice-materials manifest summary");
+  if (!Array.isArray(summary.established) || !Array.isArray(summary.unresolved)
+      || [...summary.established, ...summary.unresolved].some((entry) => typeof entry !== "string")) {
+    fail("notice-materials manifest summary must list established and unresolved crate identities");
+  }
+  const withoutText = crateManifest.items.filter((item) => item.kind === "rust-crate" && item.noticeStatus === "no-licence-text-in-crate");
+  const expected = new Map(withoutText.map((item) => [`${item.crateName} ${item.crateVersion}`, item]));
+  if (!Array.isArray(document.records) || document.records.length > MAXIMUM_NOTICE_RECORDS) fail("notice-materials manifest records must be a bounded array");
+  const identities = document.records.map((record) => `${record?.crateName} ${record?.crateVersion}`);
+  const sortedExpected = [...expected.keys()].sort();
+  if (identities.join("\0") !== sortedExpected.join("\0")) {
+    fail(`notice-materials manifest must cover exactly the crates without archive licence text, once each, in sorted order (expected: ${sortedExpected.join(", ") || "none"}; found: ${identities.join(", ") || "none"})`);
+  }
+  if ([...summary.established, ...summary.unresolved].sort().join("\0") !== sortedExpected.join("\0")) {
+    fail("notice-materials manifest summary does not partition the covered crates into established and unresolved");
+  }
+  const boundPaths = new Set();
+  const records = [];
+  for (const record of document.records) {
+    const identity = `${record.crateName} ${record.crateVersion}`;
+    const item = expected.get(identity);
+    const label = `notice material for ${identity}`;
+    const keys = Object.keys(record).sort();
+    const allowed = ["archiveNotice", "connection", "crateName", "crateSHA256", "crateVersion", "licenseExpression", "materials", "status", "unresolved"];
+    if (keys.some((key) => !allowed.includes(key))) fail(`${label} carries an unexpected field`);
+    if (record.crateSHA256 !== item.sha256) fail(`${label} is not bound to the pinned crate archive digest`);
+    if (record.licenseExpression !== item.licenseExpression) fail(`${label} does not carry the crate's licence expression`);
+    if (record.status !== "established" && record.status !== "unresolved") fail(`${label} status must be established or unresolved`);
+    if (!summary[record.status].includes(identity)) fail(`${label} summary entry does not match its status`);
+    const connection = record.connection;
+    if (!connection || typeof connection !== "object" || Array.isArray(connection) || !CONNECTION_KINDS.has(connection.kind)) {
+      fail(`${label} connection kind must be cargo-vcs-info or version-tag`);
+    }
+    requireKeys(connection, connection.kind === "cargo-vcs-info"
+      ? ["kind", "pathInVcs", "repository", "revision", "revisionEvidence"]
+      : ["kind", "repository", "revision", "revisionEvidence"], `${label} connection`);
+    const repositoryURL = cleanHTTPSURL(connection.repository, `${label} connection repository`);
+    if (repositoryURL.hostname !== "github.com" || !/^\/[^/]+\/[^/]+$/u.test(repositoryURL.pathname)) fail(`${label} connection repository must be one github.com repository`);
+    const repository = repositoryURL.href.replace(/\/$/u, "");
+    if (!COMMIT.test(connection.revision ?? "")) fail(`${label} connection revision must be one full commit`);
+    boundedString(connection.revisionEvidence, 80, 2000, `${label} connection evidence`);
+    if (!connection.revisionEvidence.includes(`"${record.crateVersion}"`)) fail(`${label} connection evidence must cite the exact version at the revision`);
+    if (connection.kind === "cargo-vcs-info") {
+      assertSafeRelativePath(connection.pathInVcs, `${label} connection pathInVcs`);
+      if (!/\.cargo_vcs_info\.json \(sha256 [a-f0-9]{64}\) records git sha1 [a-f0-9]{40}/u.test(connection.revisionEvidence)
+          || !connection.revisionEvidence.includes(connection.revision) || !/byte-identical/u.test(connection.revisionEvidence)) {
+        fail(`${label} cargo-vcs-info connection must cite the archive's .cargo_vcs_info.json and byte-identical members at the revision`);
+      }
+    }
+    const materials = [];
+    let archiveNotice;
+    let unresolved;
+    if (record.status === "established") {
+      if (record.unresolved !== undefined) fail(`${label} established record cannot carry an unresolved record`);
+      if (!Array.isArray(record.materials) || record.materials.length === 0 || record.materials.length > MAXIMUM_NOTICE_MEMBERS) {
+        fail(`${label} established record must bind one to ${MAXIMUM_NOTICE_MEMBERS} materials`);
+      }
+      if (record.archiveNotice !== undefined) {
+        const notice = record.archiveNotice;
+        requireKeys(notice, ["member", "memberSHA256", "note", "text"], `${label} archive notice`);
+        assertSafeRelativePath(notice.member, `${label} archive notice member`);
+        if (!notice.member.startsWith(`${record.crateName}-${record.crateVersion}/`)) fail(`${label} archive notice member must be inside the crate root`);
+        if (!SHA256.test(notice.memberSHA256 ?? "")) fail(`${label} archive notice member digest is invalid`);
+        if (typeof notice.text !== "string" || notice.text.length < 16 || notice.text.length > 4000 || notice.text.includes("\0") || notice.text.includes("\r")) {
+          fail(`${label} archive notice text is not bounded text`);
+        }
+        boundedString(notice.note, 40, 2000, `${label} archive notice note`);
+        if (!/archive-contained/u.test(notice.note)) fail(`${label} archive notice must be labelled archive-contained`);
+        archiveNotice = { member: notice.member, memberSHA256: notice.memberSHA256, text: notice.text, note: notice.note };
+      }
+      for (const raw of record.materials) {
+        requireKeys(raw, ["describes", "kind", "normalization", "origin", "retrievedOn", "sha256", "size", "sourcePath", "upstreamSHA256", "upstreamSize"], `${label} material`);
+        if (!NOTICE_MATERIAL_KINDS.has(raw.kind)) fail(`${label} material kind must be labelled external`);
+        const sourcePath = assertSafeRelativePath(raw.sourcePath, `${label} material sourcePath`);
+        if (!sourcePath.startsWith(TRACKED_LICENCE_PREFIX) || boundPaths.has(sourcePath)) fail(`${label} material must be one unique tracked file under ${TRACKED_LICENCE_PREFIX}`);
+        boundPaths.add(sourcePath);
+        boundedString(raw.describes, 8, 1000, `${label} material description`);
+        if (!/external to the archive/u.test(raw.describes)) fail(`${label} material must be described as external to the archive`);
+        if (raw.normalization !== NOTICE_NORMALIZATION) fail(`${label} material normalization must be ${NOTICE_NORMALIZATION}`);
+        if (!SHA256.test(raw.sha256 ?? "") || !SHA256.test(raw.upstreamSHA256 ?? "")) fail(`${label} material requires exact tracked and raw upstream SHA-256 values`);
+        boundedInteger(raw.upstreamSize, 1, MAXIMUM_NOTICE_MATERIAL_BYTES, `${label} material upstreamSize`);
+        boundedInteger(raw.size, 2, MAXIMUM_NOTICE_MATERIAL_BYTES, `${label} material size`);
+        if (raw.size !== raw.upstreamSize + 1) fail(`${label} material size must equal the upstream size plus one terminal LF`);
+        if (!ISO_DATE.test(raw.retrievedOn ?? "")) fail(`${label} material retrievedOn must be one ISO date`);
+        const origin = cleanGitHubBlob(raw.origin, `${label} material origin`);
+        if (raw.kind === "external-upstream-file") {
+          if (origin.repository !== repository || origin.revision !== connection.revision) {
+            fail(`${label} upstream material must come from the connected repository at the connected revision, not another repository, branch or revision`);
+          }
+        } else {
+          if (origin.repository !== "https://github.com/spdx/license-list-data") fail(`${label} SPDX material must come from spdx/license-list-data`);
+          if (origin.path !== `text/${record.licenseExpression}.txt`) fail(`${label} SPDX material must be the text of the crate's own licence expression`);
+          if (archiveNotice === undefined) fail(`${label} SPDX text may only stand in for a licence the archive itself designates`);
+        }
+        const absolute = join(projectRoot, ...sourcePath.split("/"));
+        const { bytes: materialBytes, text: materialText } = await boundedCanonicalText(absolute, MAXIMUM_NOTICE_MATERIAL_BYTES, `${label} tracked material ${sourcePath}`);
+        if (materialBytes.byteLength !== raw.size) fail(`${label} tracked material size drifted: ${sourcePath}`);
+        if (sha256(materialBytes) !== raw.sha256) fail(`${label} tracked material SHA-256 drifted: ${sourcePath}`);
+        if (materialBytes[materialBytes.byteLength - 1] !== 0x0a || sha256(materialBytes.subarray(0, materialBytes.byteLength - 1)) !== raw.upstreamSHA256) {
+          fail(`${label} tracked material no longer equals the exact upstream bytes plus one terminal LF: ${sourcePath}`);
+        }
+        if (!/licen[cs]e|permission/iu.test(materialText)) fail(`${label} tracked material does not read as a licence text: ${sourcePath}`);
+        materials.push({
+          kind: raw.kind,
+          sourcePath,
+          describes: raw.describes,
+          origin: origin.href,
+          upstreamSHA256: raw.upstreamSHA256,
+          upstreamSize: raw.upstreamSize,
+          normalization: raw.normalization,
+          sha256: raw.sha256,
+          size: raw.size,
+          retrievedOn: raw.retrievedOn,
+          text: materialText
+        });
+      }
+    } else {
+      if (!Array.isArray(record.materials) || record.materials.length !== 0) fail(`${label} unresolved record cannot bind material`);
+      if (record.archiveNotice !== undefined) fail(`${label} unresolved record cannot carry an archive notice`);
+      requireKeys(record.unresolved, ["checksPerformed", "fallbackUsed", "missingEvidence"], `${label} unresolved record`);
+      boundedString(record.unresolved.missingEvidence, 80, 2000, `${label} missing evidence`);
+      if (!/none is asserted/u.test(record.unresolved.missingEvidence)) fail(`${label} unresolved record must assert nothing it cannot show`);
+      const checks = record.unresolved.checksPerformed;
+      if (!Array.isArray(checks) || checks.length < 4 || checks.length > 32) fail(`${label} unresolved record must list at least four checks`);
+      for (const check of checks) {
+        requireKeys(check, ["check", "result"], `${label} unresolved check`);
+        boundedString(check.check, 3, 200, `${label} unresolved check name`);
+        boundedString(check.result, 3, 2000, `${label} unresolved check result`);
+      }
+      if (!checks.some(({ check }) => /tag|revision/u.test(check)) || !checks.some(({ check }) => /crate archive/u.test(check))) {
+        fail(`${label} unresolved record must record the crate archive and upstream revision checks`);
+      }
+      boundedString(record.unresolved.fallbackUsed, 20, 1000, `${label} fallback`);
+      unresolved = {
+        missingEvidence: record.unresolved.missingEvidence,
+        checksPerformed: checks.map(({ check, result }) => ({ check, result })),
+        fallbackUsed: record.unresolved.fallbackUsed
+      };
+    }
+    records.push({
+      crateName: record.crateName,
+      crateVersion: record.crateVersion,
+      identity,
+      itemId: item.id,
+      crateSHA256: item.sha256,
+      licenseExpression: item.licenseExpression,
+      status: record.status,
+      connection: {
+        kind: connection.kind,
+        repository,
+        revision: connection.revision,
+        ...(connection.pathInVcs === undefined ? {} : { pathInVcs: connection.pathInVcs }),
+        revisionEvidence: connection.revisionEvidence
+      },
+      ...(archiveNotice === undefined ? {} : { archiveNotice }),
+      materials,
+      ...(unresolved === undefined ? {} : { unresolved })
+    });
+  }
+  // Nothing unbound may sit beside the bound external material.
+  for (const directory of new Set([...boundPaths].map((path) => dirname(path)))) {
+    for (const entry of await readdir(join(projectRoot, ...directory.split("/")), { withFileTypes: true })) {
+      const relative = `${directory}/${entry.name}`;
+      if (!entry.isFile() || !boundPaths.has(relative)) fail(`unbound entry beside the tracked Rust notice material: ${relative}`);
+    }
+  }
+  return {
+    path: noticeManifestPath,
+    relativePath: `${basename(configDirectory)}/${basename(noticeManifestPath)}`,
+    projectRoot,
+    sha256: sha256(bytes),
+    researchedOn: document.researchedOn,
+    summary: { established: [...summary.established], unresolved: [...summary.unresolved] },
+    records
   };
 }
 
 // ---------------------------------------------------------------------------
 // Bounded .crate (tar.gz) member reader. Only the notice members the manifest
-// names are read; every entry must be a plain regular file or directory under
-// the crate's own root. Links, absolute paths, traversal, long-name or pax
-// extensions, oversized output and excess entries fail closed. Nothing is
+// names (and any archive-contained notice member the notice-materials manifest
+// records) are read; every entry must be a plain regular file or directory
+// under the crate's own root. Links, absolute paths, traversal, long-name or
+// pax extensions, oversized output and excess entries fail closed. Nothing is
 // written to disk or executed.
 
 function tarField(block, offset, length) {
@@ -355,7 +629,7 @@ function isZeroBlock(block) {
 // payload and its zero padding must be present in full, the archive must end
 // with the two zero end-of-archive blocks, and nothing but zero padding may
 // follow them. Success is only returned after the whole archive was walked.
-function readCrateNoticeMembers(crateBytes, item) {
+export function readCrateNoticeMembers(crateBytes, item, archiveNotices = []) {
   const root = `${item.crateName}-${item.crateVersion}`;
   let tar;
   try {
@@ -367,6 +641,13 @@ function readCrateNoticeMembers(crateBytes, item) {
     fail(`crate archive is not a whole-block tar stream (${tar.byteLength} bytes): ${item.id}`);
   }
   const wanted = new Map(item.noticeMembers.map((member) => [member.member, member]));
+  // Archive-contained notices recorded by the notice-materials manifest: the
+  // member must exist, match its recorded digest and begin with the recorded text.
+  const verified = new Map();
+  for (const notice of archiveNotices) {
+    if (wanted.has(notice.member) || verified.has(notice.member)) fail(`archive-contained notice member is declared twice: ${item.id} -> ${notice.member}`);
+    verified.set(notice.member, notice);
+  }
   const found = new Map();
   let offset = 0;
   let entries = 0;
@@ -414,6 +695,16 @@ function readCrateNoticeMembers(crateBytes, item) {
       const text = bytes.toString("utf8");
       if (text.includes("\0") || Buffer.from(text, "utf8").compare(bytes) !== 0) fail(`notice member is not UTF-8 text: ${item.id} -> ${name}`);
       found.set(name, text);
+    } else if (type !== "5" && verified.has(name)) {
+      const expected = verified.get(name);
+      if (size > MAXIMUM_NOTICE_MEMBER_BYTES) fail(`archive-contained notice member exceeds the bounded size: ${item.id} -> ${name}`);
+      const bytes = tar.subarray(dataStart, dataEnd);
+      if (sha256(bytes) !== expected.memberSHA256) fail(`archive-contained notice member SHA-256 drifted: ${item.id} -> ${name}`);
+      if (found.has(name)) fail(`archive-contained notice member appears twice in the archive: ${item.id} -> ${name}`);
+      const text = bytes.toString("utf8");
+      if (text.includes("\0") || Buffer.from(text, "utf8").compare(bytes) !== 0) fail(`archive-contained notice member is not UTF-8 text: ${item.id} -> ${name}`);
+      if (!text.startsWith(expected.text)) fail(`archive-contained notice member does not begin with the recorded notice text: ${item.id} -> ${name}`);
+      found.set(name, text);
     }
     offset = paddedEnd;
   }
@@ -422,32 +713,102 @@ function readCrateNoticeMembers(crateBytes, item) {
   for (const name of wanted.keys()) {
     if (!found.has(name)) fail(`notice member is missing from the crate archive: ${item.id} -> ${name}`);
   }
+  for (const name of verified.keys()) {
+    if (!found.has(name)) fail(`archive-contained notice member is missing from the crate archive: ${item.id} -> ${name}`);
+  }
   return found;
 }
 
-function renderRustNotices(manifest, manifestSHA256, noticeTexts) {
+function escapeCell(value) {
+  return String(value).replaceAll("|", "\\|").replaceAll("\n", " ").replaceAll("\r", " ");
+}
+
+function normalizedText(text) {
+  return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n").trimEnd();
+}
+
+// Renders the section for crates whose archive carries no licence text when
+// the notice-materials manifest is bound: exact external material (never an
+// archive member) for established records, and the exact unresolved status
+// with its bounded reason for the others.
+export function renderBoundNoticeMaterials(withoutText, noticeMaterials, headingLevel = 2) {
+  const escape = escapeCell;
+  const heading = (depth) => "#".repeat(headingLevel + depth);
+  const lines = [
+    "",
+    `${heading(0)} Crates whose archive carries no licence text`,
+    "",
+    `These ${withoutText.length} crates are identified by their Cargo.toml licence expression; their .crate archives carry no licence member. \`${escape(noticeMaterials.relativePath)}\` (\`sha256:${noticeMaterials.sha256}\`, researched ${noticeMaterials.researchedOn}) records for each the exact upstream revision the archive was packaged from, the evidence connecting the archive to it, and either exact external notice material (retained in the repository, verified against the immutable upstream bytes plus one terminal LF, and never a member of the archive) or one precise unresolved record. Established with external material: ${noticeMaterials.summary.established.length} (${noticeMaterials.summary.established.map((identity) => `\`${escape(identity)}\``).join(", ") || "none"}). Unresolved: ${noticeMaterials.summary.unresolved.length} (${noticeMaterials.summary.unresolved.map((identity) => `\`${escape(identity)}\``).join(", ") || "none"}); no licence text or copyright statement is rendered for them and none is asserted.`
+  ];
+  for (const item of withoutText) {
+    const record = noticeMaterials.records.find((candidate) => candidate.itemId === item.id);
+    const identity = `\`${escape(item.crateName)}\` ${escape(item.crateVersion)}`;
+    const title = record.status === "established"
+      ? `${identity} — established (${record.archiveNotice ? "archive-contained notice plus external licence text" : "external material"})`
+      : `${identity} — UNRESOLVED`;
+    lines.push("", `${heading(1)} ${title}`, "",
+      `Licence expression (Cargo.toml): ${escape(item.licenseExpression)}; crate \`${item.url}\` (\`sha256:${item.sha256}\`)${item.authors ? `; authors: ${escape(item.authors.join("; "))}` : ""}; provenance status: ${item.provenanceStatus}.`,
+      `Packaged from: \`${escape(record.connection.repository)}\` @ \`${record.connection.revision}\` (${record.connection.kind}${record.connection.pathInVcs ? `, path \`${escape(record.connection.pathInVcs)}\`` : ""}).`,
+      `Connection evidence: ${escape(record.connection.revisionEvidence)}`);
+    if (record.status === "established") {
+      if (record.archiveNotice) {
+        lines.push("", `Archive-contained notice: member \`${escape(record.archiveNotice.member)}\` (\`sha256:${record.archiveNotice.memberSHA256}\`, verified in the .crate archive) begins with:`, "",
+          ...record.archiveNotice.text.split("\n").map((line) => `    ${line}`), "",
+          `Note: ${escape(record.archiveNotice.note)}`);
+      }
+      for (const material of record.materials) {
+        lines.push("", `${heading(2)} External material for ${identity}: \`${escape(material.sourcePath)}\``, "",
+          `Kind: ${material.kind} — external to the .crate archive; this text was never an archive member.`,
+          `Describes: ${escape(material.describes)}`,
+          `Upstream: ${material.origin} (raw \`sha256:${material.upstreamSHA256}\`, ${material.upstreamSize} bytes; retrieved ${material.retrievedOn})`,
+          `Exact tracked SHA-256: \`${material.sha256}\` (${material.size} bytes)`,
+          "Repository normalization: one terminal LF appended; all upstream text bytes are otherwise identical.",
+          "", normalizedText(material.text));
+      }
+    } else {
+      lines.push("",
+        "Status: UNRESOLVED — no upstream-published licence text or copyright statement exists for this exact version; nothing is rendered for it and none is asserted.",
+        `Missing evidence: ${escape(record.unresolved.missingEvidence)}`,
+        "Checks performed:",
+        ...record.unresolved.checksPerformed.map(({ check, result }) => `- ${escape(check)}: ${escape(result)}`),
+        `Fallback used: ${escape(record.unresolved.fallbackUsed)}`);
+    }
+  }
+  return lines;
+}
+
+export function renderRustNotices(manifest, manifestSHA256, noticeTexts, noticeMaterials) {
   const crates = manifest.items.filter((item) => item.kind === "rust-crate");
   const withoutText = crates.filter((item) => item.noticeStatus === "no-licence-text-in-crate");
+  const bound = noticeMaterials === undefined ? "" : ` Version-bound notice material for the ${withoutText.length} crates whose archive carries no licence text is bound from \`${escapeCell(noticeMaterials.relativePath)}\` (\`sha256:${noticeMaterials.sha256}\`): exact external material for ${noticeMaterials.summary.established.length}, precise unresolved records for ${noticeMaterials.summary.unresolved.length}; see "Crates whose archive carries no licence text".`;
   const lines = [
     "# Rust crate notices for the redistributed libvips combined binary",
     "",
     `Package: \`${manifest.binary.packageName}\` ${manifest.binary.version}; build commit \`${manifest.binary.buildCommit}\`; manifest \`sha256:${manifestSHA256}\`.`,
     "",
-    `This file lists ${crates.length} crates.io crates identified by the manifest for the Rust dependencies of the librsvg-c static library of this binary (${crates.filter((item) => item.provenanceStatus === "compiled-per-build-log").length} observed compiling in the retained historical build log, ${crates.filter((item) => item.provenanceStatus === "resolved-approximation").length} resolved by approximation only), with the exact licence texts each .crate archive carries (verified by SHA-256 against the crates.io checksum recorded in the pinned Cargo.lock). Historical build provenance: compiledInHistoricalBuild=${manifest.provenanceStatuses.compiledInHistoricalBuild}, incorporatedIntoShippedBinary=${manifest.provenanceStatuses.incorporatedIntoShippedBinary}. Observed compilation is not a linkage map. This is an auditable material inventory, explicitly partial where marked, not a corresponding-source offer and not legal clearance.`,
+    `This file lists ${crates.length} crates.io crates identified by the manifest for the Rust dependencies of the librsvg-c static library of this binary (${crates.filter((item) => item.provenanceStatus === "compiled-per-build-log").length} observed compiling in the retained historical build log, ${crates.filter((item) => item.provenanceStatus === "resolved-approximation").length} resolved by approximation only), with the exact licence texts each .crate archive carries (verified by SHA-256 against the crates.io checksum recorded in the pinned Cargo.lock). Historical build provenance: compiledInHistoricalBuild=${manifest.provenanceStatuses.compiledInHistoricalBuild}, incorporatedIntoShippedBinary=${manifest.provenanceStatuses.incorporatedIntoShippedBinary}. Observed compilation is not a linkage map. This is an auditable material inventory, explicitly partial where marked, not a corresponding-source offer and not legal clearance.${bound}`,
     "",
     "| Crate | Version | Role | Licence expression (Cargo.toml) | Provenance status | Notice material in crate | .crate SHA-256 |",
     "| --- | --- | --- | --- | --- | --- | --- |"
   ];
-  const escape = (value) => String(value).replaceAll("|", "\\|").replaceAll("\n", " ").replaceAll("\r", " ");
+  const escape = escapeCell;
   for (const item of crates) {
-    const members = item.noticeMembers.length === 0 ? "none in crate" : item.noticeMembers.map((member) => `\`${escape(member.member.split("/")[1])}\``).join("<br>");
+    let members = item.noticeMembers.length === 0 ? "none in crate" : item.noticeMembers.map((member) => `\`${escape(member.member.split("/")[1])}\``).join("<br>");
+    if (noticeMaterials !== undefined && item.noticeMembers.length === 0) {
+      const record = noticeMaterials.records.find((candidate) => candidate.itemId === item.id);
+      members = record.status === "established" ? "none in crate; external material bound (see below)" : "none in crate; UNRESOLVED (see below)";
+    }
     lines.push(`| \`${escape(item.crateName)}\` | \`${escape(item.crateVersion)}\` | ${item.role} | ${escape(item.licenseExpression)} | ${item.provenanceStatus} | ${members} | \`${item.sha256}\` |`);
   }
   if (withoutText.length > 0) {
-    lines.push("", "## Crates whose archive carries no licence text", "",
-      "These crates are identified only by their Cargo.toml licence expression; the applicable licence text and any copyright statement are not retained here.", "");
-    for (const item of withoutText) {
-      lines.push(`- \`${escape(item.crateName)}\` ${escape(item.crateVersion)}: ${escape(item.licenseExpression)}${item.authors ? ` (authors: ${escape(item.authors.join("; "))})` : ""}`);
+    if (noticeMaterials === undefined) {
+      lines.push("", "## Crates whose archive carries no licence text", "",
+        "These crates are identified only by their Cargo.toml licence expression; the applicable licence text and any copyright statement are not retained here.", "");
+      for (const item of withoutText) {
+        lines.push(`- \`${escape(item.crateName)}\` ${escape(item.crateVersion)}: ${escape(item.licenseExpression)}${item.authors ? ` (authors: ${escape(item.authors.join("; "))})` : ""}`);
+      }
+    } else {
+      lines.push(...renderBoundNoticeMaterials(withoutText, noticeMaterials));
     }
   }
   lines.push("", "## Licence texts", "");
@@ -455,19 +816,21 @@ function renderRustNotices(manifest, manifestSHA256, noticeTexts) {
     for (const member of item.noticeMembers) {
       lines.push(`### \`${escape(item.crateName)}\` ${escape(item.crateVersion)}: \`${escape(member.member.split("/")[1])}\``, "",
         `Crate: \`${item.url}\` (\`sha256:${item.sha256}\`); member \`${escape(member.member)}\` (\`sha256:${member.sha256}\`, ${member.size} bytes); licence expression: ${escape(item.licenseExpression)}${item.authors ? `; authors: ${escape(item.authors.join("; "))}` : ""}.`,
-        "", noticeTexts.get(`${item.id}\0${member.member}`).replaceAll("\r\n", "\n").replaceAll("\r", "\n").trimEnd(), "");
+        "", normalizedText(noticeTexts.get(`${item.id}\0${member.member}`)), "");
     }
   }
   return `${lines.join("\n")}\n`;
 }
 
-async function collectRustNotices(manifest, directory) {
+export async function collectRustNotices(manifest, directory, noticeMaterials) {
   const texts = new Map();
   for (const item of manifest.items) {
     if (item.kind !== "rust-crate") continue;
     const bytes = await boundedRegularBytes(join(directory, item.fileName), manifest.limits.maximumFileBytes, `crate archive ${item.fileName}`);
     if (bytes.byteLength !== item.size || sha256(bytes) !== item.sha256) fail(`crate archive drifted before notice extraction: ${item.id}`);
-    for (const [member, text] of readCrateNoticeMembers(bytes, item)) texts.set(`${item.id}\0${member}`, text);
+    const archiveNotices = noticeMaterials === undefined ? []
+      : noticeMaterials.records.filter((record) => record.itemId === item.id && record.archiveNotice !== undefined).map((record) => record.archiveNotice);
+    for (const [member, text] of readCrateNoticeMembers(bytes, item, archiveNotices)) texts.set(`${item.id}\0${member}`, text);
   }
   return texts;
 }
@@ -600,7 +963,38 @@ function makeSink(stagingDirectory) {
 // ---------------------------------------------------------------------------
 // Inventory
 
-function renderInventory(manifest, manifestSHA256, acquisitions, transport, rustNoticesSHA256) {
+function inventoryNoticeMaterials(noticeMaterials) {
+  return {
+    manifest: noticeMaterials.relativePath,
+    manifestSHA256: noticeMaterials.sha256,
+    researchedOn: noticeMaterials.researchedOn,
+    summary: noticeMaterials.summary,
+    records: noticeMaterials.records.map((record) => ({
+      crateName: record.crateName,
+      crateVersion: record.crateVersion,
+      itemId: record.itemId,
+      crateSHA256: record.crateSHA256,
+      licenseExpression: record.licenseExpression,
+      status: record.status,
+      connection: record.connection,
+      ...(record.archiveNotice === undefined ? {} : { archiveNotice: { member: record.archiveNotice.member, memberSHA256: record.archiveNotice.memberSHA256 } }),
+      materials: record.materials.map((material) => ({
+        kind: material.kind,
+        sourcePath: material.sourcePath,
+        origin: material.origin,
+        upstreamSHA256: material.upstreamSHA256,
+        upstreamSize: material.upstreamSize,
+        normalization: material.normalization,
+        sha256: material.sha256,
+        size: material.size,
+        retrievedOn: material.retrievedOn
+      })),
+      ...(record.unresolved === undefined ? {} : { unresolved: record.unresolved })
+    }))
+  };
+}
+
+export function renderInventory(manifest, manifestSHA256, acquisitions, transport, rustNoticesSHA256, noticeMaterials) {
   const items = manifest.items.map((item) => ({
     id: item.id,
     kind: item.kind,
@@ -639,7 +1033,8 @@ function renderInventory(manifest, manifestSHA256, acquisitions, transport, rust
     ...(manifest.provenanceStatuses === undefined ? {} : {
       historicalBuildProvenance: manifest.provenanceStatuses,
       rustNoticesFile: RUST_NOTICES_NAME,
-      rustNoticesSHA256
+      rustNoticesSHA256,
+      ...(noticeMaterials === undefined ? {} : { noticeMaterials: inventoryNoticeMaterials(noticeMaterials) })
     }),
     items,
     statement: "Exact upstream inputs identified by the pinned build recipe, verified by size and SHA-256. Archives are opaque and unmodified. This inventory is not a corresponding-source offer, does not prove a rebuild, and is not legal clearance."
@@ -675,7 +1070,7 @@ function parseTransport(argument) {
   fail(USAGE);
 }
 
-async function loadManifest(manifestArgument) {
+export async function loadManifest(manifestArgument) {
   const manifestPath = resolve(manifestArgument);
   await requireCanonicalDirectory(dirname(manifestPath), "manifest directory");
   if (await realpath(manifestPath) !== manifestPath) fail("manifest must not traverse aliases or symbolic links");
@@ -685,11 +1080,24 @@ async function loadManifest(manifestArgument) {
   let document;
   try { document = JSON.parse(text); }
   catch (error) { fail(`manifest is not valid JSON: ${error.message}`); }
-  return { manifest: validateManifest(document), manifestSHA256: sha256(bytes) };
+  return { manifest: validateManifest(document), manifestSHA256: sha256(bytes), manifestPath, manifestBytes: bytes };
 }
 
-async function acquire(manifestArgument, destinationArgument, transport) {
-  const { manifest, manifestSHA256 } = await loadManifest(manifestArgument);
+// Loads the crate manifest and, when an external notice-materials manifest is
+// named, binds it to that exact crate manifest. The option only applies to a
+// manifest with rust-crate items.
+async function loadManifestWithNoticeMaterials(manifestArgument, noticeMaterialsArgument) {
+  const loaded = await loadManifest(manifestArgument);
+  let noticeMaterials;
+  if (noticeMaterialsArgument !== undefined) {
+    if (loaded.manifest.provenanceStatuses === undefined) fail("--notice-materials applies only to a manifest with rust-crate items");
+    noticeMaterials = await loadRustNoticeMaterials(noticeMaterialsArgument, loaded.manifest, loaded.manifestPath);
+  }
+  return { ...loaded, noticeMaterials };
+}
+
+async function acquire(manifestArgument, destinationArgument, transport, noticeMaterialsArgument) {
+  const { manifest, manifestSHA256, noticeMaterials } = await loadManifestWithNoticeMaterials(manifestArgument, noticeMaterialsArgument);
   const destination = resolve(destinationArgument);
   const parent = dirname(destination);
   await requireCanonicalDirectory(parent, "destination parent directory");
@@ -721,12 +1129,12 @@ async function acquire(manifestArgument, destinationArgument, transport) {
     }
     let rustNoticesSHA256;
     if (manifest.provenanceStatuses !== undefined) {
-      const noticesText = renderRustNotices(manifest, manifestSHA256, await collectRustNotices(manifest, staging));
+      const noticesText = renderRustNotices(manifest, manifestSHA256, await collectRustNotices(manifest, staging, noticeMaterials), noticeMaterials);
       rustNoticesSHA256 = sha256(noticesText);
       await writeExclusive(join(staging, RUST_NOTICES_NAME), noticesText);
-      process.stderr.write(`rendered ${RUST_NOTICES_NAME} (sha256:${rustNoticesSHA256}); historical build provenance ${JSON.stringify(manifest.provenanceStatuses)}\n`);
+      process.stderr.write(`rendered ${RUST_NOTICES_NAME} (sha256:${rustNoticesSHA256}); historical build provenance ${JSON.stringify(manifest.provenanceStatuses)}${noticeMaterials === undefined ? "" : `; external notice material bound from ${noticeMaterials.relativePath} (sha256:${noticeMaterials.sha256}; established ${noticeMaterials.summary.established.length}, unresolved ${noticeMaterials.summary.unresolved.length})`}\n`);
     }
-    const { inventoryText, sumsText } = renderInventory(manifest, manifestSHA256, acquisitions, transportUsed, rustNoticesSHA256);
+    const { inventoryText, sumsText } = renderInventory(manifest, manifestSHA256, acquisitions, transportUsed, rustNoticesSHA256, noticeMaterials);
     await writeExclusive(join(staging, INVENTORY_NAME), inventoryText);
     await writeExclusive(join(staging, SUMS_NAME), sumsText);
     const directoryHandle = await open(staging, constants.O_RDONLY);
@@ -739,8 +1147,11 @@ async function acquire(manifestArgument, destinationArgument, transport) {
   }
 }
 
-async function verify(manifestArgument, destinationArgument) {
-  const { manifest, manifestSHA256 } = await loadManifest(manifestArgument);
+// Verifies one published destination against its manifest and returns the
+// verified state (manifest, notice materials, rendered notices, inventory and
+// checksum texts with their digests) for callers that build on it.
+export async function verifyMaterials(manifestArgument, destinationArgument, noticeMaterialsArgument) {
+  const { manifest, manifestSHA256, manifestPath, noticeMaterials } = await loadManifestWithNoticeMaterials(manifestArgument, noticeMaterialsArgument);
   const destination = resolve(destinationArgument);
   await requireCanonicalDirectory(destination, "destination");
   if (basename(destination) !== manifest.outputDirectoryName) fail(`destination must be named ${manifest.outputDirectoryName}`);
@@ -767,12 +1178,8 @@ async function verify(manifestArgument, destinationArgument) {
   }
   // Material framing is re-validated before any inventory metadata is trusted,
   // so a retained malformed archive is rejected on its own merits.
-  let rustNoticesSHA256;
-  let noticesText;
-  if (manifest.provenanceStatuses !== undefined) {
-    noticesText = renderRustNotices(manifest, manifestSHA256, await collectRustNotices(manifest, destination));
-    rustNoticesSHA256 = sha256(noticesText);
-  }
+  let noticeTexts;
+  if (manifest.provenanceStatuses !== undefined) noticeTexts = await collectRustNotices(manifest, destination, noticeMaterials);
   const inventoryBytes = await boundedRegularBytes(join(destination, INVENTORY_NAME), MAXIMUM_MANIFEST_BYTES, "inventory");
   let inventory;
   try { inventory = JSON.parse(inventoryBytes.toString("utf8")); }
@@ -782,25 +1189,83 @@ async function verify(manifestArgument, destinationArgument) {
       || inventory.authoritative !== (inventory.transport === "https")) {
     fail("inventory does not describe this manifest");
   }
-  const acquisitions = new Map(inventory.items.map((item) => [item.id, item.redirectHosts]));
-  if (noticesText !== undefined) {
+  // A destination rendered with external notice material is verified only with
+  // it, and one rendered without it is never relabelled as complete.
+  if (noticeMaterials === undefined && inventory.noticeMaterials !== undefined) {
+    fail(`inventory records external notice material bound from ${inventory.noticeMaterials?.manifest}; pass --notice-materials with that manifest to verify it`);
+  }
+  if (noticeMaterials !== undefined && inventory.noticeMaterials === undefined) {
+    fail("inventory was rendered without external notice material; acquire again with --notice-materials instead of relabelling this destination");
+  }
+  let rustNoticesSHA256;
+  let noticesText;
+  if (noticeTexts !== undefined) {
+    noticesText = renderRustNotices(manifest, manifestSHA256, noticeTexts, noticeMaterials);
+    rustNoticesSHA256 = sha256(noticesText);
     const stored = await boundedRegularBytes(join(destination, RUST_NOTICES_NAME), MAXIMUM_MANIFEST_BYTES * 16, "rust notices");
     if (stored.toString("utf8") !== noticesText) fail("rust crate notices drifted from the verified crate archives");
   }
-  const { inventoryText, sumsText } = renderInventory(manifest, manifestSHA256, acquisitions, inventory.transport, rustNoticesSHA256);
+  const acquisitions = new Map(inventory.items.map((item) => [item.id, item.redirectHosts]));
+  const { inventoryText, sumsText } = renderInventory(manifest, manifestSHA256, acquisitions, inventory.transport, rustNoticesSHA256, noticeMaterials);
   if (inventoryText !== inventoryBytes.toString("utf8")) fail("inventory content drifted from the manifest");
   const sumsBytes = await boundedRegularBytes(join(destination, SUMS_NAME), MAXIMUM_MANIFEST_BYTES, "checksum list");
   if (sumsText !== sumsBytes.toString("utf8")) fail("checksum list drifted from the manifest");
-  process.stderr.write(`verified ${manifest.items.length} items (${manifest.totalBytes} bytes) in ${destination}; transport ${inventory.transport}${inventory.authoritative ? "" : " (NOT authoritative)"}\n`);
+  return {
+    destination,
+    manifest,
+    manifestSHA256,
+    manifestPath,
+    noticeMaterials,
+    noticeTexts,
+    noticesText,
+    rustNoticesSHA256,
+    inventory,
+    inventoryText,
+    inventorySHA256: sha256(inventoryBytes),
+    sumsText,
+    sumsSHA256: sha256(sumsBytes),
+    transport: inventory.transport,
+    authoritative: inventory.authoritative
+  };
 }
 
-const [command, manifestArgument, destinationArgument, ...rest] = process.argv.slice(2);
-if (!manifestArgument || !destinationArgument || rest.length > 2 || (rest.length > 0 && rest[0] !== "--transport")) fail(USAGE);
-if (command === "acquire") {
-  await acquire(manifestArgument, destinationArgument, parseTransport(rest[1]));
-} else if (command === "verify") {
-  if (rest.length > 0) fail(USAGE);
-  await verify(manifestArgument, destinationArgument);
-} else {
-  fail(USAGE);
+async function verify(manifestArgument, destinationArgument, noticeMaterialsArgument) {
+  const verified = await verifyMaterials(manifestArgument, destinationArgument, noticeMaterialsArgument);
+  const { manifest, noticeMaterials } = verified;
+  process.stderr.write(`verified ${manifest.items.length} items (${manifest.totalBytes} bytes) in ${verified.destination}; transport ${verified.transport}${verified.authoritative ? "" : " (NOT authoritative)"}${noticeMaterials === undefined ? "" : `; external notice material ${noticeMaterials.relativePath} (sha256:${noticeMaterials.sha256}; established ${noticeMaterials.summary.established.length}, unresolved ${noticeMaterials.summary.unresolved.length})`}\n`);
+}
+
+function parseCommandLine(argv) {
+  const [command, manifestArgument, destinationArgument, ...rest] = argv;
+  if (!manifestArgument || !destinationArgument) fail(USAGE);
+  const options = {};
+  for (let index = 0; index < rest.length; index += 2) {
+    const option = rest[index];
+    const value = rest[index + 1];
+    if (value === undefined || value.length === 0 || value.startsWith("--")) fail(USAGE);
+    if (option === "--transport" && options.transport === undefined) options.transport = value;
+    else if (option === "--notice-materials" && options.noticeMaterials === undefined) options.noticeMaterials = value;
+    else fail(USAGE);
+  }
+  if (command === "verify" && options.transport !== undefined) fail(USAGE);
+  return { command, manifestArgument, destinationArgument, ...options };
+}
+
+function isEntryPoint() {
+  try {
+    return process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
+  const { command, manifestArgument, destinationArgument, transport, noticeMaterials } = parseCommandLine(process.argv.slice(2));
+  if (command === "acquire") {
+    await acquire(manifestArgument, destinationArgument, parseTransport(transport), noticeMaterials);
+  } else if (command === "verify") {
+    await verify(manifestArgument, destinationArgument, noticeMaterials);
+  } else {
+    fail(USAGE);
+  }
 }
