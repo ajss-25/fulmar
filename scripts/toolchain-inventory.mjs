@@ -215,23 +215,40 @@ export async function resolveHostedToolchainAdmission({
   pinPath,
   trackedPinPath = trackedHostedToolchainPinPath,
   developerDirectory,
-  effectiveUID
+  effectiveUID,
+  operatingSystem
 }) {
   if (typeof pinPath !== "string" || resolve(pinPath) !== trackedPinPath) {
     throw new Error("hosted toolchain admission accepts only the literal tracked Config/HostedMacOSToolchainPin.json");
   }
-  const { readHostedMacOSToolchainPin } = await import("./hosted-macos-toolchain-pin.mjs");
-  const pin = await readHostedMacOSToolchainPin(trackedPinPath);
-  if (pin.pinStatus !== "active") {
-    return Object.freeze({ admitted: false, reason: `the tracked hosted pin is ${pin.pinStatus}` });
+  const { readHostedMacOSToolchainPin, activeHostedMacOSToolchainPins } = await import("./hosted-macos-toolchain-pin.mjs");
+  const document = await readHostedMacOSToolchainPin(trackedPinPath);
+  if (document.pinStatus !== "active") {
+    return Object.freeze({ admitted: false, reason: `the tracked hosted pin is ${document.pinStatus}` });
   }
-  const contract = pin.runnerContract;
+  const contract = document.runnerContract;
   if (contract.provider !== "github-hosted" || contract.operatingSystem !== "macOS"
       || contract.architecture !== "ARM64") {
     throw new Error("the tracked hosted pin is not a GitHub-hosted macOS ARM64 runner contract");
   }
-  if (pin.hostedDiscovery.github.repository !== expectedHostedRepository) {
+  if (document.hostedDiscovery.github.repository !== expectedHostedRepository) {
     throw new Error("the tracked hosted pin was discovered in an unexpected GitHub repository");
+  }
+  // The sanitized build has no GitHub/Image environment. Select exactly one
+  // whole reviewed member using the system OS identity, uid and Xcode path;
+  // never combine descriptors across members with otherwise shared tools.
+  const members = activeHostedMacOSToolchainPins(document);
+  const eligible = members.filter((member) => member.hostedDiscovery.runner.effectiveUID === effectiveUID
+    && member.hostedDiscovery.toolchain.developerDirectory === developerDirectory);
+  let pin = members[0];
+  if (document.schemaVersion === 3 && eligible.length > 0) {
+    const matches = eligible.filter((member) => operatingSystem
+      && member.hostedDiscovery.toolchain.operatingSystem.productVersion === operatingSystem.productVersion
+      && member.hostedDiscovery.toolchain.operatingSystem.buildVersion === operatingSystem.buildVersion);
+    if (matches.length !== 1) {
+      throw new Error("no exact reviewed hosted OS, uid and Xcode identity matches");
+    }
+    [pin] = matches;
   }
   const runnerUID = pin.hostedDiscovery.runner.effectiveUID;
   if (!Number.isSafeInteger(effectiveUID) || effectiveUID !== runnerUID) {
@@ -336,7 +353,11 @@ export async function captureToolchainInventory(requireCleanEnvironment = false,
       pinPath,
       trackedPinPath: probes.trackedPinPath(),
       developerDirectory,
-      effectiveUID: probes.effectiveUID()
+      effectiveUID: probes.effectiveUID(),
+      operatingSystem: {
+        productVersion: await run("/usr/bin/sw_vers", ["-productVersion"]),
+        buildVersion: await run("/usr/bin/sw_vers", ["-buildVersion"])
+      }
     });
   }
   const admittedUID = admission?.admitted ? admission.effectiveUID : hostedDeveloperTreeOwnerUID;

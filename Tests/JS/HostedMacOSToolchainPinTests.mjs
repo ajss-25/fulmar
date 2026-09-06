@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
+  activeHostedMacOSToolchainPins,
   canonicalPinJSON,
   compareHostedMacOSToolchainIdentity,
   discoverHostedMacOSToolchainIdentity,
@@ -143,16 +144,40 @@ function proposalFixture(pinStatus = "review-required") {
   };
 }
 
+function compatiblePinFixture() {
+  const primary = proposalFixture("active");
+  const compatible = proposalFixture("active");
+  compatible.hostedDiscovery.image.imageVersion = "20260801.1";
+  compatible.hostedDiscovery.github.runID = "987654321";
+  compatible.hostedDiscovery.toolchain.operatingSystem = { productVersion: "26.0.1", buildVersion: "25A124" };
+  compatible.hostedDiscovery.toolchain.versions.clang = "Apple clang version 17.0.0\nTarget: arm64-apple-darwin25.1.0";
+  compatible.hostedDiscovery.toolchain.tools.clang.sha256 = "a".repeat(64);
+  compatible.hostedDiscovery.toolchain.tools.codesign.bytes += 1;
+  compatible.hostedDiscovery.toolchain.tools.codesign.sha256 = "b".repeat(64);
+  return { ...primary, schemaVersion: 3, compatiblePins: [compatible] };
+}
+
+function freshProposal(pin) {
+  const proposal = structuredClone(pin);
+  proposal.pinStatus = "review-required";
+  proposal.hostedDiscovery.github.commitSHA = "b".repeat(40);
+  proposal.hostedDiscovery.github.runID = "111111111";
+  return proposal;
+}
+
 test("source pin is canonical, active, and retains fail-closed unresolved behavior", async () => {
   const pin = await readHostedMacOSToolchainPin(sourcePin);
+  assert.equal(pin.schemaVersion, 3);
   assert.equal(pin.pinStatus, "active");
   assert.notEqual(pin.hostedDiscovery, null);
 
-  const freshProposal = structuredClone(pin);
-  freshProposal.pinStatus = "review-required";
-  freshProposal.hostedDiscovery.github.commitSHA = "b".repeat(40);
-  freshProposal.hostedDiscovery.github.runID = "987654321";
-  compareHostedMacOSToolchainIdentity(pin, freshProposal);
+  const activePins = activeHostedMacOSToolchainPins(pin);
+  assert.equal(activePins.length, 2);
+  for (const selected of activePins) {
+    assert.equal(selected.schemaVersion, 2);
+    assert.equal(Object.hasOwn(selected, "compatiblePins"), false);
+    assert.deepEqual(compareHostedMacOSToolchainIdentity(pin, freshProposal(selected)), selected);
+  }
 
   const unresolved = {
     schemaVersion: 2,
@@ -230,6 +255,8 @@ test("discovery always emits review-required evidence and validates the full hos
     }
   });
   assert.equal(proposal.pinStatus, "review-required");
+  assert.equal(proposal.schemaVersion, 2);
+  assert.equal(Object.hasOwn(proposal, "compatiblePins"), false);
   assert.deepEqual(captureArguments, [false, { hostedDeveloperTreeOwnerUID: 501 }]);
   assert.deepEqual(descriptorArguments, [
     `${toolchain.developerDirectory}/usr/bin/xcodebuild`,
@@ -288,9 +315,38 @@ test("schema and path validation reject invented evidence and unsafe tool identi
     () => validateHostedMacOSToolchainPin(commandLineTools),
     /requires one selected full Xcode application/u
   );
+
+  const compatible = compatiblePinFixture();
+  validateHostedMacOSToolchainPin(compatible);
+  const [primary, secondary] = activeHostedMacOSToolchainPins(compatible);
+  assert.equal(primary.schemaVersion, 2);
+  assert.equal(Object.hasOwn(primary, "compatiblePins"), false);
+  assert.deepEqual(secondary, compatible.compatiblePins[0]);
+  assert.deepEqual(activeHostedMacOSToolchainPins(proposalFixture("active")), [proposalFixture("active")]);
+
+  for (const mutate of [
+    (value) => { value.pinStatus = "review-required"; },
+    (value) => { value.pinStatus = "discovery-required"; },
+    (value) => { value.compatiblePins = []; },
+    (value) => { value.compatiblePins = null; },
+    (value) => { value.compatiblePins.push(structuredClone(value.compatiblePins[0])); },
+    (value) => { delete value.compatiblePins; },
+    (value) => { value.compatiblePins[0].pinStatus = "review-required"; },
+    (value) => { value.compatiblePins[0].schemaVersion = 3; value.compatiblePins[0].compatiblePins = []; },
+    (value) => { value.compatiblePins[0].hostedDiscovery.github.repository = "other/fulmar"; },
+    (value) => { value.compatiblePins[0].runnerContract.requestedLabel = "macos-26-large"; },
+    (value) => { value.compatiblePins[0].hostedDiscovery.toolchain.operatingSystem = structuredClone(value.hostedDiscovery.toolchain.operatingSystem); },
+    (value) => { value.compatiblePins[0].hostedDiscovery.toolchain.tools.clang.sha256 = "not-a-digest"; }
+  ]) {
+    const rejected = compatiblePinFixture();
+    mutate(rejected);
+    assert.throws(() => validateHostedMacOSToolchainPin(rejected), undefined, `invalid compatibility record: ${mutate}`);
+    assert.throws(() => activeHostedMacOSToolchainPins(rejected), undefined, `invalid record must not yield any active pins: ${mutate}`);
+  }
+  assert.throws(() => activeHostedMacOSToolchainPins(proposalFixture()), /review-required/u);
 });
 
-test("active comparison is exact and fails closed for image, Xcode, or tool drift", () => {
+test("active comparison is exact and fails closed for image, Xcode, or tool drift", async () => {
   const active = proposalFixture("active");
   const current = proposalFixture();
   compareHostedMacOSToolchainIdentity(active, current);
@@ -312,6 +368,47 @@ test("active comparison is exact and fails closed for image, Xcode, or tool drif
     () => compareHostedMacOSToolchainIdentity(proposalFixture(), current),
     /review-required; hosted discovery and review remain mandatory/u
   );
+
+  const compatible = compatiblePinFixture();
+  const [primary, secondary] = activeHostedMacOSToolchainPins(compatible);
+  for (const selected of [primary, secondary]) {
+    assert.deepEqual(compareHostedMacOSToolchainIdentity(compatible, freshProposal(selected)), selected);
+    const identity = selected.hostedDiscovery;
+    const verified = await verifyHostedMacOSToolchainPin("macos-26", compatible, {
+      environment: hostedEnvironment({ ImageVersion: identity.image.imageVersion }),
+      effectiveUID: identity.runner.effectiveUID,
+      captureToolchain: async () => structuredClone(identity.toolchain),
+      runCommand: async (path, arguments_) => {
+        if (path === "/usr/bin/xcrun" && arguments_.join(" ") === "-f xcodebuild") return identity.xcode.executable.path;
+        if (path === "/usr/bin/xcodebuild" && arguments_.join(" ") === "-version") return identity.xcode.version;
+        throw new Error("unexpected compatibility verification command");
+      },
+      describeSystemFile: async () => structuredClone(identity.xcode.executable)
+    });
+    assert.equal(verified.schemaVersion, 2);
+    assert.equal(verified.pinStatus, "review-required");
+    assert.deepEqual(compareHostedMacOSToolchainIdentity(compatible, verified), selected);
+  }
+  for (const mutate of [
+    (value) => { value.hostedDiscovery.image = structuredClone(primary.hostedDiscovery.image); },
+    (value) => { value.hostedDiscovery.toolchain.tools.clang = structuredClone(primary.hostedDiscovery.toolchain.tools.clang); },
+    (value) => { value.hostedDiscovery.toolchain.tools.codesign = structuredClone(primary.hostedDiscovery.toolchain.tools.codesign); },
+    (value) => { value.hostedDiscovery.toolchain.operatingSystem = structuredClone(primary.hostedDiscovery.toolchain.operatingSystem); },
+    (value) => { value.hostedDiscovery.toolchain.versions.clang = primary.hostedDiscovery.toolchain.versions.clang; },
+    (value) => { value.hostedDiscovery.image.imageVersion = "20260999.1"; }
+  ]) {
+    const mixed = freshProposal(secondary);
+    mutate(mixed);
+    assert.throws(
+      () => compareHostedMacOSToolchainIdentity(compatible, mixed),
+      /identity drifted from the active source pin/u,
+      `complete identity matching must not combine independently accepted fields: ${mutate}`
+    );
+  }
+  assert.throws(
+    () => compareHostedMacOSToolchainIdentity(compatible, compatible),
+    /fresh review-required discovery/u
+  );
 });
 
 test("pin reader rejects non-canonical, linked, hard-linked, and writable documents", async () => {
@@ -320,6 +417,10 @@ test("pin reader rejects non-canonical, linked, hard-linked, and writable docume
     const canonical = join(root, "canonical.json");
     await writeFile(canonical, canonicalPinJSON(proposalFixture()), { mode: 0o600 });
     assert.equal((await readHostedMacOSToolchainPin(canonical)).pinStatus, "review-required");
+
+    const bounded = join(root, "compatible.json");
+    await writeFile(bounded, canonicalPinJSON(compatiblePinFixture()), { mode: 0o600 });
+    assert.deepEqual(await readHostedMacOSToolchainPin(bounded), compatiblePinFixture());
 
     const noncanonical = join(root, "noncanonical.json");
     await writeFile(noncanonical, JSON.stringify(proposalFixture()), { mode: 0o600 });

@@ -194,13 +194,18 @@ function validateHostedDiscovery(value, runnerContract) {
 }
 
 export function validateHostedMacOSToolchainPin(value) {
+  const compatible = value?.schemaVersion === 3;
   exactKeys(
     value,
-    ["schemaVersion", "pinStatus", "runnerContract", "hostedDiscovery"],
+    ["schemaVersion", "pinStatus", "runnerContract", "hostedDiscovery", ...(compatible ? ["compatiblePins"] : [])],
     "hosted macOS toolchain pin"
   );
-  if (value.schemaVersion !== 2 || !allowedPinStatuses.has(value.pinStatus)) {
+  if ((!compatible && value.schemaVersion !== 2) || !allowedPinStatuses.has(value.pinStatus)) {
     throw new Error("hosted macOS toolchain pin version or status is unsupported");
+  }
+  if (compatible && (value.pinStatus !== "active" || !Array.isArray(value.compatiblePins)
+      || value.compatiblePins.length !== 1)) {
+    throw new Error("a compatible pin requires exactly two complete active reviewed identities");
   }
   validateRunnerContract(value.runnerContract);
   if (value.pinStatus === "discovery-required") {
@@ -213,7 +218,43 @@ export function validateHostedMacOSToolchainPin(value) {
     throw new Error("a review-required or active pin requires hosted discovery evidence");
   }
   validateHostedDiscovery(value.hostedDiscovery, value.runnerContract);
+  if (compatible) {
+    const secondary = value.compatiblePins[0];
+    // A bounded pair, not a recursive allowlist. Each member remains a whole
+    // reviewed identity; no descriptor, version, or image field is inherited.
+    if (secondary?.schemaVersion !== 2 || secondary.pinStatus !== "active") {
+      throw new Error("the compatible identity must be one complete schema-2 active pin");
+    }
+    validateHostedMacOSToolchainPin(secondary);
+    if (JSON.stringify(secondary.runnerContract) !== JSON.stringify(value.runnerContract)
+        || secondary.hostedDiscovery.github.repository !== value.hostedDiscovery.github.repository) {
+      throw new Error("compatible identities must bind the same runner contract and repository");
+    }
+    const selectionKey = (pin) => JSON.stringify([
+      pin.hostedDiscovery.runner.effectiveUID,
+      pin.hostedDiscovery.toolchain.developerDirectory,
+      pin.hostedDiscovery.toolchain.operatingSystem.productVersion,
+      pin.hostedDiscovery.toolchain.operatingSystem.buildVersion
+    ]);
+    if (selectionKey(secondary) === selectionKey(value)) {
+      throw new Error("compatible identities have an ambiguous clean-capture selection key");
+    }
+  }
   return value;
+}
+
+export function activeHostedMacOSToolchainPins(value) {
+  validateHostedMacOSToolchainPin(value);
+  if (value.pinStatus !== "active") {
+    throw new Error(`hosted macOS toolchain pin is ${value.pinStatus}; hosted discovery and review remain mandatory`);
+  }
+  if (value.schemaVersion === 2) return [value];
+  return [{
+    schemaVersion: 2,
+    pinStatus: value.pinStatus,
+    runnerContract: value.runnerContract,
+    hostedDiscovery: value.hostedDiscovery
+  }, ...value.compatiblePins];
 }
 
 export function canonicalPinJSON(value) {
@@ -375,18 +416,18 @@ function comparableIdentity(document) {
 }
 
 export function compareHostedMacOSToolchainIdentity(activePin, currentProposal) {
-  validateHostedMacOSToolchainPin(activePin);
+  const members = activeHostedMacOSToolchainPins(activePin);
   validateHostedMacOSToolchainPin(currentProposal);
-  if (activePin.pinStatus !== "active") {
-    throw new Error(`hosted macOS toolchain pin is ${activePin.pinStatus}; hosted discovery and review remain mandatory`);
-  }
-  if (currentProposal.pinStatus !== "review-required") {
+  if (currentProposal.schemaVersion !== 2 || currentProposal.pinStatus !== "review-required") {
     throw new Error("current hosted identity must be one fresh review-required discovery");
   }
-  if (JSON.stringify(activePin.runnerContract) !== JSON.stringify(currentProposal.runnerContract)
-      || JSON.stringify(comparableIdentity(activePin)) !== JSON.stringify(comparableIdentity(currentProposal))) {
+  const matches = members.filter((member) =>
+    JSON.stringify(member.runnerContract) === JSON.stringify(currentProposal.runnerContract)
+    && JSON.stringify(comparableIdentity(member)) === JSON.stringify(comparableIdentity(currentProposal)));
+  if (matches.length !== 1) {
     throw new Error("hosted macOS image, Xcode, SDK, compiler, linker, or tool identity drifted from the active source pin");
   }
+  return matches[0];
 }
 
 export async function verifyHostedMacOSToolchainPin(
@@ -454,8 +495,8 @@ async function main() {
     return;
   }
   const pin = await readHostedMacOSToolchainPin(path);
-  await verifyHostedMacOSToolchainPin(requestedLabel, pin);
-  process.stdout.write(`Verified exact active hosted macOS toolchain pin for ${requestedLabel}.\n`);
+  const current = await verifyHostedMacOSToolchainPin(requestedLabel, pin);
+  process.stdout.write(`Verified exact active hosted macOS toolchain pin for ${requestedLabel}; image ${current.hostedDiscovery.image.imageVersion}.\n`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {

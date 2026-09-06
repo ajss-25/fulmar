@@ -85,9 +85,11 @@ async function createHostedFixture() {
     ...versions
   };
   const pinPath = join(scratch, "HostedMacOSToolchainPin.json");
+  const commandCalls = [];
   const probes = {
     command: async (path, arguments_) => {
       const key = `${path} ${arguments_.join(" ")}`;
+      commandCalls.push(key);
       if (!Object.hasOwn(table, key)) throw new Error(`unexpected fixture command: ${key}`);
       return table[key];
     },
@@ -95,7 +97,7 @@ async function createHostedFixture() {
     trackedPinPath: () => pinPath
   };
   return {
-    scratch, bundle, developer, toolchainBin, sdk, tools, xcodebuild, table, probes, pinPath,
+    scratch, bundle, developer, toolchainBin, sdk, tools, xcodebuild, table, probes, pinPath, commandCalls,
     async remove() {
       await rm(bundle, { recursive: true, force: true });
       await rm(scratch, { recursive: true, force: true });
@@ -132,11 +134,20 @@ async function writePin(path, document, { canonical = true } = {}) {
 // Emulate the exact clean release environment around one capture so the
 // clean-capture code path (not only the discovery path) is exercised.
 async function inCleanEnvironment(sdk, operation) {
-  const saved = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, SDKROOT: process.env.SDKROOT, DEVELOPER_DIR: process.env.DEVELOPER_DIR };
+  const hostedMetadataNames = [
+    "CI", "GITHUB_ACTIONS", "RUNNER_OS", "RUNNER_ARCH", "GITHUB_REPOSITORY", "GITHUB_SHA",
+    "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB", "ImageOS", "ImageVersion"
+  ];
+  const saved = Object.fromEntries(
+    ["PATH", "TMPDIR", "SDKROOT", "DEVELOPER_DIR", ...hostedMetadataNames].map((name) => [name, process.env[name]])
+  );
   process.env.PATH = safePath;
   process.env.TMPDIR = "/private/tmp/";
   process.env.SDKROOT = sdk;
   delete process.env.DEVELOPER_DIR;
+  // Release capture is env -i: image selection must not depend on the live
+  // GitHub metadata that the earlier workflow discovery/verification used.
+  for (const name of hostedMetadataNames) delete process.env[name];
   try {
     return await operation();
   } finally {
@@ -159,7 +170,7 @@ const cleanCapture = (fixture) => inCleanEnvironment(fixture.sdk, () => captureT
 ));
 
 test("an exact active pin admits the pinned hosted tree into a clean capture, and nothing else does", darwinOnly, async () => {
-  const { fixture, inventory } = await activeFixture();
+  const { fixture, inventory, xcode } = await activeFixture();
   try {
     assert.equal(inventory.developerDirectory, fixture.developer);
     assert.equal(inventory.tools.swiftc.path, fixture.tools["swift-frontend"]);
@@ -199,6 +210,87 @@ test("an exact active pin admits the pinned hosted tree into a clean capture, an
     );
     // Outside the clean environment the pin still governs verify-style captures.
     assert.deepEqual(await captureToolchainInventory(false, { hostedToolchainPin: fixture.pinPath }, fixture.probes), inventory);
+
+    // Each image is a complete inventory. The second synthetic image changes
+    // OS identity, clang bytes and clang's version output. All binary execution
+    // remains mocked; only task-owned fixture bytes are changed on disk.
+    const primary = pinDocument(fixture, inventory, xcode);
+    const originalClang = await readFile(fixture.tools.clang);
+    const alternateClang = Buffer.alloc(originalClang.length + 7, 8);
+    const clangVersionKey = `${fixture.tools.clang} --version`;
+    const originalClangVersion = fixture.table[clangVersionKey];
+    const alternateInventory = structuredClone(inventory);
+    alternateInventory.operatingSystem = { productVersion: "26.6.2", buildVersion: "25G83" };
+    alternateInventory.versions.clang = `${originalClangVersion}\nTarget: arm64-apple-darwin25.6.0`;
+    await writeFile(fixture.tools.clang, alternateClang, { mode: 0o755 });
+    alternateInventory.tools.clang = await attestedToolDescriptor(fixture.tools.clang, fixture.developer, uid);
+    const secondary = pinDocument(fixture, alternateInventory, xcode, (value) => {
+      value.hostedDiscovery.image.imageVersion = "20260831.0337.3";
+      value.hostedDiscovery.github.runID = "2";
+    });
+    const compatible = { ...primary, schemaVersion: 3, compatiblePins: [secondary] };
+    await writePin(fixture.pinPath, compatible);
+    const selectImage = (selected) => {
+      fixture.table["/usr/bin/sw_vers -productVersion"] = selected.operatingSystem.productVersion;
+      fixture.table["/usr/bin/sw_vers -buildVersion"] = selected.operatingSystem.buildVersion;
+      fixture.table[clangVersionKey] = selected.versions.clang;
+    };
+    selectImage(alternateInventory);
+    assert.deepEqual(await cleanCapture(fixture), alternateInventory);
+    const alternateAdmission = await resolveHostedToolchainAdmission({
+      pinPath: fixture.pinPath, trackedPinPath: fixture.pinPath, developerDirectory: fixture.developer,
+      effectiveUID: uid, operatingSystem: alternateInventory.operatingSystem
+    });
+    assert.equal(alternateAdmission.admitted, true);
+    assert.deepEqual(alternateAdmission.toolchain, alternateInventory);
+    assert.deepEqual(alternateAdmission.pin, secondary);
+
+    const assertNoVersionProbe = () => assert.equal(
+      fixture.commandCalls.some((command) => command.startsWith(`${fixture.developer}/`)), false,
+      "unmatched image bytes must fail before any admitted executable is version-probed"
+    );
+    selectImage(inventory); // First image identity with second image's bytes.
+    fixture.commandCalls.length = 0;
+    await assert.rejects(cleanCapture(fixture), /tool clang does not match the active hosted toolchain pin/u);
+    assertNoVersionProbe();
+    await writeFile(fixture.tools.clang, originalClang, { mode: 0o755 });
+    assert.deepEqual(await cleanCapture(fixture), inventory);
+    const primaryAdmission = await resolveHostedToolchainAdmission({
+      pinPath: fixture.pinPath, trackedPinPath: fixture.pinPath, developerDirectory: fixture.developer,
+      effectiveUID: uid, operatingSystem: inventory.operatingSystem
+    });
+    assert.deepEqual(primaryAdmission.pin, primary);
+
+    selectImage(alternateInventory); // Second image identity with first image's bytes.
+    fixture.commandCalls.length = 0;
+    await assert.rejects(cleanCapture(fixture), /tool clang does not match the active hosted toolchain pin/u);
+    assertNoVersionProbe();
+
+    for (const operatingSystem of [
+      undefined,
+      { productVersion: "26.9", buildVersion: "25Z99" },
+      { productVersion: inventory.operatingSystem.productVersion, buildVersion: alternateInventory.operatingSystem.buildVersion }
+    ]) {
+      await assert.rejects(
+        resolveHostedToolchainAdmission({
+          pinPath: fixture.pinPath, trackedPinPath: fixture.pinPath, developerDirectory: fixture.developer,
+          effectiveUID: uid, operatingSystem
+        }),
+        /no exact reviewed hosted OS, uid and Xcode identity matches/u,
+        "missing, unknown, or mixed OS identity must not select either pin or fall back to root ownership"
+      );
+    }
+    fixture.table["/usr/bin/sw_vers -productVersion"] = "26.9";
+    fixture.table["/usr/bin/sw_vers -buildVersion"] = "25Z99";
+    fixture.commandCalls.length = 0;
+    await assert.rejects(cleanCapture(fixture), /no exact reviewed hosted OS, uid and Xcode identity matches/u);
+    assertNoVersionProbe();
+
+    selectImage(inventory);
+    fixture.table[clangVersionKey] = alternateInventory.versions.clang;
+    await assert.rejects(cleanCapture(fixture), /does not equal the active pinned inventory/u);
+    selectImage(inventory);
+    assert.deepEqual(await cleanCapture(fixture), inventory);
   } finally {
     await fixture.remove();
   }
@@ -210,7 +302,7 @@ test("pin status, schema, repository, runner contract, uid and developer-directo
     const cases = [
       [(pin) => { pin.pinStatus = "review-required"; }, /remains root-only: the tracked hosted pin is review-required/u, true],
       [(pin) => { pin.pinStatus = "discovery-required"; pin.hostedDiscovery = null; }, /remains root-only: the tracked hosted pin is discovery-required/u, true],
-      [(pin) => { pin.schemaVersion = 3; }, /version or status is unsupported/u, false],
+      [(pin) => { pin.schemaVersion = 4; }, /version or status is unsupported/u, false],
       [(pin) => { pin.pinStatus = "released"; }, /version or status is unsupported/u, false],
       [(pin) => { pin.hostedDiscovery.github.repository = "someone-else/fulmar"; }, /unexpected GitHub repository/u, true],
       [(pin) => { pin.runnerContract.architecture = "X64"; }, /not GitHub-hosted macOS ARM64/u, false],
@@ -250,6 +342,16 @@ test("the pin must be the literal tracked canonical single-link owner-controlled
     await assert.rejects(
       resolveHostedToolchainAdmission({ pinPath: elsewhere, developerDirectory: fixture.developer, effectiveUID: uid }),
       /accepts only the literal tracked/u
+    );
+    const primary = pinDocument(fixture, inventory, xcode);
+    const secondary = structuredClone(primary);
+    secondary.hostedDiscovery.image.imageVersion = "20260831.0337.3";
+    secondary.hostedDiscovery.toolchain.operatingSystem = { productVersion: "26.6.2", buildVersion: "25G83" };
+    await writePin(elsewhere, { ...primary, schemaVersion: 3, compatiblePins: [secondary] });
+    await assert.rejects(
+      inCleanEnvironment(fixture.sdk, () => captureToolchainInventory(true, { hostedToolchainPin: elsewhere }, fixture.probes)),
+      /accepts only the literal tracked Config\/HostedMacOSToolchainPin\.json/u,
+      "a complete compatible pin at an arbitrary pathname must not become an admission channel"
     );
     assert.equal(basename(trackedHostedToolchainPinPath), "HostedMacOSToolchainPin.json");
 

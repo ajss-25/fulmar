@@ -122,6 +122,17 @@ evidence transport.
    `discovery-required` state uploads a bounded proposal and deliberately fails before
    compilation. A maintainer must review and commit the exact active pin, after which
    a fresh hosted run must verify it.
+   Schema 3 preserves the primary identity and permits exactly one complete active
+   schema-2 compatibility pin. The reviewed pair is image `20260831.0337.3`
+   (macOS `26.6.2` / `25G83`) and image `20260728.0273.1`
+   (macOS `26.5.2` / `25F84`); neither is a version range or a mutable fallback.
+   Fresh discovery must equal one whole member, including its image and tool
+   hashes. The clean capture selects a unique member using the system OS identity,
+   uid and Xcode directory, then rechecks that member's complete inventory. Mixing
+   fields across members, ambiguous selectors, nested pins and unknown hosted OS
+   identities are rejected. Local Command Line Tools remain root-only. A reviewed
+   compatibility pin is not qualification evidence: each image still needs a real
+   complete hosted run against the candidate source before claiming qualification.
    The clean release toolchain capture inside `scripts/build-app.sh` stays root-only
    except for one pin-bound admission: GitHub's hosted image owns Xcode as the
    `runner` user, so `scripts/toolchain-inventory.mjs` admits a non-root-owned
