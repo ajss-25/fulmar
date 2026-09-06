@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project status and download safety
+    url: https://github.com/ajss-25/fulmar#fulmar-12
+    about: Read the current source-preview status and limitations before opening an issue.
+  - name: Report a security vulnerability privately
+    url: https://github.com/ajss-25/fulmar/security/advisories/new
+    about: Do not place credentials, exploit details, private prompts, or private files in a public issue.

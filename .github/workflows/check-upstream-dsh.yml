@@ -1,0 +1,40 @@
+name: Check upstream DSH
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 5 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Reject an unsafe tracked source index
+        run: /bin/bash -p scripts/verify-tracked-index.sh .
+
+      - name: Install exact Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.1
+
+      - name: Verify exact Node runtime
+        run: |
+          test "$(uname -s):$(uname -m)" = "Linux:x86_64"
+          node_path="$(command -v node)"
+          test -f "$node_path" && test ! -L "$node_path" && test -x "$node_path"
+          expected_sha="$(sed -nE 's/^[[:space:]]*"nodeLinuxX64SHA256": "([a-f0-9]{64})",?$/\1/p' Config/ReleaseIdentity.json)"
+          test "${#expected_sha}" -eq 64
+          test "$(sha256sum "$node_path" | awk '{ print $1 }')" = "$expected_sha"
+          test "$("$node_path" --version)" = "v22.23.1"
+
+      - name: Require reviewed acknowledgement of every monitored DSH channel
+        run: node scripts/check-dsh-upstream.mjs

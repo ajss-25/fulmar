@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 3,
+  "engineVersion": "1.135.0",
+  "reviewedAt": "2026-09-02",
+  "ruleLicenseURL": "https://semgrep.dev/legal/rules-license/",
+  "distributionPolicy": "Rules are fetched for the scan and are not redistributed by Fulmar.",
+  "scanTargets": [
+    "Package.swift",
+    "Makefile",
+    "Config",
+    "Sources",
+    "Tools",
+    "Resources",
+    "scripts",
+    "Tests"
+  ],
+  "secretScanTargets": [
+    "Package.swift",
+    "Makefile",
+    ".gitattributes",
+    ".gitignore",
+    ".github",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+    "docs",
+    "Config",
+    "Sources",
+    "Tools",
+    "Resources",
+    "scripts",
+    "Tests",
+    "VendorRuntime.inventory.json",
+    "VendorRuntime/package.json",
+    "VendorRuntime/package-lock.json"
+  ],
+  "maximumTargetBytes": 16777216,
+  "topLevelExcludedEntries": [
+    ".git",
+    ".build",
+    "build",
+    "recovered-duplicates"
+  ],
+  "vendorRuntimeGeneratedEntries": [
+    ".npm-cache",
+    "node-v22.23.1-darwin-arm64",
+    "node_modules"
+  ],
+  "vendorRuntimeGeneratedPrefixes": [
+    ".node-bootstrap.",
+    ".fulmar-materialize-"
+  ],
+  "binaryScanExclusions": [
+    {
+      "path": "Resources/FulmarAppIcon.png",
+      "reason": "Reviewed raster application icon; its exact bytes are not a source text surface.",
+      "sha256": "0266694b0a44bcb3f3500ab543c9a8f96540bdfd95333caddf9d74002a3fae43"
+    }
+  ],
+  "secretLanguageSpecificRuleIds": [
+    "go.jwt-go.security.jwt.hardcoded-jwt-key",
+    "java.java-jwt.security.jwt-hardcode.java-jwt-hardcoded-secret",
+    "javascript.express.security.audit.express-session-hardcoded-secret.express-session-hardcoded-secret",
+    "javascript.express.security.express-jwt-hardcoded-secret.express-jwt-hardcoded-secret",
+    "javascript.jose.security.jwt-hardcode.hardcoded-jwt-secret",
+    "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+    "javascript.passport-jwt.security.passport-hardcode.hardcoded-passport-secret",
+    "python.boto3.security.hardcoded-token.hardcoded-token",
+    "ruby.lang.security.hardcoded-http-auth-in-controller.hardcoded-http-auth-in-controller",
+    "terraform.aws.security.aws-provider-static-credentials.aws-provider-static-credentials",
+    "terraform.aws.security.aws-lambda-environment-credentials.aws-lambda-environment-credentials",
+    "ruby.lang.security.hardcoded-secret-rsa-passphrase.hardcoded-secret-rsa-passphrase",
+    "yaml.kubernetes.security.secrets-in-config-file.secrets-in-config-file",
+    "kotlin.gradle.security.build-gradle-password-hardcoded.build-gradle-password-hardcoded",
+    "terraform.lang.security.rds-insecure-password-storage-in-source-code.rds-insecure-password-storage-in-source-code"
+  ],
+  "reportWarningAllowlist": [
+    {
+      "scan": "default",
+      "path": "Tests/LocalHarnessTests/NativeProviderStateRecoveryTests.swift",
+      "rule": "PartialParsing",
+      "level": "warn",
+      "code": 3,
+      "reason": "Semgrep 1.135 does not parse Swift Testing #require and #expect expression macros; all 108 reported spans exactly match the reviewed file's 108 macros, and the exact source SHA requires review after any edit.",
+      "sourceSha256": "c3c3f65808030653ac2a4e3524bf4a9e3cdf023d441941b68af326e2d82c4e71"
+    },
+    {
+      "scan": "default",
+      "path": "Tests/LocalHarnessTests/ControllerActionWiringTests.swift",
+      "rule": "PartialParsing",
+      "level": "warn",
+      "code": 3,
+      "reason": "Semgrep 1.135 does not parse Swift Testing #require and #expect expression macros; all 107 reported spans exactly match the reviewed file's 107 macros, and the exact source SHA requires review after any edit.",
+      "sourceSha256": "5d50aa72f97b8da340075bee84c3f11acc372ecf0a73412090109b1ba993a985"
+    },
+    {
+      "scan": "default",
+      "path": "scripts/create-local-signing-identity.sh",
+      "rule": "PartialParsing",
+      "level": "warn",
+      "code": 3,
+      "reason": "Semgrep 1.135 cannot parse the reviewed zsh named-file-descriptor close that prevents the signing secret from reaching child processes; the exact source SHA requires review after any edit.",
+      "sourceSha256": "6e90b16a64ef5b6c5159b696f7e0d93d9ce43f598cb54fc6a6f4372530f0509d"
+    },
+    {
+      "scan": "default",
+      "path": "scripts/prepare-swift-testing-host.sh",
+      "rule": "PartialParsing",
+      "level": "warn",
+      "code": 3,
+      "reason": "Semgrep 1.135 only partially parses the reviewed POSIX shell path-pattern and escaped-case constructs; the exact source SHA requires review after any edit.",
+      "sourceSha256": "bc6f2eb8611dfdb5d1e87e0a3f62f8e57e2a0c0fb1da377b668dc856897504a5"
+    },
+    {
+      "scan": "default",
+      "path": "scripts/run-with-watchdog.sh",
+      "rule": "PartialParsing",
+      "level": "warn",
+      "code": 3,
+      "reason": "Semgrep 1.135 only partially parses the reviewed POSIX literal-newline case pattern and descriptor here-document used by the clean watchdog bootstrap; the exact source SHA requires review after any edit.",
+      "sourceSha256": "1192957ab8907f592cc1d7add0698496ad331d497bd8de73a7ee404ae1b81abf"
+    },
+    {
+      "scan": "default",
+      "path": "scripts/verify-runtime-lease.sh",
+      "rule": "PartialParsing",
+      "level": "warn",
+      "code": 3,
+      "reason": "Semgrep 1.135 only partially parses the reviewed zsh line-array split and deliberately nested shell/Perl parent-death process fixture; the exact source SHA requires review after any edit.",
+      "sourceSha256": "0c91a41120580ddacee70235388915ada429988a7484fe589a2b3f8a798b40cf"
+    },
+    {
+      "scan": "default",
+      "path": "scripts/verify-simulated-provider-matrix.sh",
+      "rule": "PartialParsing",
+      "level": "warn",
+      "code": 3,
+      "reason": "Semgrep 1.135 cannot meaningfully parse the reviewed zsh associative-array and process-control script; the exact source SHA requires review after any edit.",
+      "sourceSha256": "76fd68be3bd5403e4c2a25bf6098339c81a998838b0a5559b67cbb950034e7bd"
+    }
+  ],
+  "rules": [
+    {
+      "id": "semgrep-default",
+      "url": "https://semgrep.dev/c/p/default",
+      "sha256": "ef6306c3be7298ab8ce1fc2702a56044740d05d5c728808f3e32d3c85b4d11a0",
+      "digestMode": "yaml-top-level-rule-block-set-v1",
+      "byteCount": 2423491,
+      "ruleCount": 1074,
+      "format": "yaml",
+      "contentType": "text/yaml"
+    },
+    {
+      "id": "semgrep-secrets",
+      "url": "https://semgrep.dev/c/p/secrets",
+      "sha256": "d8c1c5e0e532e641858800330a8c1c9bc1f8eddeea6905696fd93e07a7ed229a",
+      "digestMode": "yaml-top-level-rule-block-set-v1",
+      "byteCount": 89772,
+      "ruleCount": 52,
+      "format": "yaml",
+      "contentType": "text/yaml"
+    }
+  ]
+}

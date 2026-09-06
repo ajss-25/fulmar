@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "runtimePackageSHA256": "41abcc8de1146bc0ca3eabc746b5814e232ada064f3aa0ed778ff1b465ba9c0c",
+  "reviewedLockSHA256": "408c97b76eb20998fc7fbf7b86d6ff901cab59061e5a72114ee429cdc4b8d6be",
+  "installLockSHA256": "db499d7c7398de70d339f5b4f628af648912c29e41c0fd17d044f9f7901e1f65",
+  "removedInstallOnlyDependency": {
+    "package": "@deepseek-ai/dsh",
+    "dependency": "@local-harness/dsh-credentials-keychain",
+    "version": "1.0.3"
+  },
+  "upstreamTarballs": [
+    {
+      "package": "@deepseek-ai/dsh",
+      "version": "0.1.1-rc.1",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.1.1-rc.1.tgz",
+      "integrity": "sha512-HVauMT0F7MWUctkxzBcu5PMFc8j0lm0kX+4IbcUsA7Oh+/xv7xhigEDP0SaSOM/kR48U/BldHbZru116DcZz0w=="
+    },
+    {
+      "package": "@deepseek-ai/dsh-llm-deepseek",
+      "version": "0.1.1-rc.1",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-llm-deepseek/-/dsh-llm-deepseek-0.1.1-rc.1.tgz",
+      "integrity": "sha512-qCtJgnvY6ix3hXX6tRcVozoi+JL8re4PjpNnCGYz3Az4csqdIkL+a9DqnV8JOIMi20NTjeOrktaOFgUd7rdsDg=="
+    }
+  ],
+  "patches": [
+    {
+      "id": "dsh-local-plugin-bootstrap",
+      "path": "@deepseek-ai/dsh/package.json",
+      "beforeSHA256": "43bf5ec5af6b63539a72da01d35c5232d23c3f023336839374c8467d542cd916",
+      "afterSHA256": "27ba1d8f74ec62c8af5fa138e7592f8a350dad7a9e9d54a8c6c1622c1cc6a9d6"
+    },
+    {
+      "id": "deepseek-provider-privacy-readme-en",
+      "path": "@deepseek-ai/dsh-llm-deepseek/README.md",
+      "beforeSHA256": "707fe12f236c16862866853dadda03dbdca444ec9c20c5cb2b0f93d30fa1b0a2",
+      "afterSHA256": "dda3f41b0564c16383d78888596caca169069753f8cd6e45ef71fb9a12072211"
+    },
+    {
+      "id": "deepseek-provider-privacy-readme-zh",
+      "path": "@deepseek-ai/dsh-llm-deepseek/README.zh.md",
+      "beforeSHA256": "fcad3af1b41f0e6686fabcd14bcfab9e4eb1ec217c37124aef89b09a17d54ff6",
+      "afterSHA256": "dd95751031825bd5aa7859c10a007e8c79ca2c0230cc506e27f9584cd53f436b"
+    },
+    {
+      "id": "deepseek-provider-runtime-hardening",
+      "path": "@deepseek-ai/dsh-llm-deepseek/lib/index.js",
+      "beforeSHA256": "bf7fc6a6fca55ce9ae980fc3f39483fb52efadc9e013747a2bd9a475149b7a4f",
+      "afterSHA256": "4a10b1e00676c41e313a4d4c8578840c63711ee69fdeff077f998d5194964e60"
+    },
+    {
+      "id": "deepseek-provider-privacy-types",
+      "path": "@deepseek-ai/dsh-llm-deepseek/lib/types/adapter.d.ts",
+      "beforeSHA256": "fc1011e4f11e68416dbcdbadb7f639d3a60e859bf6de37e3fe87c60b69b8cf29",
+      "afterSHA256": "55b7b1002adc95c8d5571420dab53ccfcd8576d8ca4b45f71405ffa85ae5337a"
+    },
+    {
+      "id": "deepseek-provider-privacy-manifest",
+      "path": "@deepseek-ai/dsh-llm-deepseek/package.json",
+      "beforeSHA256": "5993ff245be62eb3727a952d3cce9d49908355aaca72b916c3179a1dd17574b7",
+      "afterSHA256": "3eb24383ad6a02ec92d3c9d30d05611d18561b8099ce4fec241bee9ff3f786dc"
+    },
+    {
+      "id": "pi-ai-adapter-private-no-auth",
+      "path": "@deepseek-ai/dsh-llm-pi-ai/lib/index.js",
+      "beforeSHA256": "a521cd577e513bba230691b7bd62525b920042cdc36b345e96f7b9dcc709a50f",
+      "afterSHA256": "47053519f9a8170e3945caa17cfb4ddcaf7b10f3851037026a265f607533cdec"
+    },
+    {
+      "id": "pi-ai-adapter-private-no-auth-types",
+      "path": "@deepseek-ai/dsh-llm-pi-ai/lib/types/config.d.ts",
+      "beforeSHA256": "ec7a937dc6df2e9ea772a7c2d983c7f10bcfe74f10cef7ab77474c8c2d89652e",
+      "afterSHA256": "df2f3d50669bfb83ccdb890018fc5effc6812b64465ac7a85197a4da8d4d46c3"
+    },
+    {
+      "id": "pi-ai-adapter-private-no-auth-readme-en",
+      "path": "@deepseek-ai/dsh-llm-pi-ai/README.md",
+      "beforeSHA256": "905a9d3538825d8c4b4aa3fababf196b5556381d0b884ffd4abd9383aa1d6e8c",
+      "afterSHA256": "6ef35c5c1db270b6a15a96aab6237a7fb5beb2034766cfa80803ca3c86b213be"
+    },
+    {
+      "id": "pi-ai-adapter-private-no-auth-readme-zh",
+      "path": "@deepseek-ai/dsh-llm-pi-ai/README.zh.md",
+      "beforeSHA256": "d657ef50562de6f9fbecc1dacd16eedd00b193894800e6fe78fe8bb216dfdbdd",
+      "afterSHA256": "f3a2a484bc16cddb55bd424344a6fddb4c0d7a49b4c3a882140417e75b175e6e"
+    },
+    {
+      "id": "pi-ai-openai-completions-private-no-auth",
+      "path": "@earendil-works/pi-ai/dist/api/openai-completions.js",
+      "beforeSHA256": "0d50250fe2931e66e2078279a397814202e1ecddee58faf4b8bc04c278da177a",
+      "afterSHA256": "292ede5d3d8545d76187f75b065687582f98fc342cb8d437cf173fa3f4072987"
+    },
+    {
+      "id": "pi-ai-openai-responses-private-no-auth",
+      "path": "@earendil-works/pi-ai/dist/api/openai-responses.js",
+      "beforeSHA256": "aea2ca1ed6ff5cd12b774a4ab70793b5086dce772078e303b2badacc2d13e439",
+      "afterSHA256": "316f561b6bf661067f0218372708ea8ee48b114cc68d20aea6f5d7a21a8e3cb3"
+    },
+    {
+      "id": "pi-ai-anthropic-private-no-auth",
+      "path": "@earendil-works/pi-ai/dist/api/anthropic-messages.js",
+      "beforeSHA256": "72749db7f9e56f3206a002033a692bfc73de73b8ba3735632260f46ff48e555d",
+      "afterSHA256": "193ee5a90985ab02019b46a22d3a4e4d8ee150dbd414500e3e1cbeea9a4316ed"
+    }
+  ]
+}
