@@ -312,6 +312,15 @@ function tarNumber(block, offset, length, label) {
   return text.length === 0 ? 0 : Number.parseInt(text, 8);
 }
 
+function isZeroBlock(block) {
+  return block.every((byte) => byte === 0);
+}
+
+// Validates the complete ustar framing of one crate archive: every header must
+// be a whole 512-byte block with a correct checksum and a ustar magic, every
+// payload and its zero padding must be present in full, the archive must end
+// with the two zero end-of-archive blocks, and nothing but zero padding may
+// follow them. Success is only returned after the whole archive was walked.
 function readCrateNoticeMembers(crateBytes, item) {
   const root = `${item.crateName}-${item.crateVersion}`;
   let tar;
@@ -320,15 +329,32 @@ function readCrateNoticeMembers(crateBytes, item) {
   } catch (error) {
     fail(`crate archive could not be decompressed within bounds: ${item.id} (${error.code ?? error.message})`);
   }
+  if (tar.byteLength < 1024 || tar.byteLength % 512 !== 0) {
+    fail(`crate archive is not a whole-block tar stream (${tar.byteLength} bytes): ${item.id}`);
+  }
   const wanted = new Map(item.noticeMembers.map((member) => [member.member, member]));
   const found = new Map();
   let offset = 0;
   let entries = 0;
-  while (offset + 512 <= tar.byteLength) {
+  let terminated = false;
+  while (offset < tar.byteLength) {
+    if (tar.byteLength - offset < 512) fail(`crate archive header is incomplete at byte ${offset}: ${item.id}`);
     const header = tar.subarray(offset, offset + 512);
-    if (header.every((byte) => byte === 0)) break;
+    if (isZeroBlock(header)) {
+      // End-of-archive: a second zero block must follow, and only zero padding may follow that.
+      if (tar.byteLength - offset < 1024 || !isZeroBlock(tar.subarray(offset + 512, offset + 1024))) {
+        fail(`crate archive end-of-archive framing is incomplete at byte ${offset}: ${item.id}`);
+      }
+      if (!isZeroBlock(tar.subarray(offset + 1024))) fail(`crate archive carries non-zero bytes after its end-of-archive blocks: ${item.id}`);
+      terminated = true;
+      break;
+    }
     entries += 1;
     if (entries > MAXIMUM_TAR_ENTRIES) fail(`crate archive has too many entries: ${item.id}`);
+    if (header.subarray(257, 262).toString("latin1") !== "ustar") fail(`crate archive header lacks the ustar magic at byte ${offset}: ${item.id}`);
+    let checksum = 0;
+    for (let index = 0; index < 512; index += 1) checksum += index >= 148 && index < 156 ? 0x20 : header[index];
+    if (tarNumber(header, 148, 8, item.id) !== checksum) fail(`crate archive header checksum is wrong at byte ${offset}: ${item.id}`);
     const type = String.fromCharCode(header[156]);
     const size = tarNumber(header, 124, 12, item.id);
     const prefix = tarField(header, 345, 155);
@@ -338,9 +364,13 @@ function readCrateNoticeMembers(crateBytes, item) {
         || !(name === root || name === `${root}/` || name.startsWith(`${root}/`))) {
       fail(`crate archive entry escapes the crate root: ${item.id} -> ${name}`);
     }
+    if (type === "5" && size !== 0) fail(`crate archive directory entry carries data: ${item.id} -> ${name}`);
     const dataStart = offset + 512;
     const dataEnd = dataStart + size;
-    if (dataEnd > tar.byteLength) fail(`crate archive entry is truncated: ${item.id} -> ${name}`);
+    const paddedEnd = dataEnd + ((512 - (size % 512)) % 512);
+    if (dataEnd > tar.byteLength) fail(`crate archive entry payload is truncated: ${item.id} -> ${name}`);
+    if (paddedEnd > tar.byteLength) fail(`crate archive entry padding is truncated: ${item.id} -> ${name}`);
+    if (!isZeroBlock(tar.subarray(dataEnd, paddedEnd))) fail(`crate archive entry padding is not zero: ${item.id} -> ${name}`);
     if (type !== "5" && wanted.has(name)) {
       const expected = wanted.get(name);
       if (size !== expected.size) fail(`notice member size drifted: ${item.id} -> ${name}`);
@@ -351,8 +381,10 @@ function readCrateNoticeMembers(crateBytes, item) {
       if (text.includes("\0") || Buffer.from(text, "utf8").compare(bytes) !== 0) fail(`notice member is not UTF-8 text: ${item.id} -> ${name}`);
       found.set(name, text);
     }
-    offset = dataEnd + ((512 - (size % 512)) % 512);
+    offset = paddedEnd;
   }
+  if (!terminated) fail(`crate archive ends without end-of-archive blocks: ${item.id}`);
+  if (entries === 0) fail(`crate archive contains no entries: ${item.id}`);
   for (const name of wanted.keys()) {
     if (!found.has(name)) fail(`notice member is missing from the crate archive: ${item.id} -> ${name}`);
   }
@@ -698,6 +730,14 @@ async function verify(manifestArgument, destinationArgument) {
       await handle.close();
     }
   }
+  // Material framing is re-validated before any inventory metadata is trusted,
+  // so a retained malformed archive is rejected on its own merits.
+  let rustNoticesSHA256;
+  let noticesText;
+  if (manifest.provenanceStatuses !== undefined) {
+    noticesText = renderRustNotices(manifest, manifestSHA256, await collectRustNotices(manifest, destination));
+    rustNoticesSHA256 = sha256(noticesText);
+  }
   const inventoryBytes = await boundedRegularBytes(join(destination, INVENTORY_NAME), MAXIMUM_MANIFEST_BYTES, "inventory");
   let inventory;
   try { inventory = JSON.parse(inventoryBytes.toString("utf8")); }
@@ -708,13 +748,11 @@ async function verify(manifestArgument, destinationArgument) {
     fail("inventory does not describe this manifest");
   }
   const acquisitions = new Map(inventory.items.map((item) => [item.id, item.redirectHosts]));
-  let rustNoticesSHA256;
-  if (manifest.provenanceStatuses !== undefined) {
-    const noticesText = renderRustNotices(manifest, manifestSHA256, await collectRustNotices(manifest, destination));
-    rustNoticesSHA256 = sha256(noticesText);
+  if (noticesText !== undefined) {
     const stored = await boundedRegularBytes(join(destination, RUST_NOTICES_NAME), MAXIMUM_MANIFEST_BYTES * 16, "rust notices");
     if (stored.toString("utf8") !== noticesText) fail("rust crate notices drifted from the verified crate archives");
   }
+
   const { inventoryText, sumsText } = renderInventory(manifest, manifestSHA256, acquisitions, inventory.transport, rustNoticesSHA256);
   if (inventoryText !== inventoryBytes.toString("utf8")) fail("inventory content drifted from the manifest");
   const sumsBytes = await boundedRegularBytes(join(destination, SUMS_NAME), MAXIMUM_MANIFEST_BYTES, "checksum list");

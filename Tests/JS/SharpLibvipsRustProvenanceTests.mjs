@@ -373,6 +373,223 @@ test("rust crate acquisition fails closed and publishes nothing on notice drift,
   }
 });
 
+// ---------------------------------------------------------------------------
+// Archive framing regressions. The two sealed diagnostic fixtures from the
+// Codex review (claude-rust-tar-diagnostic-2026-09-06) are embedded by exact
+// bytes and bound by their recorded SHA-256 so the red-to-green result is tied
+// to the reviewed defect: a gzip whose only decompressed byte is 0x78 used to be
+// accepted as a complete crate with no declared notices.
+const SEALED_MALFORMED_CRATE = Buffer.from("1f8b0800000000000013ab00008316dc8c01000000", "hex");
+const SEALED_VALID_CRATE = Buffer.from("1f8b0800000000000013ed933b0f8230148599f9150d930e945be4110727574ddc8d434baa2142212db818ffbb298bf848180434a1df729b9b26e726e71cc62bea025e62f0aca100008882a09900f03a3fbce305892d140e76518b5a55545a006368fd21ece1ff9aca5381ab22cf7ad6e8f43f8e9efd27c40f430b8de2c9c4fddf973439d3133fd882e61cad90a313e1d8172e555a08bd68d2e1d8599a70a19a2fdbddc6f5f5eed7d71bbea5d57f25132f4b1996aa678dcefefbe4adff2432fd1f83b266e828908ec16c8eae37536983c1609806770a7b3a3d000e0000", "hex");
+assert.equal(digest(SEALED_MALFORMED_CRATE), "489be88dbb5b62a75c1dd00ae02954d0f78880595f9d06922c7e9b3c98d2185d", "sealed malformed fixture bytes");
+assert.equal(digest(SEALED_VALID_CRATE), "dd4c7c40f2f1ca9d3ec1936fde3023081b466696f22ba2ffe75e84b4cbd1f9af", "sealed valid fixture bytes");
+
+// Replaces the fixture's beta crate (declared with no notice members) with the
+// given archive bytes and re-pins its size and digest, so only framing is under test.
+async function withBetaArchive(files, bytes) {
+  await writeFile(join(files.upstream, "static.crates.io", "crates", "beta", "beta-0.9.0.crate"), bytes);
+  files.manifest.items[1].size = bytes.byteLength;
+  files.manifest.items[1].sha256 = digest(bytes);
+  await writeManifest(files);
+}
+
+// Replaces the alpha crate (which declares two notice members) with the given entries.
+async function withAlphaEntries(files, entries) {
+  const bytes = gzipSync(Buffer.concat([...entries.map(([name, content, type, link]) => tarEntry(name, content, type, link))]));
+  await writeFile(join(files.upstream, "static.crates.io", "crates", "alpha", "alpha-1.2.3.crate"), bytes);
+  files.manifest.items[0].size = bytes.byteLength;
+  files.manifest.items[0].sha256 = digest(bytes);
+  await writeManifest(files);
+}
+
+const END_BLOCKS = Buffer.alloc(1024, 0);
+const alphaLicenseMIT = Buffer.from("MIT License\n\nCopyright (c) Alpha Crate Authors\n");
+const alphaLicenseApache = Buffer.from("Apache License\nVersion 2.0\n\nCopyright (c) Alpha Crate Authors\n");
+const alphaManifestEntry = ["alpha-1.2.3/Cargo.toml", Buffer.from("[package]\nname = \"alpha\"\nversion = \"1.2.3\"\nlicense = \"MIT OR Apache-2.0\"\n")];
+const alphaNoticeEntries = [["alpha-1.2.3/LICENSE-MIT", alphaLicenseMIT], ["alpha-1.2.3/LICENSE-APACHE", alphaLicenseApache]];
+
+function rawTar(...parts) {
+  return Buffer.concat(parts);
+}
+
+test("the sealed one-byte malformed crate with no declared notices is rejected on acquisition and on verification", async () => {
+  const files = await fixture();
+  try {
+    const before = await readFile(join(files.upstream, "static.crates.io", "crates", "alpha", "alpha-1.2.3.crate"));
+    await withBetaArchive(files, SEALED_MALFORMED_CRATE);
+    const acquired = acquire(files);
+    assert.notEqual(acquired.status, 0, "acquisition must fail closed");
+    assert.match(acquired.stderr, /crate archive is not a whole-block tar stream \(1 bytes\): crate-beta-0\.9\.0/u);
+    assert.deepEqual(await listDirectory(files.out), [], "nothing is published and no staging directory remains");
+    assert.deepEqual(await readFile(join(files.upstream, "static.crates.io", "crates", "beta", "beta-0.9.0.crate")), SEALED_MALFORMED_CRATE, "input material is untouched");
+    assert.deepEqual(await readFile(join(files.upstream, "static.crates.io", "crates", "alpha", "alpha-1.2.3.crate")), before, "sibling input material is untouched");
+
+    // Independent verification of a retained destination that already holds the
+    // malformed archive (as the defective tool would have published it) fails on
+    // the archive itself, before any inventory metadata is consulted.
+    await mkdir(files.destination, { mode: 0o700 });
+    const alpha = await readFile(join(files.upstream, "static.crates.io", "crates", "alpha", "alpha-1.2.3.crate"));
+    await writeFile(join(files.destination, "alpha-1.2.3.crate"), alpha);
+    await writeFile(join(files.destination, "beta-0.9.0.crate"), SEALED_MALFORMED_CRATE);
+    await writeFile(join(files.destination, "INVENTORY.json"), "{}\n");
+    await writeFile(join(files.destination, "SHA256SUMS"), "\n");
+    await writeFile(join(files.destination, "RUST_CRATE_NOTICES.md"), "# stale\n");
+    const verified = run(["verify", files.manifestPath, files.destination]);
+    assert.notEqual(verified.status, 0, "verification must reject the retained malformed archive");
+    assert.match(verified.stderr, /crate archive is not a whole-block tar stream \(1 bytes\): crate-beta-0\.9\.0/u);
+    assert.deepEqual(await readFile(join(files.destination, "beta-0.9.0.crate")), SEALED_MALFORMED_CRATE, "verification does not alter the retained material");
+  } finally {
+    await rm(files.root, { recursive: true, force: true });
+  }
+});
+
+test("the sealed valid empty-notice crate and the fixture's own empty-notice crate still pass acquisition and verification", async () => {
+  const files = await fixture();
+  try {
+    await withBetaArchive(files, SEALED_VALID_CRATE);
+    const acquired = acquire(files);
+    assert.equal(acquired.status, 0, acquired.stderr);
+    const verified = run(["verify", files.manifestPath, files.destination]);
+    assert.equal(verified.status, 0, verified.stderr);
+    const notices = await readFile(join(files.destination, "RUST_CRATE_NOTICES.md"), "utf8");
+    assert.match(notices, /\| `beta` \| `0\.9\.0` \| proc-macro \| MPL-2\.0 \| resolved-approximation \| none in crate \|/u);
+  } finally {
+    await rm(files.root, { recursive: true, force: true });
+  }
+});
+
+test("incomplete headers, truncated payload or padding, and missing or dirty end framing fail closed even after every declared notice was found", async (context) => {
+  const cases = [
+    {
+      name: "trailing partial block after a complete archive",
+      alpha: () => rawTar(tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((entry) => tarEntry(...entry)), END_BLOCKS, Buffer.alloc(100, 0x41)),
+      message: /not a whole-block tar stream/u
+    },
+    {
+      name: "payload truncated after the declared notices",
+      alpha: () => {
+        const truncated = tarEntry("alpha-1.2.3/src/lib.rs", Buffer.alloc(2000, 0x61)).subarray(0, 1024);
+        return rawTar(tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((entry) => tarEntry(...entry)), truncated);
+      },
+      message: /entry payload is truncated: crate-alpha-1\.2\.3 -> alpha-1\.2\.3\/src\/lib\.rs/u
+    },
+    {
+      name: "payload truncated into the end blocks after the declared notices",
+      alpha: () => {
+        const truncated = tarEntry("alpha-1.2.3/src/lib.rs", Buffer.alloc(1000, 0x61)).subarray(0, 1024);
+        return rawTar(tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((entry) => tarEntry(...entry)), truncated, END_BLOCKS);
+      },
+      message: /entry padding is not zero|end-of-archive framing is incomplete|entry payload is truncated/u
+    },
+    {
+      name: "non-zero padding bytes",
+      alpha: () => {
+        const entry = tarEntry("alpha-1.2.3/src/lib.rs", Buffer.from("pub fn alpha() {}\n"));
+        entry[512 + 100] = 0x5a;
+        return rawTar(tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((e) => tarEntry(...e)), entry, END_BLOCKS);
+      },
+      message: /entry padding is not zero/u
+    },
+    {
+      name: "no end-of-archive blocks after the declared notices",
+      alpha: () => rawTar(tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((entry) => tarEntry(...entry))),
+      message: /ends without end-of-archive blocks/u
+    },
+    {
+      name: "only one end-of-archive block",
+      alpha: () => rawTar(tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((entry) => tarEntry(...entry)), Buffer.alloc(512, 0)),
+      message: /end-of-archive framing is incomplete/u
+    },
+    {
+      name: "entry appended after the end-of-archive blocks",
+      alpha: () => rawTar(tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((entry) => tarEntry(...entry)), END_BLOCKS, tarEntry("alpha-1.2.3/late", Buffer.from("x"))),
+      message: /non-zero bytes after its end-of-archive blocks/u
+    },
+    {
+      name: "header with a wrong checksum",
+      alpha: () => {
+        const entry = tarEntry(...alphaManifestEntry);
+        entry[0] ^= 0x01;
+        return rawTar(entry, ...alphaNoticeEntries.map((e) => tarEntry(...e)), END_BLOCKS);
+      },
+      message: /header checksum is wrong/u
+    },
+    {
+      name: "header without the ustar magic",
+      alpha: () => {
+        const entry = tarEntry(...alphaManifestEntry);
+        entry.fill(0, 257, 263);
+        let sum = 0;
+        for (let index = 0; index < 512; index += 1) sum += index >= 148 && index < 156 ? 0x20 : entry[index];
+        entry.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "latin1");
+        return rawTar(entry, ...alphaNoticeEntries.map((e) => tarEntry(...e)), END_BLOCKS);
+      },
+      message: /lacks the ustar magic/u
+    },
+    {
+      name: "empty archive of only end blocks",
+      alpha: () => rawTar(END_BLOCKS),
+      message: /contains no entries|notice member is missing/u
+    },
+    {
+      name: "directory entry carrying data",
+      alpha: () => rawTar(tarEntry("alpha-1.2.3/src/", Buffer.from("data"), "5"), tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((e) => tarEntry(...e)), END_BLOCKS),
+      message: /directory entry carries data/u
+    }
+  ];
+  for (const current of cases) {
+    await context.test(current.name, async () => {
+      const files = await fixture();
+      try {
+        const bytes = gzipSync(current.alpha());
+        await writeFile(join(files.upstream, "static.crates.io", "crates", "alpha", "alpha-1.2.3.crate"), bytes);
+        files.manifest.items[0].size = bytes.byteLength;
+        files.manifest.items[0].sha256 = digest(bytes);
+        await writeManifest(files);
+        // A pre-existing sibling destination must survive a failed acquisition untouched.
+        const sibling = join(files.out, "unrelated-materials");
+        await mkdir(sibling, { mode: 0o700 });
+        await writeFile(join(sibling, "keep.txt"), "keep\n");
+        const result = acquire(files);
+        assert.notEqual(result.status, 0, `${current.name} must fail closed`);
+        assert.match(result.stderr, current.message);
+        assert.deepEqual(await listDirectory(files.out), ["unrelated-materials"], "no output or staging directory remains");
+        assert.equal(await readFile(join(sibling, "keep.txt"), "utf8"), "keep\n");
+        assert.deepEqual(await readFile(join(files.upstream, "static.crates.io", "crates", "alpha", "alpha-1.2.3.crate")), bytes, "input material is untouched");
+      } finally {
+        await rm(files.root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test("a structurally complete crate with declared notices still passes with the stricter framing checks (GNU and POSIX magics)", async () => {
+  for (const magic of ["ustar\0" + "00", "ustar " + " \0"]) {
+    const files = await fixture();
+    try {
+      const entries = [tarEntry(...alphaManifestEntry), ...alphaNoticeEntries.map((entry) => tarEntry(...entry)), tarEntry("alpha-1.2.3/src/lib.rs", Buffer.from("pub fn alpha() {}\n"))];
+      for (const entry of entries) {
+        entry.write(magic, 257, 8, "latin1");
+        let sum = 0;
+        for (let index = 0; index < 512; index += 1) sum += index >= 148 && index < 156 ? 0x20 : entry[index];
+        entry.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "latin1");
+      }
+      const bytes = gzipSync(rawTar(...entries, END_BLOCKS, Buffer.alloc(512, 0)));
+      await writeFile(join(files.upstream, "static.crates.io", "crates", "alpha", "alpha-1.2.3.crate"), bytes);
+      files.manifest.items[0].size = bytes.byteLength;
+      files.manifest.items[0].sha256 = digest(bytes);
+      await writeManifest(files);
+      const acquired = acquire(files);
+      assert.equal(acquired.status, 0, `${JSON.stringify(magic)}: ${acquired.stderr}`);
+      const verified = run(["verify", files.manifestPath, files.destination]);
+      assert.equal(verified.status, 0, verified.stderr);
+      assert.match(await readFile(join(files.destination, "RUST_CRATE_NOTICES.md"), "utf8"), /Copyright \(c\) Alpha Crate Authors/u);
+    } finally {
+      await rm(files.root, { recursive: true, force: true });
+    }
+  }
+});
+
 test("rust crate verification fails when the rendered notices or a crate archive are tampered", async (context) => {
   const cases = [
     {
