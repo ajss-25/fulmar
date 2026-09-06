@@ -1,9 +1,97 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { rootWatchdogChildOptions } from "./RootWatchdogChildProcess.mjs";
 
 const root = process.cwd();
+
+async function verifyCandidateAdmission(verifier) {
+  const inspection = 'plutil -lint "$SERVICE_INFO" >/dev/null\n';
+  assert.equal(verifier.split(inspection).length, 2, "the first metadata inspection must be unique");
+  assert.match(verifier, /^#!\/bin\/zsh -f\nset -euo pipefail\n/u);
+  assert.ok(verifier.indexOf(inspection) < verifier.indexOf('/usr/bin/codesign'));
+  const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "fulmar-migration-admission-")));
+  await chmod(fixtureRoot, 0o700);
+  try {
+    const bin = join(fixtureRoot, "bin");
+    const scratch = join(fixtureRoot, "scratch");
+    await mkdir(bin, { mode: 0o700 });
+    await mkdir(scratch, { mode: 0o700 });
+    // Stop the real verifier at its first plist inspection. No candidate binary,
+    // signing command or credential operation is executed by this fixture.
+    const sentinel = "FULMAR_TEST_ADMISSION_REACHED_PLIST";
+    await writeFile(join(bin, "plutil"), [
+      "#!/bin/sh -p",
+      '[ "$#" -eq 2 ] && [ "$1" = "-lint" ] && [ "$2" = "$EXPECTED_SERVICE_INFO" ] || exit 78',
+      `printf '%s\\n' '${sentinel}' >&2`,
+      "exit 79", ""
+    ].join("\n"), { mode: 0o700 });
+    const cases = [{ name: "valid", expected: 79 }];
+    for (const key of ["app", "service", "info", "executable", "helper"]) {
+      cases.push({ name: `missing-${key}`, key, mutation: "missing", expected: 1 });
+      cases.push({ name: `linked-${key}`, key, mutation: "linked", expected: 1 });
+    }
+    for (const key of ["executable", "helper"]) {
+      cases.push({ name: `non-executable-${key}`, key, mutation: "non-executable", expected: 1 });
+    }
+    for (const key of ["info", "executable", "helper"]) {
+      cases.push({ name: `directory-${key}`, key, mutation: "directory", expected: 1 });
+    }
+    cases.push({ name: "noncanonical", mutation: "noncanonical", expected: 1 });
+    cases.push({ name: "linked-parent", mutation: "linked-parent", expected: 1 });
+    for (const item of cases) {
+      const caseRoot = await mkdtemp(join(fixtureRoot, "case-"));
+      const app = join(caseRoot, "Candidate with spaces.app");
+      const service = join(app, "Contents/XPCServices/LocalHarnessCredentialMigrationService.xpc");
+      const paths = {
+        app, service,
+        info: join(service, "Contents/Info.plist"),
+        executable: join(service, "Contents/MacOS/LocalHarnessCredentialMigrationService"),
+        helper: join(app, "Contents/MacOS/LocalHarnessCredentialHelper")
+      };
+      await mkdir(join(service, "Contents/MacOS"), { recursive: true });
+      await mkdir(join(app, "Contents/MacOS"), { recursive: true });
+      await writeFile(paths.info, "fixture metadata: never parsed\n");
+      for (const path of [paths.executable, paths.helper]) {
+        await writeFile(path, "#!/bin/sh -p\nexit 99\n", { mode: 0o755 });
+      }
+      let candidate = app;
+      if (item.mutation === "missing" || item.mutation === "directory") {
+        await rm(paths[item.key], { recursive: true });
+        if (item.mutation === "directory") await mkdir(paths[item.key]);
+      } else if (item.mutation === "linked") {
+        const target = join(caseRoot, "link-target");
+        await rename(paths[item.key], target);
+        await symlink(target, paths[item.key]);
+      } else if (item.mutation === "non-executable") {
+        await chmod(paths[item.key], 0o644);
+      } else if (item.mutation === "noncanonical") {
+        candidate = `${caseRoot}/./Candidate with spaces.app`;
+      } else if (item.mutation === "linked-parent") {
+        const alias = join(fixtureRoot, "parent-alias");
+        await symlink(caseRoot, alias);
+        candidate = join(alias, "Candidate with spaces.app");
+      }
+      const result = spawnSync("/bin/zsh", ["-f", join(root, "scripts/verify-credential-migration-xpc.sh"), candidate],
+        rootWatchdogChildOptions({
+          encoding: "utf8", timeout: 5_000,
+          env: { PATH: `${bin}:/usr/bin:/bin`, TMPDIR: scratch, EXPECTED_SERVICE_INFO: paths.info }
+        }));
+      assert.equal(result.error, undefined, `${item.name}: ${result.error}`);
+      assert.equal(result.signal, null, item.name);
+      assert.equal(result.status, item.expected, `${item.name}: ${result.stderr}`);
+      assert.equal(result.stdout, "", item.name);
+      assert.equal(result.stderr, item.expected === 79 ? `${sentinel}\n`
+        : "Credential migration XPC verification requires one canonical packaged candidate.\n", item.name);
+      assert.deepEqual(await readdir(scratch), [], `${item.name}: verifier temporary files were not removed`);
+    }
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+}
 
 test("production credential migration uses mutually code-bound private XPC capabilities", async () => {
   const [client, service, protocol, manager, transaction, receipt, commit, acceptance] = await Promise.all([
@@ -124,4 +212,5 @@ test("release assembly preserves helper ACL identity while pinning the exact ser
     /com\.apple\.security\.temporary-exception\.files\.home-relative-path\.read-write[\s\S]*\/Library\/Application Support\/Local Harness\/CredentialMetadata\//u
   );
   assert.doesNotMatch(entitlements, /network\.client|network\.server|files\.user-selected/u);
+  await verifyCandidateAdmission(verifier);
 });

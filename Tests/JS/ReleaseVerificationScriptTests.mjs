@@ -915,6 +915,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
   const testRoot = join(process.cwd(), "Tests", "JS");
   const expectedZshCommands = new Map(Object.entries({
     "CleanReleaseEnvironmentTests.mjs": 2,
+    "CredentialMigrationXPCSecurityTests.mjs": 1,
     "JSTestRunnerTests.mjs": 4,
     "MachOCompatibilityTests.mjs": 1,
     "OllamaFixtureIsolationTests.mjs": 1,
@@ -960,7 +961,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
       `${name} changed the reviewed literal zsh command topology`);
     auditedZshCommands += fileCommands;
   }
-  assert.equal(auditedZshCommands, 44, "the literal zsh command audit must remain complete");
+  assert.equal(auditedZshCommands, 45, "the literal zsh command audit must remain complete");
 });
 
 test("every production watchdog and privileged shell callsite suppresses ambient startup injection", async () => {

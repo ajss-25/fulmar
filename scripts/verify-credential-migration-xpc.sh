@@ -24,8 +24,8 @@ trap '/bin/rm -rf -- "$TEMP_ROOT" >/dev/null 2>&1 || true; exit 143' TERM
 [[ -d "$APP_DIR" && ! -L "$APP_DIR" && "${APP_DIR:A}" == "$APP_DIR" \
    && -d "$SERVICE" && ! -L "$SERVICE" \
    && -f "$SERVICE_INFO" && ! -L "$SERVICE_INFO" \
-   && -f "$SERVICE_EXECUTABLE" && ! -L "$SERVICE_EXECUTABLE" -x "$SERVICE_EXECUTABLE" \
-   && -f "$HELPER" && ! -L "$HELPER" -x "$HELPER" ]] || {
+   && -f "$SERVICE_EXECUTABLE" && ! -L "$SERVICE_EXECUTABLE" && -x "$SERVICE_EXECUTABLE" \
+   && -f "$HELPER" && ! -L "$HELPER" && -x "$HELPER" ]] || {
   print -u2 "Credential migration XPC verification requires one canonical packaged candidate."
   exit 1
 }
