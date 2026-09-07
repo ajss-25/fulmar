@@ -1165,6 +1165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
     private let credentialMigration = CredentialMigrationManager()
     private let startupCredentialMigrationLifecycle = StartupCredentialMigrationLifecycleGate()
     private var providerHistoryStartupGateToken: UUID?
+    private var providerHistoryStartupAdmitted = false
+    private var startupAwaitingBackupAuthorization = false
     private var deviceAttestationTrustRecoveryPresentationInFlight = false
     private var auxiliaryRecoveryPresentationToken: UUID?
     private var auxiliaryRecoveryMutationInFlight = false
@@ -2267,9 +2269,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
         }
         privacyWindow = PrivacyDashboardWindowController(ledger: privacyLedger, preferences: preferences, maintenance: privacyMaintenance)
         pluginTrustWindow = PluginTrustWindowController(controller: controller)
-        backupWindow = BackupWindowController(manager: backupManager) { [weak controller] in
-            controller?.runtimeInfo()?.dshVersion ?? "Unknown"
-        }
         scheduleWindow = ScheduleWindowController(manager: scheduleManager, preferences: preferences)
         commandCenterWindow = CommandCenterWindowController(
             commands: commandCenterCommands(),
@@ -2458,6 +2457,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
         settingsWindow.onOpenBackups = { [weak self] in self?.showBackups(nil) }
         settingsWindow.onOpenMenuBarSettings = { [weak self] in self?.showMenuBarSettings(nil) }
         settingsWindow.onMigrateCredentials = { [weak self] in self?.offerCredentialMigration(continueAfter: false) }
+    }
+
+    private func configureBackupWindow() {
+        guard backupWindow == nil else { return }
+        backupWindow = BackupWindowController(manager: backupManager) { [weak controller] in
+            controller?.runtimeInfo()?.dshVersion ?? "Unknown"
+        }
+        backupWindow.onAuthenticationAuthorized = { [weak self] in
+            guard let self, self.startupAwaitingBackupAuthorization,
+                  self.startupRuntimeContinuationPermitted else { return }
+            self.startupAwaitingBackupAuthorization = false
+            self.backupWindow.window?.orderOut(nil)
+            self.beginProviderHistoryStartupGate(background: false) { [weak self] admitted in
+                guard let self, admitted else { return }
+                self.beginProtectedStartup()
+            }
+        }
         backupWindow.onAcquireProtectedTransition = { [weak self] operation, completion in
             guard let self else {
                 completion(.failure(HarnessConversationError.cancellationUnverified))
@@ -2499,7 +2515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                 action: #selector(showMainWindow(_:))
             ),
             .init(
-                title: "New Task", detail: "Start a fresh task after a recovery checkpoint",
+                title: "New Task", detail: "Open a fresh agent conversation",
                 symbolName: "square.and.pencil", keywords: ["session", "conversation", "agent"],
                 action: #selector(newSession(_:))
             ),
@@ -2644,11 +2660,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
             return
         }
         let gateToken = UUID()
+        providerHistoryStartupAdmitted = false
         providerHistoryStartupGateToken = gateToken
         let finish: (Bool) -> Void = { [weak self] admitted in
             guard let self,
                   self.providerHistoryStartupGateToken == gateToken else { return }
             self.providerHistoryStartupGateToken = nil
+            self.providerHistoryStartupAdmitted = admitted
             completion(admitted)
         }
         let inspectAuxiliary: () -> Void = { [weak self] in
@@ -2658,23 +2676,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
             }
             let auxiliary = self.auxiliaryStateCoordinator
             let support = self.controller.diagnosticsDirectory().standardizedFileURL
-            let backups = self.backupManager
             DispatchQueue.global(qos: .userInitiated).async {
-                let result = Result { () throws -> ProviderHistoryAuxiliaryPendingState? in
-                    let pending = try auxiliary.preflight()
-                    guard pending == nil else { return pending }
-                    // The opaque whole-root auxiliary gate is authoritative and
-                    // must run first. Only after it verifies absent/current
-                    // signed namespaces may these component-specific readers
-                    // inspect manifests or migration state.
-                    guard try backups.privacyEpochPreflight() != .historical,
-                          try RuntimeMigrationCoordinator.privacyEpochPreflight(
-                            applicationSupport: support
-                          ) != .historical else {
-                        throw ProviderHistoryAuxiliaryRecoveryError.historicalStateChanged
-                    }
-                    return nil
-                }
+                let result = Result { try auxiliary.preflight() }
                 DispatchQueue.main.async {
                     guard self.startupRuntimeContinuationPermitted else {
                         finish(false)
@@ -2682,13 +2685,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                     }
                     switch result {
                     case .success(nil):
-                        finish(true)
+                        self.inspectCurrentAuxiliaryComponents(background: background, completion: finish)
                     case .success(.some(let pending)):
                         if background {
                             self.recordBackgroundAuxiliaryRecoveryPending(pending)
                             finish(false)
                         } else {
-                            self.presentAuxiliaryRecovery(pending, completion: finish)
+                            self.presentAuxiliaryRecovery(pending) { recovered in
+                                guard recovered else { finish(false); return }
+                                guard self.providerHistoryStartupGateToken == gateToken else { return }
+                                self.providerHistoryStartupGateToken = nil
+                                self.beginProviderHistoryStartupGate(background: false, completion: completion)
+                            }
                         }
                     case .failure(let error):
                         if background {
@@ -2761,6 +2769,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                         // runtime, or provider boundary was touched.
                         finish(false)
                     }
+                }
+            }
+        }
+    }
+
+    /// Construct component readers only after opaque recovery has finished.
+    /// Capturing the old Backups inode before its approved preservation makes
+    /// the same manager correctly reject the subsequently published new root.
+    private func inspectCurrentAuxiliaryComponents(
+        background: Bool,
+        completion: @escaping (Bool) -> Void
+    ) {
+        let support = controller.diagnosticsDirectory().standardizedFileURL
+        let backups = backupManager
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result {
+                guard try backups.privacyEpochPreflight() != .historical,
+                      try RuntimeMigrationCoordinator.privacyEpochPreflight(applicationSupport: support) != .historical else {
+                    throw ProviderHistoryAuxiliaryRecoveryError.historicalStateChanged
+                }
+            }
+            DispatchQueue.main.async {
+                guard self.startupRuntimeContinuationPermitted else { completion(false); return }
+                switch result {
+                case .success:
+                    completion(true)
+                case .failure(let error):
+                    if background {
+                        self.recordBackgroundAuxiliaryRecoveryFailure(error)
+                    } else {
+                        self.presentAuxiliaryRecoveryFailure(
+                            error,
+                            recoveryFolder: support.appendingPathComponent("ProviderHistoryAuxiliaryRecovery", isDirectory: true),
+                            token: nil
+                        )
+                    }
+                    completion(false)
                 }
             }
         }
@@ -5064,6 +5109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
 
     private func prepareRuntimeWithSafetyBackup() {
         guard startupRuntimeContinuationPermitted else { return }
+        startupAwaitingBackupAuthorization = false
         guard let version = controller.runtimeInfo()?.dshVersion else {
             continueStartupRuntimeAfterSafetyPreparation()
             return
@@ -5098,6 +5144,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                     self.activityStore.update(activity, state: .failed, detail: error.localizedDescription)
                     self.mainWindow.surface.showFailure("A safety snapshot could not be created. Harness was not started, so your state was not migrated.")
                     if case .authenticationAuthorizationRequired = error as? BackupError {
+                        self.startupAwaitingBackupAuthorization = true
+                        self.mainWindow.updateStatus("Authorize backup key to finish setup", color: .systemOrange)
                         let alert = NSAlert()
                         alert.messageText = "Backup-key authorization is required"
                         alert.informativeText = "Harness remains stopped. Fulmar did not replace or delete the existing Keychain item. Open Backups & Restore to deliberately authorize that exact key and verify it against your authenticated backups."
@@ -5106,6 +5154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                         alert.addButton(withTitle: "Keep Runtime Stopped")
                         if alert.runModal() == .alertFirstButtonReturn {
                             self.showBackups(nil)
+                        } else {
+                            self.startupAwaitingBackupAuthorization = false
                         }
                     } else {
                         self.showAlert(title: "Upgrade paused safely", message: error.localizedDescription)
@@ -6449,6 +6499,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
 
     @objc func showBackups(_ sender: Any?) {
         NSApp.activate(ignoringOtherApps: true)
+        guard providerHistoryStartupAdmitted else {
+            showAlert(
+                title: "Finish private setup first",
+                message: "Backups will be available after the existing data-preservation step completes. Your old data has not been discarded."
+            )
+            return
+        }
+        configureBackupWindow()
         backupWindow.showWindow(sender)
         backupWindow.window?.makeKeyAndOrderFront(sender)
     }
@@ -6464,31 +6522,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
             companionWindow.quickChat.newChat()
             return
         }
-        guard let coordinator = workspaceRecoveryCoordinator else {
-            mainWindow.surface.startNewSession()
-            return
-        }
-        mainWindow.updateStatus("Creating workspace checkpoint…", color: .systemOrange)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let protection = try await coordinator.captureBeforeTurn(reason: "Before main Harness task")
-                await MainActor.run {
-                    self.recoveryWindow?.refresh()
-                    if case .readOnly = protection {
-                        self.mainWindow.updateStatus("Read-only · Workspace safety", color: .systemOrange)
-                    }
-                    self.mainWindow.surface.startNewSession()
-                }
-            } catch {
-                await MainActor.run {
-                    self.showAlert(
-                        title: "New task paused safely",
-                        message: "\(ProductBrand.displayName) could not create a recovery point before the task, so it did not start a new session: \(error.localizedDescription)"
+        guard mainSessionCanStart else {
+            if startupAwaitingBackupAuthorization {
+                showBackups(sender)
+            } else {
+                switch controller.currentState {
+                case .stopped, .failed:
+                    showAlert(
+                        title: "The workspace is not running",
+                        message: "Finish any setup or recovery request first, then choose Restart Local Services from the Window menu. No new task or checkpoint was started."
                     )
+                default: break
                 }
             }
+            return
         }
+        // Opening an empty conversation does not change workspace files.
+        // The existing prepareTurnIn bridge takes the recovery checkpoint
+        // immediately before each actual agent turn, including its first.
+        mainWindow.surface.startNewSession()
+    }
+
+    private var mainSessionCanStart: Bool {
+        guard case .ready = controller.currentState else { return false }
+        return mainWindow.surface.canStartNewSession
+            && !protectedRuntimeMutations.isTransitionInFlight
+            && !thermalSafetyBlocksSelectedLocalRuntime
+            && startupRuntimeContinuationPermitted
     }
     @objc func goBack(_ sender: Any?) { mainWindow.surface.goBack() }
     @objc func goForward(_ sender: Any?) { mainWindow.surface.goForward() }

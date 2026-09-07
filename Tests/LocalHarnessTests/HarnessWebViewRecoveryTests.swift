@@ -32,7 +32,7 @@ private final class ExternalLinkDelegateProbe: HarnessWebViewControllerDelegate 
 }
 
 @Test @MainActor
-func externalBrowserHandoffConfirmsExactNormalizedHTTPSAndCancelDoesNothing() throws {
+func externalBrowserHandoffConfirmsExactNormalizedHTTPSAndCancelDoesNothing() async throws {
     ensureAppKitTestHostSurvivesAutomaticTermination()
     let suite = "FulmarExternalLinkHandoff.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
@@ -40,12 +40,17 @@ func externalBrowserHandoffConfirmsExactNormalizedHTTPSAndCancelDoesNothing() th
     let preferences = PreferencesStore(defaults: defaults)
     preferences.confirmExternalLinks = true
     let surface = HarnessWebViewController(dataStore: .nonPersistent(), preferences: preferences)
-    surface.configure(endpoint: HarnessEndpoint(
+    #expect(!surface.canStartNewSession)
+    surface.resumeTurnAdmissionsForFreshRuntime()
+    #expect(!surface.canStartNewSession)
+    let endpoint = HarnessEndpoint(
         baseURL: URL(string: "http://127.0.0.1:3080/")!,
         token: "test-token",
         nonce: "test-nonce",
         processIdentifier: 123
-    ))
+    )
+    surface.configure(endpoint: endpoint)
+    #expect(!surface.canStartNewSession)
     let delegate = ExternalLinkDelegateProbe()
     surface.delegate = delegate
     var confirmations: [URL] = []
@@ -82,6 +87,45 @@ func externalBrowserHandoffConfirmsExactNormalizedHTTPSAndCancelDoesNothing() th
         "https://example.com:8443/approved",
         "https://example.com/direct"
     ])
+
+    // Exercise the real navigation/readiness boundary using an in-memory page;
+    // no Harness process or loopback server is needed by this lifecycle fixture.
+    surface.resumeTurnAdmissionsForFreshRuntime()
+    #expect(!surface.canStartNewSession)
+    surface.suspendTurnAdmissions()
+    let navigationWaiter = TestNavigationWaiter()
+    surface.webView.navigationDelegate = navigationWaiter
+    defer { surface.webView.navigationDelegate = surface }
+    let navigation = try #require(surface.webView.loadHTMLString(
+        "<!doctype html><meta charset=\"utf-8\"><p>Local navigation fixture</p>",
+        baseURL: endpoint.baseURL
+    ))
+    surface.webView(surface.webView, didStartProvisionalNavigation: navigation)
+    try await navigationWaiter.wait()
+    surface.webView(surface.webView, didFinish: navigation)
+    #expect(surface.hasLoadedHarness)
+    #expect(!surface.canStartNewSession)
+    surface.resumeTurnAdmissionsForFreshRuntime()
+    #expect(surface.canStartNewSession)
+    surface.suspendTurnAdmissions()
+    #expect(!surface.canStartNewSession)
+    surface.resumeTurnAdmissionsAfterResourcePressure()
+    #expect(surface.canStartNewSession)
+
+    surface.configure(endpoint: HarnessEndpoint(
+        baseURL: URL(string: "http://127.0.0.1:3081/")!,
+        token: "replacement-token",
+        nonce: "replacement-nonce",
+        processIdentifier: 124
+    ))
+    #expect(!surface.hasLoadedHarness)
+    #expect(!surface.canStartNewSession)
+    surface.webView(surface.webView, didFinish: navigation)
+    #expect(!surface.canStartNewSession)
+    surface.configure(endpoint: nil)
+    surface.resumeTurnAdmissionsForFreshRuntime()
+    surface.resumeTurnAdmissionsAfterResourcePressure()
+    #expect(!surface.canStartNewSession)
 }
 
 @Test func recoveryBridgeV2RequiresExactOperationBoundSchemas() throws {

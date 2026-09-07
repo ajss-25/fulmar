@@ -2,12 +2,25 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 const node = process.env.LOCAL_HARNESS_TEST_NODE ?? process.execPath;
 const verifier = join(process.cwd(), "scripts", "verify-js-test-events.mjs");
 const fixtureFile = join(process.cwd(), "Tests", "JS", "AppIconPackagingTests.mjs");
 const nonce = "0123456789abcdef0123456789abcdef";
+let reporterCase = 0;
+
+async function reportedRecords(records) {
+  const url = pathToFileURL(join(process.cwd(), "scripts", "self-root-test-event-reporter.mjs"));
+  const { default: reporter } = await import(`${url.href}?fixture=${++reporterCase}`);
+  const chunks = [];
+  reporter.on("data", (chunk) => chunks.push(chunk.toString()));
+  await pipeline(Readable.from(records.map(({ type, ...data }) => ({ type, data }))), reporter);
+  return chunks.join("").trimEnd().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
 
 function records(overrides = {}) {
   const start = { type: "test:start", name: "event fixture", file: fixtureFile, nesting: 0, testNumber: 1 };
@@ -102,7 +115,7 @@ function exactFullRecords(candidate) {
   return events;
 }
 
-test("JavaScript event verifier accepts one exact ordered focused ledger", () => {
+test("JavaScript event verifier accepts one exact ordered focused ledger", async () => {
   withLedger((path) => {
     const result = run(path);
     assert.equal(result.status, 0, result.stderr);
@@ -143,6 +156,41 @@ test("JavaScript event verifier accepts one exact ordered focused ledger", () =>
     records: repeatedParentScopedIdentity.map((record) =>
       record.type === "test:plan" ? { ...record, count: 4 } : record)
   });
+  const accounting = [
+    ...records(),
+    { type: "test:fail", name: "failure is retained", file: fixtureFile,
+      nesting: 1, testNumber: 2, skip: false, todo: "pending" },
+    { type: "test:plan", nesting: 1, count: 2 }
+  ];
+  assert.deepEqual(await reportedRecords(accounting), accounting,
+    "reporting must preserve all lifecycle, nested plan, summary, skip and todo fields");
+  assert.equal((await reportedRecords(Array.from({ length: 4096 }, () => records()[0]))).length, 4096);
+  await assert.rejects(reportedRecords(Array.from({ length: 4097 }, () => records()[0])),
+    /exceeded its bounded evidence limit/u);
+  await assert.rejects(reportedRecords([{ ...records()[0], name: "x".repeat(2 * 1024 * 1024) }]),
+    /exceeded its bounded evidence limit/u);
+
+  const selfVerifier = join(process.cwd(), "scripts", "verify-self-root-test-events.mjs");
+  const selfNames = [...readFileSync(selfVerifier, "utf8").matchAll(/^  "([^"]+)"/gmu)]
+    .map((match) => match[1]);
+  assert.equal(selfNames.length, 62);
+  const selfRecords = selfNames.flatMap((name, index) => [
+    { type: "test:start", name, file: fixtureFile, nesting: 0 },
+    { type: "test:pass", name, file: fixtureFile, nesting: 0, testNumber: index + 1 }
+  ]);
+  selfRecords.push(
+    { type: "test:plan", nesting: 0, count: selfNames.length },
+    { type: "test:summary", success: true,
+      counts: { tests: 62, passed: 62, failed: 0, cancelled: 0, skipped: 0, todo: 0 } }
+  );
+  const selfRoot = mkdtempSync("/private/tmp/fulmar-watchdog-self-tests.");
+  try {
+    const path = join(selfRoot, "events.jsonl");
+    const output = await reportedRecords(selfRecords);
+    writeFileSync(path, `${output.map((record) => JSON.stringify(record)).join("\n")}\n`, { mode: 0o600 });
+    const accepted = spawnSync(node, [selfVerifier, path], { encoding: "utf8", timeout: 5_000 });
+    assert.equal(accepted.status, 0, accepted.stderr);
+  } finally { rmSync(selfRoot, { recursive: true, force: true }); }
 });
 
 test("JavaScript event verifier rejects malformed, truncated, and incomplete ledgers", () => {
@@ -211,11 +259,23 @@ test("JavaScript event verifier rejects failed, skipped, duplicate, and out-of-o
   });
 });
 
-test("JavaScript event verifier rejects unsafe metadata and a partial full-suite topology", () => {
+test("JavaScript event verifier rejects unsafe metadata and a partial full-suite topology", async () => {
   withLedger((path) => assert.notEqual(run(path).status, 0), { mode: 0o644 });
   withLedger((path) => assert.notEqual(run(path, "full-source").status, 0));
   for (const [profile, candidate] of [["full-source", false], ["full-candidate", true]]) {
-    withLedger((path) => assert.equal(run(path, profile).status, 0), { records: exactFullRecords(candidate) });
+    const exact = exactFullRecords(candidate);
+    const noisy = exact.flatMap((record) => [
+      { type: "test:enqueue", name: "queued" },
+      { type: "test:dequeue", name: "dequeued" },
+      { type: "test:diagnostic", name: "diagnostic" },
+      { type: "test:stdout", name: "stdout" },
+      record
+    ]);
+    assert.ok(noisy.length > 4096);
+    const reported = await reportedRecords(noisy);
+    assert.deepEqual(reported, exact, "non-accounting traffic must not consume or truncate evidence");
+    assert.equal(reported.length, 1798);
+    withLedger((path) => assert.equal(run(path, profile).status, 0), { records: reported });
     withLedger((path) => assert.notEqual(run(path, profile).status, 0), { records: exactFullRecords(!candidate) });
   }
   const noSyntheticHelper = exactFullRecords(false).map((record) =>

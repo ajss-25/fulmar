@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
-import { chmod, copyFile, link, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, link, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -189,6 +189,66 @@ test("clean release canaries never depend on ambient Homebrew ripgrep", async ()
       `${name} must exercise the private descriptor transport, not revive legacy environment authentication`);
     assert.match(source, /RuntimeAuthenticationRelay\.pl/u,
       `${name} must use the reviewed source-tree runtime-authentication relay`);
+  }
+
+  // Exercise the actual canary frame through the actual relay and preloader:
+  // malformed authentication must not masquerade as a rejected DSH_HOME.
+  const token = runtime.match(/^TOKEN="([A-Za-z0-9_-]+)"$/mu)?.[1];
+  const nonce = runtime.match(/^NONCE="([A-Za-z0-9_-]+)"$/mu)?.[1];
+  assert.ok(token && nonce, "the runtime canary must declare its exact fixture authentication");
+  assert.ok(runtime.includes('print -r -- "FULMAR_RUNTIME_AUTH_V1:$TOKEN:$NONCE"'));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fulmar-runtime-canary-auth-")));
+  try {
+    const home = join(root, "home");
+    const dshHome = join(home, ".dsh");
+    const runtimeRoot = join(root, "runtime");
+    await mkdir(dshHome, { recursive: true, mode: 0o700 });
+    for (const name of [
+      "dsh-credentials-keychain", "dsh-mcp-guarded", "dsh-client-security-bridge",
+      "dsh-performance-profile", "dsh-fs-confined", "dsh-web-fetch-safe"
+    ]) {
+      const directory = join(runtimeRoot, "node_modules", "@local-harness", name);
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      await writeFile(join(directory, "index.mjs"), "export {};\n", { mode: 0o600 });
+    }
+    const linkedHome = join(root, "linked-home");
+    await symlink(dshHome, linkedHome);
+    const run = (selectedHome) => spawnSync("/usr/bin/perl", [
+      join(process.cwd(), "Tests", "Fixtures", "RuntimeAuthenticationRelay.pl"),
+      process.execPath, "--import", join(process.cwd(), "Resources", "RuntimeSecurityPreload.mjs"),
+      "-e", "process.exit(73)"
+    ], {
+      input: `FULMAR_RUNTIME_AUTH_V1:${token}:${nonce}\n`,
+      env: {
+        HOME: home, PATH: "/usr/bin:/bin", TMPDIR: root,
+        ...(selectedHome === undefined ? {} : { DSH_HOME: selectedHome }),
+        LOCAL_HARNESS_STRICT_LOCAL: "1", LOCAL_HARNESS_PROVIDER_ORIGINS: "[]",
+        LOCAL_HARNESS_RUNTIME_ROOT: runtimeRoot, LOCAL_HARNESS_SANDBOX_HELPER: "/usr/bin/false",
+        LOCAL_HARNESS_WORKSPACE_ROOTS: JSON.stringify([root]),
+        LOCAL_HARNESS_READONLY_ROOTS: "[]", LOCAL_HARNESS_SANDBOX_TEMP: root
+      },
+      encoding: "utf8", timeout: 5_000, maxBuffer: 64 * 1024
+    });
+    const accepted = run(dshHome);
+    assert.equal(accepted.error, undefined, accepted.error?.message);
+    assert.equal(accepted.signal, null, accepted.stderr);
+    assert.equal(accepted.status, 73, accepted.stderr);
+    assert.equal(accepted.stdout, "");
+    assert.equal(accepted.stderr, "");
+    for (const [selectedHome, message] of [
+      [undefined, "Private Harness home is not a normalized absolute path."],
+      [linkedHome, "Private Harness home cannot traverse a symbolic link."]
+    ]) {
+      const rejected = run(selectedHome);
+      assert.equal(rejected.error, undefined, rejected.error?.message);
+      assert.equal(rejected.signal, null, rejected.stderr);
+      assert.equal(rejected.status, 1, rejected.stderr);
+      assert.equal(rejected.stdout, "");
+      assert.ok(rejected.stderr.includes(message), rejected.stderr);
+      assert.doesNotMatch(rejected.stderr, /runtime authentication|private runtime authentication/u);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -1067,6 +1127,12 @@ test("self-root JavaScript fixtures run only in the exact event-accounted privat
   assert.match(watchdogTests, /for \(const \[signal, expectedCode\] of \[\["SIGTERM", 143\], \["SIGINT", 130\], \["SIGHUP", 129\]\]\)/u);
   assert.match(evidence, /isInsideAuthenticatedRootWatchdog \? test\.skip : test/u);
   assert.equal(evidence.match(/selfRootTest\(/gu)?.length, 17);
+  assert.match(evidence,
+    /if \(!isInsideAuthenticatedRootWatchdog\) \{\s*await recoverStaleReleaseEvidenceFixtures\(\);\s*\}/u,
+    "skipped self-root fixtures must not recover global fixture roots during import");
+  assert.equal(evidence.match(/^\s*await recoverStaleReleaseEvidenceFixtures\(\);$/gmu)?.length, 1);
+  assert.match(evidence, /const maximumEntries = options\.maximumEntries \?\? 4_096/u);
+  assert.match(evidence, /const maximumRoots = options\.maximumRoots \?\? 64/u);
   assert.match(childHelper, /attest-watchdog-capability-fd\.pl/u);
   assert.match(childHelper, /bounded-process-group-inspector\.mjs/u);
   assert.match(childHelper, /stdio\[descriptor\] = descriptor/u);

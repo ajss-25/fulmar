@@ -2,6 +2,9 @@ import { Transform } from "node:stream";
 
 let emittedBytes = 0;
 let emittedRecords = 0;
+const accountingEvents = new Set([
+  "test:start", "test:pass", "test:fail", "test:plan", "test:summary"
+]);
 
 // Emit only the bounded fields used by the post-run accounting verifier.  The
 // ordinary Node reporter exit status is not sufficient evidence: a reporter or
@@ -10,6 +13,12 @@ let emittedRecords = 0;
 export default new Transform({
   writableObjectMode: true,
   transform(event, _encoding, callback) {
+    // Both verifiers use only these lifecycle, plan and aggregate events.
+    // Scheduling and diagnostic traffic must not exhaust their evidence cap.
+    if (!accountingEvents.has(event?.type)) {
+      callback();
+      return;
+    }
     const data = event?.data ?? {};
     const record = { type: event?.type };
     if (typeof data.name === "string") record.name = data.name;

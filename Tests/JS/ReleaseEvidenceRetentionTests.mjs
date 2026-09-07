@@ -793,7 +793,9 @@ async function waitForPath(path) {
   throw new Error(`timed out waiting for ${path}`);
 }
 
-await recoverStaleReleaseEvidenceFixtures();
+if (!isInsideAuthenticatedRootWatchdog) {
+  await recoverStaleReleaseEvidenceFixtures();
+}
 
 selfRootTest("successful release evidence is exact-candidate bound, private, and build named", async () => {
   const value = await fixture();

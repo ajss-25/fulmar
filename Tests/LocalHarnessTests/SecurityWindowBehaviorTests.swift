@@ -562,7 +562,7 @@ private struct BackupWindowControls {
 @MainActor
 @Test func backupKeyAuthorizationCancelSuccessFailureAndUnavailableCapabilityAreQualified() throws {
     ensureAppKitTestHostSurvivesAutomaticTermination()
-    for scenario in ["cancel", "success", "failure", "unsupported"] {
+    for scenario in ["cancel", "success", "failure", "denied", "operation-cancelled", "unsupported"] {
         let operations = BackupOperationProbe()
         operations.canAuthorize = scenario != "unsupported"
         let interactions = BackupInteractionProbe()
@@ -572,12 +572,15 @@ private struct BackupWindowControls {
             runtimeVersion: { "test" },
             interactions: interactions.interactions
         )
+        var authorizedContinuations = 0
+        controller.onAuthenticationAuthorized = { authorizedContinuations += 1 }
         let controls = try backupWindowControls(controller)
         controls.reload.performClick(nil)
         operations.completeList(.failure(BackupError.authenticationAuthorizationRequired))
         #expect(!controls.authorize.isHidden)
         #expect(controls.authorize.isEnabled == (scenario != "unsupported"))
         #expect(!controls.status.stringValue.contains("REMOTE_SECRET_CANARY"))
+        #expect(authorizedContinuations == 0)
 
         controls.authorize.performClick(nil)
         if scenario == "unsupported" {
@@ -591,22 +594,66 @@ private struct BackupWindowControls {
             } else {
                 #expect(operations.authorizationCompletions.count == 1)
                 #expect(!controls.authorize.isEnabled)
+                #expect(authorizedContinuations == 0)
+                controls.authorize.performClick(nil)
+                #expect(operations.authorizationCompletions.count == 1)
                 if scenario == "success" {
                     operations.authorizationCompletions[0](.success(()))
+                    #expect(authorizedContinuations == 1)
                     #expect(operations.listCompletions.count == 1)
                     #expect(controls.authorize.isHidden)
+                    // Neither a duplicate success nor a contradictory late
+                    // failure may resume pending startup a second time.
+                    operations.authorizationCompletions[0](.success(()))
+                    operations.authorizationCompletions[0](.failure(SecurityWindowProbeError.hostile))
+                    #expect(authorizedContinuations == 1)
+                    #expect(operations.listCompletions.count == 1)
+                    #expect(interactions.notices.isEmpty)
                     operations.completeList(.success([]))
                     #expect(controls.create.isEnabled)
                     #expect(interactions.notices.isEmpty)
+                    operations.authorizationCompletions[0](.success(()))
+                    #expect(authorizedContinuations == 1)
+                    #expect(operations.listCompletions.isEmpty)
                 } else {
-                    operations.authorizationCompletions[0](.failure(SecurityWindowProbeError.hostile))
+                    let failure: any Error
+                    if scenario == "denied" {
+                        failure = BackupError.authenticationAuthorizationRequired
+                    } else if scenario == "operation-cancelled" {
+                        failure = CancellationError()
+                    } else {
+                        failure = SecurityWindowProbeError.hostile
+                    }
+                    operations.authorizationCompletions[0](.failure(failure))
                     #expect(interactions.notices == [.authorizationFailed])
-                    #expect(controls.authorize.isHidden)
+                    #expect(controls.authorize.isHidden == (scenario != "denied"))
                     #expect(controls.reload.isEnabled)
                     #expect(!controls.status.stringValue.contains("REMOTE_SECRET_CANARY"))
+                    #expect(authorizedContinuations == 0)
+                    #expect(operations.listCompletions.isEmpty)
+                    operations.authorizationCompletions[0](.success(()))
+                    #expect(authorizedContinuations == 0)
+                    #expect(operations.listCompletions.isEmpty)
+                    if scenario == "denied" {
+                        // A fresh deliberate retry owns a different operation
+                        // token; the previous callback cannot consume it.
+                        controls.authorize.performClick(nil)
+                        #expect(operations.authorizationCompletions.count == 2)
+                        operations.authorizationCompletions[0](.success(()))
+                        #expect(authorizedContinuations == 0)
+                        #expect(operations.listCompletions.isEmpty)
+                        operations.authorizationCompletions[1](.success(()))
+                        #expect(authorizedContinuations == 1)
+                        #expect(operations.listCompletions.count == 1)
+                        operations.completeList(.success([]))
+                        operations.authorizationCompletions[1](.success(()))
+                        #expect(authorizedContinuations == 1)
+                        #expect(operations.listCompletions.isEmpty)
+                    }
                 }
             }
         }
+        #expect(authorizedContinuations == (["success", "denied"].contains(scenario) ? 1 : 0))
     }
 }
 

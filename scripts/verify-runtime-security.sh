@@ -126,7 +126,7 @@ for item in "$NODE" "$DSH" "$PRELOADER" "$PATCH" "$PLUGIN" "$FS_PLUGIN" "$MCP_PL
 done
 
 TOKEN="test-token-0123456789abcdefghijklmnopqrstuvwxyz"
-NONCE="test-nonce-0123456789"
+NONCE="test-nonce-0123456789a"
 runtime_auth_frame() {
   print -r -- "FULMAR_RUNTIME_AUTH_V1:$TOKEN:$NONCE"
 }

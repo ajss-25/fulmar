@@ -1308,6 +1308,10 @@ final class HarnessWebViewController: NSViewController, WKNavigationDelegate, WK
         if webView.canGoForward { trackNavigation(webView.goForward()) }
     }
 
+    var canStartNewSession: Bool {
+        endpoint != nil && hasLoadedHarness && !turnAdmissionsSuspended
+    }
+
     func startNewSession() {
         freshSessionRequirement.require()
         guard hasLoadedHarness else {

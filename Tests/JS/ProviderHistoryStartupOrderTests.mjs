@@ -11,6 +11,17 @@ test('provider history startup gate orders opaque roots before component readers
   const end = source.indexOf('private func presentDeviceAttestationTrustRecovery(', start);
   assert.ok(start >= 0 && end > start, 'startup gate was not found');
   const gate = source.slice(start, end);
+  const windowsStart = source.indexOf('private func buildWindows()');
+  const windowsEnd = source.indexOf('\n    private func ', windowsStart + 20);
+  assert.ok(windowsStart >= 0 && windowsEnd > windowsStart, 'window construction was not found');
+  const windows = source.slice(windowsStart, windowsEnd);
+  assert.doesNotMatch(windows, /BackupWindowController\(manager: backupManager\)|backupWindow\.on/,
+    'window construction must not retain a pre-recovery Backups identity');
+
+  const componentsStart = gate.indexOf('private func inspectCurrentAuxiliaryComponents(');
+  assert.ok(componentsStart >= 0, 'deferred auxiliary component inspection was not found');
+  const opaqueGate = gate.slice(0, componentsStart);
+  const components = gate.slice(componentsStart);
   const home = gate.indexOf('preflightHarnessHomeRecoveryForBackgroundSchedule(');
   const auxiliary = gate.indexOf('auxiliary.preflight()');
   const backups = gate.indexOf('backups.privacyEpochPreflight()');
@@ -21,6 +32,43 @@ test('provider history startup gate orders opaque roots before component readers
     'auxiliary opaque gate is not invoked from the Harness-home completion');
   assert.ok(backups > auxiliary, 'backup component reader ran before opaque gate');
   assert.ok(migration > backups, 'migration reader ran before backup epoch preflight');
+  assert.doesNotMatch(opaqueGate, /let backups = (?:self\.)?backupManager/,
+    'opaque preflight captured the shared backup manager before recovery');
+  assert.match(opaqueGate, /case \.success\(nil\):\s*self\.inspectCurrentAuxiliaryComponents\(/,
+    'component readers are not restricted to the no-pending opaque result');
+  assert.ok(components.indexOf('let backups = backupManager') < components.indexOf('backups.privacyEpochPreflight()'),
+    'deferred component inspection is not bound to its backup manager');
+  assert.match(opaqueGate,
+    /presentAuxiliaryRecovery\(pending\)[\s\S]*?guard recovered else[\s\S]*?providerHistoryStartupGateToken = nil[\s\S]*?beginProviderHistoryStartupGate\(background: false, completion: completion\)/,
+    'acknowledged recovery must recheck startup before admitting component readers');
+
+  const showStart = source.indexOf('@objc func showBackups(');
+  const showEnd = source.indexOf('\n    @objc func ', showStart + 20);
+  assert.ok(showStart >= 0 && showEnd > showStart, 'backup presentation was not found');
+  const show = source.slice(showStart, showEnd);
+  const admitted = show.indexOf('guard providerHistoryStartupAdmitted else');
+  const configure = show.indexOf('configureBackupWindow()');
+  assert.ok(admitted >= 0 && configure > admitted,
+    'backup UI can construct a manager before provider-history admission');
+
+  const newStart = source.indexOf('@objc func newSession(');
+  const newEnd = source.indexOf('\n    @objc func goBack(', newStart);
+  assert.ok(newStart >= 0 && newEnd > newStart, 'new-session action was not found');
+  const newSession = source.slice(newStart, newEnd);
+  assert.doesNotMatch(newSession, /captureBeforeTurn|Creating workspace checkpoint/,
+    'opening an empty conversation must not perform a redundant workspace checkpoint');
+  assert.match(newSession, /guard mainSessionCanStart else/);
+  assert.match(newSession, /mainWindow\.surface\.startNewSession\(\)/);
+
+  const turnStart = source.indexOf('prepareTurnIn sessionID:');
+  const turnEnd = source.indexOf('\n    func ', turnStart + 20);
+  assert.ok(turnStart >= 0 && turnEnd > turnStart, 'actual agent-turn admission was not found');
+  const turn = source.slice(turnStart, turnEnd);
+  const authoritative = turn.indexOf('models.routable');
+  const checkpoint = turn.indexOf('coordinator.captureBeforeTurn(');
+  const admit = turn.indexOf('finish(.success(TurnPreparationBridgeResult(');
+  assert.ok(authoritative >= 0 && checkpoint > authoritative && admit > checkpoint,
+    'actual agent turns must still validate the session/model then checkpoint before admission');
 });
 
 test('retention and credential startup remain behind the provider-history gate', async () => {

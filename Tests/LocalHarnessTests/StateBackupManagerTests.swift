@@ -1391,8 +1391,55 @@ private final class BackupPermitGate: @unchecked Sendable {
         )
         let sentinel = backups.appendingPathComponent("preserve-me")
         try Data("opaque".utf8).write(to: sentinel)
-        #expect(throws: BackupError.self) { _ = try fixture.manager().validatedList() }
+        let managerBeforeRecovery = fixture.manager()
+        #expect(throws: BackupError.self) { _ = try managerBeforeRecovery.validatedList() }
         #expect(try Data(contentsOf: sentinel) == Data("opaque".utf8))
+
+        // The foreground recovery moves the entire historical root. Managers
+        // constructed before that authenticated lifecycle boundary must not
+        // silently adopt the replacement's different filesystem identity.
+        let recovery = ProviderHistoryAuxiliaryStateCoordinator(
+            applicationSupport: fixture.support,
+            attestationKeyStore: fixture.keyStore
+        )
+        guard case .initial(let request) = try recovery.preflight() else {
+            Issue.record("Expected whole-root preservation before backup admission")
+            return
+        }
+        let receipt = try recovery.preserveAfterExplicitAcknowledgement(request)
+        try recovery.acknowledgePublishedRecovery(receipt)
+        let preserved = try #require(receipt.preservedBackups)
+        #expect(try Data(contentsOf: preserved.appendingPathComponent("preserve-me"))
+            == Data("opaque".utf8))
+        do {
+            _ = try managerBeforeRecovery.create(label: "stale-manager", sourceVersion: "1")
+            Issue.record("A pre-recovery manager adopted a different Backups identity")
+        } catch let error as BackupError {
+            guard case .unsafeStorage = error else {
+                Issue.record("Expected stale backup-root identity refusal, got \(error)")
+                return
+            }
+        }
+
+        // Reconstruct only after the verified preservation/acknowledgement.
+        // The new instance still requires the current signed namespace and
+        // authenticates its catalog; no expected-identity check is disabled.
+        let managerAfterRecovery = fixture.manager()
+        let fresh = try managerAfterRecovery.create(label: "after-recovery", sourceVersion: "1")
+        #expect(try managerAfterRecovery.validatedList() == [fresh])
+        #expect(try Data(contentsOf: preserved.appendingPathComponent("preserve-me"))
+            == Data("opaque".utf8))
+
+        let displaced = fixture.support.appendingPathComponent("unapproved-backup-swap", isDirectory: true)
+        try FileManager.default.moveItem(at: backups, to: displaced)
+        try FileManager.default.createDirectory(
+            at: backups,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        #expect(throws: BackupError.self) { _ = try managerAfterRecovery.validatedList() }
+        #expect(try Data(contentsOf: preserved.appendingPathComponent("preserve-me"))
+            == Data("opaque".utf8))
     }
 
     for phase in [

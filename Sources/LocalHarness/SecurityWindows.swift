@@ -756,6 +756,7 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
     var onAcquireProtectedTransition: AcquireStateBackupTransition?
     var onFinishProtectedTransition: FinishStateBackupTransition?
     var onRestoreCompleted: ((StateBackupRestoreReport) -> Void)?
+    var onAuthenticationAuthorized: (() -> Void)?
     private let operations: BackupWindowOperations
     private let runtimeVersion: () -> String
     private let interactions: BackupWindowInteractions
@@ -940,6 +941,7 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
                 self.operationState = .idle
                 self.backupKeyAuthorizationRequired = false
                 self.refresh()
+                self.onAuthenticationAuthorized?()
             case .failure(let error):
                 self.operationState = .unavailable
                 self.backupKeyAuthorizationRequired = false
