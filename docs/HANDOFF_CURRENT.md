@@ -115,8 +115,11 @@ Updated: 2026-09-03 (Europe/London)
 - JavaScript: 898 exact lifecycle tests, 686 top-level tests; expected source result
   851 passed plus 47 reviewed skips, and expected candidate result 852 passed plus
   46 reviewed skips.
-- Swift: 1,445 exact function specifiers; sorted-specifier SHA-256
-  `242833714f5486eb52adf376427c95f8f7c3a5e306b101bed0f3b29db2fc4dea`.
+- Swift: 1,448 exact function specifiers; sorted-specifier SHA-256
+  `5787c3b14a378c785034bd847b443a38aa5e0d5b2fd33b9453cbebd675a069d5`
+  (1,445 / `242833714f…` plus the three startup Keychain-UX regressions:
+  blocked-recovery descriptions, refused device-trust read with explicit
+  authorization, and unattended backup-key access verification).
 
 These are fail-closed ledgers, not passing results. The canonical full JavaScript and
 Swift gates must execute after this source freeze. Any subsequent source, test,

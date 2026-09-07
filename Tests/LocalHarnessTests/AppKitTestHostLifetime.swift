@@ -460,8 +460,8 @@ private func firstExecutableLine(in body: [String]) -> Int? {
 
     // These reviewed counts, actor-suite scopes, import rule, and marker vocabulary
     // must be updated consciously whenever test topology or AppKit usage changes.
-    #expect(testBodyCount == 1_445)
-    #expect(directMainActorBodyCount == 321)
+    #expect(testBodyCount == 1_448)
+    #expect(directMainActorBodyCount == 323)
     #expect(mainActorSuiteCount == 4)
     #expect(inheritedMainActorBodyCount == 39)
     #expect(appKitImportedActorBodyCount == 225)

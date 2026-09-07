@@ -45,7 +45,7 @@ unrun result.
 | Production dependency audit (pinned npm 10.9.8 virtual tree; credential-free bounded Bulk Advisory primary; whole-graph OSV QueryBatch secondary authority only after a narrowly retryable batch outage; no Quick Audit route) | must report zero findings and identify one complete authority |
 | Static security scan | must report zero unreviewed findings using the content-pinned Semgrep 1.135.0 closure and pinned rules |
 | JavaScript gate | must complete 898 exact tests: 851 passed, 47 reviewed intentional skips, 0 failures |
-| Swift gate | must complete 1,445/1,445 isolated functions, DeviceAttestationAuthorityTests 10/10, warning-clean, with deployment target 15.0 verified |
+| Swift gate | must complete 1,448/1,448 isolated functions, DeviceAttestationAuthorityTests 11/11, warning-clean, with deployment target 15.0 verified |
 | GitHub-hosted source checks | Workflow jobs `static-analysis`, `codeql-javascript`, `macos`, and `minimum-macos-candidate`, plus the separate `CodeQL` app check, must all pass on the exact source commit |
 
 Automated results cover the exercised cases; they do not prove the absence of defects.
