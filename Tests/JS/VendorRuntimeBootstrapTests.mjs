@@ -438,7 +438,8 @@ test("notice-material cache preparation admits only a private canonical cache, r
     assert.notEqual(absent.status, 0);
     assert.match(absent.stderr, /notice-material cache absent: .*; acquiring 159 crate materials \(12047290 bytes\) over HTTPS/u);
     assert.match(absent.stderr, /fake acquisition tool refused/u);
-    assert.match(absent.stderr, /HTTPS acquisition failed \(status 3\); no cache was published at/u);
+    assert.match(absent.stderr, /HTTPS acquisition failed \(status 3\); cache publication state is unverified at/u);
+    assert.doesNotMatch(absent.stderr, /no cache was published/u);
     const acquisition = JSON.parse(await readFile(observed, "utf8"));
     assert.deepEqual(acquisition.args, [
       "acquire", join(root, "Config", "SharpLibvipsRustProvenance.json"), cache,
@@ -524,6 +525,37 @@ test("notice-material cache preparation admits only a private canonical cache, r
     const verifyHTTPSCopy = runNoticeMaterials(["verify", root, cache]);
     assert.equal(verifyHTTPSCopy.status, 0, verifyHTTPSCopy.stderr);
     assert.match(verifyHTTPSCopy.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 159 items/mu);
+
+    // A child can fail after publishing a complete cache. Failure must remain
+    // fatal without claiming absence, removing the cache, retrying acquisition,
+    // or bypassing independent verification of the retained published bytes.
+    await rm(cache, { recursive: true });
+    await writeFile(join(root, "scripts", "prepare-libvips-source-materials.mjs"), [
+      'import { appendFileSync, chmodSync, cpSync } from "node:fs";',
+      'const destination = process.argv[4];',
+      `cpSync(${JSON.stringify(projectNoticeMaterials)}, destination, { recursive: true, errorOnExist: true, force: false });`,
+      'chmodSync(destination, 0o700);',
+      `appendFileSync(${JSON.stringify(observed)}, "published-then-failed\\n");`,
+      'process.stderr.write("fake acquisition published then refused\\n");',
+      "process.exit(3);",
+      ""
+    ].join("\n"), { mode: 0o600 });
+    const publishedFailure = runNoticeMaterials(["prepare", root]);
+    assert.equal(publishedFailure.status, 1, publishedFailure.stderr);
+    assert.match(publishedFailure.stderr, /HTTPS acquisition failed \(status 3\); cache publication state is unverified at/u);
+    assert.doesNotMatch(publishedFailure.stderr, /no cache was published/u);
+    const expectedRecovery = `inspect it with "scripts/prepare-libvips-source-materials.mjs verify Config/SharpLibvipsRustProvenance.json ${cache} --notice-materials Config/SharpLibvipsRustNoticeMaterials.json", remove it deliberately if it is stale, then rerun scripts/bootstrap-source-checkout.sh; nothing is overwritten or deleted automatically`;
+    assert.ok(publishedFailure.stderr.includes(expectedRecovery), publishedFailure.stderr);
+    assert.equal(await readFile(observed, "utf8"), "published-then-failed\n", "a failed child must not be retried");
+    assert.equal((await stat(cache)).mode & 0o777, 0o700);
+    for (const name of ["INVENTORY.json", "SHA256SUMS", "RUST_CRATE_NOTICES.md"]) {
+      assert.deepEqual(await readFile(join(cache, name)), await readFile(join(projectNoticeMaterials, name)), "published cache bytes must be preserved after failure");
+    }
+    const verifyPublished = runNoticeMaterials(["verify", root, cache]);
+    assert.equal(verifyPublished.status, 0, verifyPublished.stderr);
+    assert.match(verifyPublished.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 159 items/mu);
+    assert.equal(await readFile(observed, "utf8"), "published-then-failed\n", "independent verification must not acquire");
+    await rm(observed);
     const { manifest, manifestSHA256, manifestPath } = await loadManifest(join(root, "Config", "SharpLibvipsRustProvenance.json"));
     const noticeMaterials = await loadRustNoticeMaterials(join(root, "Config", "SharpLibvipsRustNoticeMaterials.json"), manifest, manifestPath);
     const inventory = JSON.parse(await readFile(join(cache, "INVENTORY.json"), "utf8"));

@@ -144,7 +144,8 @@ async function verifyCache(materials, bound, label) {
 
 // The only network step, and only from `prepare`: the existing acquisition
 // tool, run by this same pinned interpreter with an explicit empty-of-ambient
-// environment, publishes the cache atomically or leaves nothing behind.
+// environment. A failed child is not proof that nothing was published; preserve
+// any existing cache for the same verification and deliberate recovery path.
 function acquireCache(root, materials, bound) {
   log(`notice-material cache absent: ${materials}; acquiring ${bound.itemCount} crate materials (${bound.totalBytes} bytes) over HTTPS from the hosts pinned in ${CRATE_MANIFEST}, binding ${NOTICE_MANIFEST}, through ${ACQUISITION_TOOL} in a child process that inherits no environment (transport https). This cache is an internal build input, not a corresponding-source offer.`);
   const result = spawnSync(process.execPath, [
@@ -160,9 +161,9 @@ function acquireCache(root, materials, bound) {
     stdio: ["ignore", "ignore", "inherit"],
     timeout: ACQUISITION_TIMEOUT_MILLISECONDS
   });
-  if (result.error) fail(`HTTPS acquisition could not run (${result.error.message}); no cache was published at ${materials}`);
+  if (result.error) fail(`HTTPS acquisition could not complete (${result.error.message}); cache publication state is unverified at ${materials}; ${recovery(materials)}`);
   if (result.status !== 0 || result.signal !== null) {
-    fail(`HTTPS acquisition failed (${result.signal === null ? `status ${result.status}` : `signal ${result.signal}`}); no cache was published at ${materials}; rerun ${BOOTSTRAP} when the pinned hosts are reachable`);
+    fail(`HTTPS acquisition failed (${result.signal === null ? `status ${result.status}` : `signal ${result.signal}`}); cache publication state is unverified at ${materials}; ${recovery(materials)}`);
   }
 }
 
