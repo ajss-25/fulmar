@@ -3,6 +3,22 @@ import Foundation
 import LocalHarnessCredentialBrokerXPCProtocol
 import Testing
 
+/// Exhaustive by construction: a newly added broker operation cannot compile
+/// until it is classified here, which is what keeps the round-trip coverage
+/// from silently missing a case.
+private func credentialBrokerOperationRequiresSubject(
+    _ operation: CredentialBrokerXPCOperation
+) -> Bool {
+    switch operation {
+    case .get, .getRecord, .describe, .describeRecord, .set, .setRecord,
+         .unset, .unsetRecord, .modifyRecordLocked:
+        return true
+    case .listRecords, .listRecordAttention, .backupLoadOrCreate,
+         .backupReadExisting, .acceptance:
+        return false
+    }
+}
+
 struct CredentialBrokerXPCProtocolTests {
     private func request(
         operation: CredentialBrokerXPCOperation = .get,
@@ -21,11 +37,15 @@ struct CredentialBrokerXPCProtocolTests {
         let operations: [CredentialBrokerXPCOperation] = [
             .get, .getRecord, .describe, .describeRecord, .set, .setRecord,
             .unset, .unsetRecord, .listRecords, .listRecordAttention,
-            .modifyRecordLocked, .backupLoadOrCreate, .acceptance,
+            .modifyRecordLocked, .backupLoadOrCreate, .backupReadExisting, .acceptance,
         ]
+        // The classification below is an exhaustive switch, so a newly added
+        // operation cannot compile until it is classified, and the count check
+        // fails until it is also enumerated above.
+        #expect(operations.count == 14)
+        #expect(Set(operations.map(\.rawValue)).count == operations.count)
         for operation in operations {
-            let needsSubject = ![.listRecords, .listRecordAttention, .backupLoadOrCreate, .acceptance]
-                .contains(operation)
+            let needsSubject = credentialBrokerOperationRequiresSubject(operation)
             let value = request(
                 operation: operation,
                 subject: needsSubject ? "provider/key" : "",

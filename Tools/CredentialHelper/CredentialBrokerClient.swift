@@ -148,6 +148,7 @@ private func brokerOperation(_ command: String) -> CredentialBrokerXPCOperation?
     case "list-record-attention": .listRecordAttention
     case "modify-record-locked": .modifyRecordLocked
     case "backup-load-or-create": .backupLoadOrCreate
+    case "backup-read-existing": .backupReadExisting
     case "broker-acceptance": .acceptance
     default: nil
     }
@@ -202,7 +203,7 @@ func dispatchCredentialBrokerCommandIfNeeded(
     }
     guard response.0.status == .success else { brokerClientFail(.service(response.0.status)) }
     switch operation {
-    case .get, .getRecord, .listRecords, .listRecordAttention, .backupLoadOrCreate:
+    case .get, .getRecord, .listRecords, .listRecordAttention, .backupLoadOrCreate, .backupReadExisting:
         FileHandle.standardOutput.write(response.1)
     case .describe, .describeRecord:
         FileHandle.standardOutput.write(Data(response.0.configured ? "1".utf8 : "0".utf8))

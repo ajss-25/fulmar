@@ -935,7 +935,7 @@ struct HarnessHomeRecoveryInteractions {
             switch remedy {
             case .allowDeviceTrustKeychainAccess:
                 alert.messageText = "Allow Fulmar to read its device-trust record?"
-                alert.informativeText = "\(message)\n\nIf you continue, macOS shows its own Keychain prompt for the two items Fulmar keeps in your login keychain: a local signing key and its fingerprint, both created by Fulmar on this Mac. Always Allow means this copy of Fulmar is not asked again; Allow once means Fulmar asks again after the next launch. Fulmar only reads these items and never changes or resets them. Keeping the runtime stopped changes nothing."
+                alert.informativeText = "\(message)\n\nIf you continue, macOS shows its own Keychain prompt for the two items Fulmar keeps in your login keychain: a local signing key and its fingerprint, both created by Fulmar on this Mac. macOS owns that prompt and its options; Fulmar then re-reads the same two items with prompting switched off and reports only what that check found just now. It cannot promise how macOS will answer at a later launch, after Fulmar is rebuilt or updated, or while your login keychain is locked. Fulmar only reads these items and never changes or resets them. Keeping the runtime stopped changes nothing."
                 alert.addButton(withTitle: "Allow Keychain Access…")
                 alert.addButton(withTitle: "Keep Stopped")
                 switch alert.runModal() {
@@ -4701,11 +4701,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                     token: token,
                     loadingMessage: "Keychain access allowed. Verifying private state before startup…",
                     activityTitle: "Keychain access allowed for the device-trust record",
-                    activityDetail: "A fresh noninteractive read of both device-trust items succeeded, so background checks will not ask again for this copy of Fulmar."
+                    activityDetail: "A fresh no-prompt read of both device-trust items succeeded just now, so startup continued. Whether macOS asks again at a later launch, or after this copy of Fulmar changes, remains its decision."
                 )
             case .success(.onceOnly):
                 self.presentIncompleteDeviceTrustAuthorization(
-                    "macOS allowed the read this time only, so Fulmar would be asked again after the next launch. Choose Try Again and pick Always Allow if you want background checks to run unattended.",
+                    "macOS allowed the read, but a fresh no-prompt read immediately afterwards was still refused, so Fulmar cannot treat background checks as unattended. You can try again and choose the option that keeps the allowance; whether it holds is macOS's decision, not Fulmar's.",
                     pending: pending,
                     recoveryFolder: recoveryFolder,
                     token: token

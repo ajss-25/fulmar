@@ -460,17 +460,21 @@ private func firstExecutableLine(in body: [String]) -> Int? {
 
     // These reviewed counts, actor-suite scopes, import rule, and marker vocabulary
     // must be updated consciously whenever test topology or AppKit usage changes.
-    #expect(testBodyCount == 1_448)
-    #expect(directMainActorBodyCount == 323)
+    // The startup Keychain-UX correction pass added four functions: two
+    // process-level backup-key client tests, one AppKit-importing main-actor
+    // backup-window test (a runtime-marker body), and one main-actor
+    // HarnessController authorization test in a file that imports no AppKit.
+    #expect(testBodyCount == 1_452)
+    #expect(directMainActorBodyCount == 325)
     #expect(mainActorSuiteCount == 4)
     #expect(inheritedMainActorBodyCount == 39)
-    #expect(appKitImportedActorBodyCount == 225)
+    #expect(appKitImportedActorBodyCount == 226)
     // Artifact previews now use an injected off-screen NSView factory in tests
     // instead of constructing the live Quick Look surface. The reviewed static
     // runtime-marker topology is therefore one body smaller than the original
     // live-preview inventory; every remaining AppKit-importing actor test is
     // still required to acquire the hold as its first executable statement.
-    #expect(runtimeMarkerBodyCount == 175)
+    #expect(runtimeMarkerBodyCount == 176)
     #expect(runtimeMarkerWithoutDirectMainActorCount == 5)
 }
 

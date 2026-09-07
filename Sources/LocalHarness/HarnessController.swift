@@ -1376,6 +1376,19 @@ final class HarnessController {
                     .inspectRecoveryFolder
                 )
             }
+        case .keychainInteractionUnavailable(let reason):
+            switch reason {
+            case .contended:
+                return (
+                    "Fulmar's background device-trust check stopped rather than wait behind a Keychain decision that was already open. Nothing was read or changed. Finish that decision, then try again.",
+                    .retry
+                )
+            case .unavailable:
+                return (
+                    "Fulmar could not put macOS Keychain access into its no-prompt mode, so it made no Keychain call at all. Nothing was read or changed. Try again, and relaunch Fulmar if it keeps happening.",
+                    .retry
+                )
+            }
         case .deadlineExceeded:
             return (
                 "Verifying Fulmar's device-trust record timed out before it finished. Nothing was changed. Try again; if a Keychain prompt appeared, it is now handled in the foreground instead.",
@@ -1435,6 +1448,10 @@ final class HarnessController {
         let support = applicationSupportDirectoryURL()
         let noninteractive = deviceAttestationKeyStore
         let interactive = deviceAttestationInteractiveKeyStore
+        // The exact blocked state this authorization was started for. A state
+        // published while the native prompt was open belongs to a different
+        // cause and must survive this callback untouched.
+        let admittedPending = pendingHarnessHomeRecoveryState
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result {
                 try DeviceAttestationAuthority.authorizeExistingKeychainAccess(
@@ -1451,9 +1468,21 @@ final class HarnessController {
                     return
                 }
                 self.harnessHomeRecoveryInFlight = false
+                guard !self.terminalShutdownRequested else {
+                    // A terminal shutdown began while the prompt was open. The
+                    // read changed nothing, and no startup may be resumed from
+                    // this callback.
+                    completion(.failure(HarnessHomeError.receiptlessRecoveryStateChanged))
+                    return
+                }
                 if case .success(.persistent) = result {
                     // The blocked state is consumed only by a proven persistent
-                    // allowance; every other outcome leaves it for the caller.
+                    // allowance, and only when it is still the exact state this
+                    // authorization was admitted for.
+                    guard self.pendingHarnessHomeRecoveryState == admittedPending else {
+                        completion(.failure(HarnessHomeError.receiptlessRecoveryStateChanged))
+                        return
+                    }
                     self.pendingHarnessHomeRecoveryState = nil
                 }
                 completion(result)

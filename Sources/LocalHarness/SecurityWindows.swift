@@ -620,6 +620,10 @@ enum BackupWindowNotice: Equatable {
     /// The foreground read succeeded and the key was validated, but a fresh
     /// unattended read through the packaged reader is still refused.
     case authorizationNotUnattended
+    /// The foreground read succeeded and the key was validated, but the
+    /// read-only unattended check could not complete, so nothing is known
+    /// about unattended access either way.
+    case authorizationVerificationUnavailable
     case acquireFailed(StateBackupProtectedOperation)
     case createFailed
     case restoreFailed
@@ -664,7 +668,11 @@ struct BackupWindowInteractions {
             case .authorizationNotUnattended:
                 alert.alertStyle = .warning
                 alert.messageText = "Authorized for this session only"
-                alert.informativeText = "The existing backup key was read, verified against your backups and kept in memory for this session. A fresh unattended read through Fulmar's packaged credential reader is still refused, so this authorization will be asked for again after the next launch. Nothing was replaced or deleted; making unattended access persistent for this pre-existing key item is an owner decision, not something Fulmar changes on its own."
+                alert.informativeText = "The existing backup key was read, verified against your backups and kept in memory for this session. A read-only check just now, through Fulmar's packaged credential reader, was still refused, so expect this authorization to be asked for again after the next launch. Nothing was created, replaced or deleted; whether unattended access ever holds for this pre-existing key item is macOS's decision and yours, not something Fulmar changes on its own."
+            case .authorizationVerificationUnavailable:
+                alert.alertStyle = .warning
+                alert.messageText = "Authorized, but unattended access is unknown"
+                alert.informativeText = "The existing backup key was read and verified against your backups, and it is kept in memory for this session. The read-only check of whether Fulmar's packaged credential reader can read it unattended did not complete, so this authorization may or may not be asked for again after the next launch. Nothing was created, replaced or deleted."
             case .acquireFailed:
                 alert.messageText = "Protected backup transition did not start"
                 alert.informativeText = "Agent admissions and local-service state could not be verified, so no backup state was read or changed."
@@ -775,6 +783,8 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
     private let interactions: BackupWindowInteractions
     private let table = NSTableView()
     private let status = NSTextField(labelWithString: "")
+    private let advisoryLabel = NSTextField(wrappingLabelWithString: "")
+    private var advisoryHeightConstraint: NSLayoutConstraint?
     private let privacyDisclosureLabel = NSTextField(
         wrappingLabelWithString: BackupWindowController.privacyDisclosure
     )
@@ -786,6 +796,25 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
     private var backups: [StateBackup] = []
     private var backupKeyAuthorizationRequired = false
     private var activeCancellation: StateBackupOperationCancellation?
+    /// What the last foreground authorization proved about *unattended* access.
+    /// It is rendered in its own label, not in `status`, because the status line
+    /// is owned by whichever asynchronous operation ran last: a catalog reload
+    /// that lands after the authorization must not silently erase the warning.
+    /// It survives until another authorization supersedes it.
+    enum AuthorizationAdvisory: Equatable {
+        case sessionOnly
+        case verificationUnavailable
+
+        var sentence: String {
+            switch self {
+            case .sessionOnly:
+                return "Backup key authorized for this session only: a read-only check just now found the unattended reader still refused, so expect to be asked again after relaunch."
+            case .verificationUnavailable:
+                return "Backup key authorized for this session. The read-only check of unattended access did not complete, so whether you are asked again after relaunch is unknown."
+            }
+        }
+    }
+    private var authorizationAdvisory: AuthorizationAdvisory?
     private let operationGate = StateBackupWindowOperationGate()
     private enum OperationState: Equatable {
         case idle
@@ -828,6 +857,13 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
     override func showWindow(_ sender: Any?) { refresh(); super.showWindow(sender) }
     private func buildContent() -> NSViewController {
         let vc = NSViewController(); let root = NSView(); status.textColor = .secondaryLabelColor; status.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(status)
+        advisoryLabel.font = .systemFont(ofSize: 11)
+        advisoryLabel.textColor = .systemOrange
+        advisoryLabel.maximumNumberOfLines = 3
+        advisoryLabel.isHidden = true
+        advisoryLabel.setAccessibilityLabel("Backup key authorization advisory")
+        advisoryLabel.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(advisoryLabel)
         privacyDisclosureLabel.font = .systemFont(ofSize: 11)
         privacyDisclosureLabel.textColor = .secondaryLabelColor
         privacyDisclosureLabel.maximumNumberOfLines = 3
@@ -845,7 +881,10 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
             status.topAnchor.constraint(equalTo: root.topAnchor, constant: 18),
             status.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
             status.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
-            privacyDisclosureLabel.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 8),
+            advisoryLabel.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 6),
+            advisoryLabel.leadingAnchor.constraint(equalTo: status.leadingAnchor),
+            advisoryLabel.trailingAnchor.constraint(equalTo: status.trailingAnchor),
+            privacyDisclosureLabel.topAnchor.constraint(equalTo: advisoryLabel.bottomAnchor, constant: 8),
             privacyDisclosureLabel.leadingAnchor.constraint(equalTo: status.leadingAnchor),
             privacyDisclosureLabel.trailingAnchor.constraint(equalTo: status.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: privacyDisclosureLabel.bottomAnchor, constant: 10),
@@ -856,6 +895,9 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
             actions.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
             actions.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16)
         ])
+        let advisoryHeight = advisoryLabel.heightAnchor.constraint(equalToConstant: 0)
+        advisoryHeight.isActive = true
+        advisoryHeightConstraint = advisoryHeight
         vc.view = root
         updateButtons()
         return vc
@@ -902,6 +944,22 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
             self.updateButtons()
         }
     }
+    /// Records what the last authorization proved about unattended access.
+    /// Rendering is independent of `status`, so a catalog reload completing
+    /// later cannot erase it; only a subsequent authorization replaces it.
+    private func setAuthorizationAdvisory(_ advisory: AuthorizationAdvisory?) {
+        authorizationAdvisory = advisory
+        advisoryLabel.stringValue = advisory?.sentence ?? ""
+        advisoryLabel.isHidden = advisory == nil
+        advisoryHeightConstraint?.isActive = advisory == nil
+        advisoryLabel.setAccessibilityHelp(advisory?.sentence)
+    }
+
+    /// Test and diagnostics view of the durable advisory sentence.
+    var authorizationAdvisorySentence: String? {
+        authorizationAdvisory?.sentence
+    }
+
     private var isIdle: Bool {
         operationState == .idle && operationGate.isIdle
     }
@@ -944,6 +1002,8 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
         operationState = .authorizing(operationID)
         status.textColor = .secondaryLabelColor
         status.stringValue = "Waiting for macOS to authorize the existing backup key…"
+        // A new decision supersedes what the previous one proved.
+        setAuthorizationAdvisory(nil)
         updateButtons()
         activeCancellation = operations.authorizeAuthenticationKeyForForegroundAsync { [weak self] result in
             guard let self, self.operationState == .authorizing(operationID) else { return }
@@ -953,13 +1013,23 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
             case .success:
                 self.operationState = .idle
                 self.backupKeyAuthorizationRequired = false
-                self.refresh()
-                // A helper-only allowance is reported exactly once, here, and
-                // never converted into an automatic re-authorization.
-                if self.operations.lastAuthorizationUnattendedAccess() == .authorizationRequired {
-                    self.status.textColor = .systemOrange
-                    self.status.stringValue = "Backup key authorized for this session only; the unattended reader is still refused, so this will be asked again after relaunch."
+                // The fresh read-only unattended check is recorded before the
+                // catalog reload starts, and it is rendered in its own label:
+                // the reload's completion owns `status` and would otherwise
+                // erase this warning a moment later. Each outcome is announced
+                // exactly once and never becomes an automatic re-authorization.
+                switch self.operations.lastAuthorizationUnattendedAccess() {
+                case .authorizationRequired:
+                    self.setAuthorizationAdvisory(.sessionOnly)
+                    self.refresh()
                     self.interactions.presentNotice(.authorizationNotUnattended)
+                case .unavailable:
+                    self.setAuthorizationAdvisory(.verificationUnavailable)
+                    self.refresh()
+                    self.interactions.presentNotice(.authorizationVerificationUnavailable)
+                case .verified, nil:
+                    self.setAuthorizationAdvisory(nil)
+                    self.refresh()
                 }
                 self.onAuthenticationAuthorized?()
             case .failure(let error):

@@ -4707,6 +4707,9 @@ enum BackupError: LocalizedError {
     case authenticationUnavailable
     case authenticationAuthorizationRequired
     case authenticationTimedOut
+    /// Reported only by the read-only backup-key commands: the existing item
+    /// was not found. Nothing is created in response.
+    case authenticationKeyMissing
     case providerHistoryPrivacyMigrationRequired
     case integrityCheckFailed
     case restoreFailed(underlying: String)
@@ -4746,6 +4749,8 @@ enum BackupError: LocalizedError {
             return "macOS requires foreground authorization to read the existing device-only backup key. No key was replaced or deleted. Open Backups & Restore and choose Authorize Backup Key."
         case .authenticationTimedOut:
             return "The bounded backup-key operation did not finish in time. No existing Keychain item was replaced or deleted."
+        case .authenticationKeyMissing:
+            return "The existing device-only backup key was not found by the read-only check, so unattended access could not be confirmed. No key was created, replaced or deleted."
         case .providerHistoryPrivacyMigrationRequired:
             return "Historical provider state or a pre-privacy-epoch backup was found. Runtime startup and backup access remain stopped until the foreground privacy recovery is completed."
         case .integrityCheckFailed:

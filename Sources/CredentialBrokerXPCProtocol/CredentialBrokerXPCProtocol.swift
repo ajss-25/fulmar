@@ -37,6 +37,10 @@ public enum CredentialBrokerXPCOperation: String, Codable, Sendable {
     case listRecordAttention
     case modifyRecordLocked
     case backupLoadOrCreate
+    /// Reads the existing backup-authentication key and never creates one.
+    /// Verification-only callers use this so a probe can never mint a key that
+    /// an external deletion removed between two calls.
+    case backupReadExisting
     case acceptance
 }
 

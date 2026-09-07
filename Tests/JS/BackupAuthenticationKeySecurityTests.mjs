@@ -42,6 +42,55 @@ test("every unattended backup-key path has both per-query and process-wide no-UI
   assert.match(brokerDescribeBody, /payload: Data\(\)/u);
 });
 
+test("the unattended-access probe is a read-existing command that can never create a key", async () => {
+  const [helper, broker, protocolSource, brokerClient, client, manager] = await Promise.all([
+    readFile(join(root, "Tools", "CredentialHelper", "main.swift"), "utf8"),
+    readFile(join(root, "Tools", "CredentialBrokerService", "main.swift"), "utf8"),
+    readFile(join(root, "Sources", "CredentialBrokerXPCProtocol", "CredentialBrokerXPCProtocol.swift"), "utf8"),
+    readFile(join(root, "Tools", "CredentialHelper", "CredentialBrokerClient.swift"), "utf8"),
+    readFile(join(root, "Sources", "LocalHarness", "StateBackupAuthenticationKeyClient.swift"), "utf8"),
+    readFile(join(root, "Sources", "LocalHarness", "StateBackupManager.swift"), "utf8")
+  ]);
+
+  // The probe the window and startup paths use is the read-only command, never
+  // the create-capable one: a probe that minted a replacement key would
+  // silently invalidate every existing authenticated backup.
+  const verify = client.slice(
+    client.indexOf("func verifyUnattendedAccess(matching key: Data)"),
+    client.indexOf("func admitValidatedKey(")
+  );
+  assert.ok(verify.length > 0);
+  assert.match(verify, /run\(command: "backup-read-existing"/u);
+  assert.doesNotMatch(verify, /backup-load-or-create|backup-authorize-existing/u);
+  // A read-only probe that finds nothing reports unavailable rather than
+  // falling through to creation.
+  assert.match(client, /result\.exitStatus == 3[\s\S]*?BackupError\.authenticationKeyMissing/u);
+  assert.match(manager, /case authenticationKeyMissing/u);
+  assert.match(manager, /No key was created, replaced or deleted\./u);
+
+  // Helper: the read-existing body performs one noninteractive lookup and no
+  // mutation of any kind, and it is dispatched only after the process-wide
+  // no-UI barrier is in force.
+  const readExistingStart = helper.indexOf("private func runBackupAuthenticationKeyReadExisting()");
+  const readExistingEnd = helper.indexOf("private func runBackupAuthenticationKeyForegroundAuthorization()");
+  assert.ok(readExistingStart >= 0 && readExistingEnd > readExistingStart);
+  const readExistingBody = helper.slice(readExistingStart, readExistingEnd);
+  assert.match(readExistingBody, /lookupBackupAuthenticationKey\(nonInteractive: true\)/u);
+  assert.match(readExistingBody, /existing\.status == errSecItemNotFound \{ exit\(3\) \}/u);
+  assert.doesNotMatch(readExistingBody, /SecItemAdd|SecItemUpdate|SecItemDelete/u);
+  assert.ok(helper.indexOf("setKeychainInteraction(0)") < helper.indexOf('command == "backup-read-existing"'));
+
+  // Broker: the read-existing operation is a plain read that returns nothing
+  // when the item is absent, with no create, replace or delete path.
+  const brokerReadStart = broker.indexOf("private func backupReadExisting()");
+  assert.ok(brokerReadStart >= 0);
+  const brokerReadBody = broker.slice(brokerReadStart, broker.indexOf("\n}", brokerReadStart));
+  assert.match(brokerReadBody, /try keychainRead\([\s\S]*?service: backupAuthenticationService/u);
+  assert.doesNotMatch(brokerReadBody, /SecItemAdd|SecItemUpdate|SecItemDelete|keychainWrite|keychainDelete/u);
+  assert.match(protocolSource, /case backupReadExisting/u);
+  assert.match(brokerClient, /case "backup-read-existing":\s*(?:return\s*)?\.backupReadExisting/u);
+});
+
 test("foreground authorization is explicit, read-only, bounded, and validated before caching", async () => {
   const [helper, client, manager, window, app] = await Promise.all([
     readFile(join(root, "Tools", "CredentialHelper", "main.swift"), "utf8"),

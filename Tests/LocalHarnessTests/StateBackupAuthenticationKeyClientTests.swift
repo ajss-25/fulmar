@@ -243,11 +243,71 @@ private func makeTrustedBackupHelperFixture() throws -> (directory: URL, helper:
     #expect(client.verifyUnattendedAccess(matching: authorized) == .verified)
     unattended.set(status: 0, key: Data(repeating: 0x53, count: 32))
     #expect(client.verifyUnattendedAccess(matching: authorized) == .unavailable)
+    // Verification uses the read-only command; only the genuine startup load in
+    // the middle of this scenario may use the create-capable one.
     #expect(probe.commands == [
-        ["backup-authorize-existing"], ["backup-load-or-create"], ["backup-load-or-create"],
-        ["backup-load-or-create"], ["backup-load-or-create"]
+        ["backup-authorize-existing"], ["backup-read-existing"], ["backup-load-or-create"],
+        ["backup-read-existing"], ["backup-read-existing"]
     ])
     #expect(probe.deadlines == [7, 0.25, 0.25, 0.25, 0.25])
+}
+
+@Test func unattendedVerificationOfAMissingKeyReportsUnavailableAndNeverCreatesOne() throws {
+    let probe = BackupKeyClientProbe()
+    let authorized = Data(repeating: 0x54, count: 32)
+    let minted = Data(repeating: 0x55, count: 32)
+    // Exit 3 is the helper's "no such item" for the read-only command. Only the
+    // create-capable command may ever mint a key: a verification probe that
+    // reached it while the item really was gone would replace the key every
+    // existing authenticated backup was sealed with. The exact command
+    // sequences below are the guard.
+    let client = backupKeyClient(foregroundDeadline: 7) { _, arguments, _, _, _, deadline in
+        probe.record(arguments: arguments, deadline: deadline)
+        return arguments == ["backup-load-or-create"]
+            ? backupKeyResult(key: minted)
+            : backupKeyResult(status: 3, key: Data())
+    }
+
+    #expect(client.verifyUnattendedAccess(matching: authorized) == .unavailable)
+    #expect(probe.commands == [["backup-read-existing"]])
+    #expect(probe.deadlines == [0.25])
+
+    // Nothing was cached by the probe, so the genuine startup load still has to
+    // reach the helper, and it is the only call that may create.
+    #expect(try client.loadOrCreate() == minted)
+    #expect(probe.commands == [["backup-read-existing"], ["backup-load-or-create"]])
+
+    // A probe run once a key is cached still goes through the read-only command
+    // and still reports a missing item as unavailable. It neither answers from
+    // the cache nor re-creates, and it does not poison the cache either.
+    #expect(client.verifyUnattendedAccess(matching: minted) == .unavailable)
+    #expect(probe.commands == [
+        ["backup-read-existing"], ["backup-load-or-create"], ["backup-read-existing"]
+    ])
+    #expect(try client.loadOrCreate() == minted)
+    #expect(probe.commands.count == 3)
+}
+
+@Test func aMissingBackupKeyIsATypedStartupFailureRatherThanASilentReplacement() {
+    let probe = BackupKeyClientProbe()
+    let client = backupKeyClient { _, arguments, _, _, _, deadline in
+        probe.record(arguments: arguments, deadline: deadline)
+        return backupKeyResult(status: 3, key: Data())
+    }
+
+    do {
+        _ = try client.loadOrCreate()
+        Issue.record("A helper that reported no such item was unexpectedly admitted")
+    } catch let error as BackupError {
+        guard case .authenticationKeyMissing = error else {
+            Issue.record("Expected the typed missing-key result, got \(error)")
+            return
+        }
+        #expect(error.errorDescription?.contains("No key was created, replaced or deleted.") == true)
+    } catch {
+        Issue.record("Expected BackupError, got \(error)")
+    }
+    #expect(probe.commands == [["backup-load-or-create"]])
 }
 
 @Test func malformedSuccessfulBackupKeyPayloadFailsClosedWithoutCaching() {

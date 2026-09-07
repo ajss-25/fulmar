@@ -110,17 +110,20 @@ final class StateBackupAuthenticationKeyClient: @unchecked Sendable {
         try run(command: "backup-authorize-existing", deadline: foregroundDeadline)
     }
 
-    /// Fresh noninteractive verification through the actual unattended
-    /// consumer (the packaged helper's brokered `backup-load-or-create`, the
-    /// same command every startup runs), after a foreground authorization has
-    /// already read the existing item. The process cache is deliberately not
-    /// consulted or updated: a foreground allowance granted to the helper alone
-    /// must never be reported as unattended access. Because the item was just
-    /// read, the command's create branch is unreachable short of an external
-    /// deletion between the two calls, the same exposure every launch has.
+    /// Fresh noninteractive verification through the same packaged helper and
+    /// broker every startup uses, after a foreground authorization has already
+    /// read the existing item.
+    ///
+    /// The command is `backup-read-existing`, which has no create branch at
+    /// all: a verification probe can never mint a key, not even if the item is
+    /// deleted between the authorization and this call. A missing item is
+    /// therefore reported as `.unavailable` — the allowance is unknown — and
+    /// never as verified. The process cache is deliberately neither consulted
+    /// nor updated: a foreground allowance granted to the helper alone must
+    /// never be reported as unattended access.
     func verifyUnattendedAccess(matching key: Data) -> StateBackupUnattendedAccess {
         do {
-            let fresh = try run(command: "backup-load-or-create", deadline: backgroundDeadline)
+            let fresh = try run(command: "backup-read-existing", deadline: backgroundDeadline)
             return fresh == key ? .verified : .unavailable
         } catch BackupError.authenticationAuthorizationRequired {
             return .authorizationRequired
@@ -176,6 +179,11 @@ final class StateBackupAuthenticationKeyClient: @unchecked Sendable {
         }
         if result.exitStatus == 5 {
             throw BackupError.authenticationAuthorizationRequired
+        }
+        // Exit 3 is the helper's "no such item". Only the read-only commands
+        // can report it; the unattended load-or-create command creates instead.
+        if result.exitStatus == 3 {
+            throw BackupError.authenticationKeyMissing
         }
         guard result.exitStatus == 0,
               result.standardOutput.count == Self.maximumKeyBytes else {

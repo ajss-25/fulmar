@@ -632,6 +632,18 @@ private func backupLoadOrCreate() throws -> Data {
     return key
 }
 
+/// Read-only counterpart of `backupLoadOrCreate`. It has no create branch at
+/// all: an absent item is reported as `notFound` so a verification probe can
+/// never mint a key, whatever happened to the item between two calls.
+private func backupReadExisting() throws -> Data? {
+    guard let existing = try keychainRead(
+        service: backupAuthenticationService,
+        account: backupAuthenticationAccount
+    ) else { return nil }
+    guard existing.count == 32 else { throw BrokerError.unsafeState }
+    return existing
+}
+
 private func runAcceptance(nonce: String) throws {
     guard nonce.utf8.count == 36,
           let uuid = UUID(uuidString: nonce),
@@ -710,7 +722,7 @@ private func execute(
         subjectRequired = true; recordSubject = false; payloadRequired = request.operation == .set
     case .getRecord, .describeRecord, .setRecord, .unsetRecord, .modifyRecordLocked:
         subjectRequired = true; recordSubject = true; payloadRequired = request.operation == .setRecord
-    case .listRecords, .listRecordAttention, .backupLoadOrCreate, .acceptance:
+    case .listRecords, .listRecordAttention, .backupLoadOrCreate, .backupReadExisting, .acceptance:
         subjectRequired = false; recordSubject = false; payloadRequired = false
     }
     guard subjectRequired ? !request.subject.isEmpty : request.subject.isEmpty,
@@ -797,6 +809,14 @@ private func execute(
             response: CredentialBrokerXPCResponse(status: .success),
             payload: try backupLoadOrCreate()
         )
+    case .backupReadExisting:
+        guard let existing = try backupReadExisting() else {
+            return BrokerResult(
+                response: CredentialBrokerXPCResponse(status: .notFound),
+                payload: Data()
+            )
+        }
+        return BrokerResult(response: CredentialBrokerXPCResponse(status: .success), payload: existing)
     case .acceptance:
         try runAcceptance(nonce: request.acceptanceNonce)
         return BrokerResult(response: CredentialBrokerXPCResponse(status: .success), payload: Data())

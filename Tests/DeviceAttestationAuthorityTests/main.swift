@@ -15,6 +15,47 @@ private func expectThrows(_ expected: DeviceAttestationError, _ body: () throws 
     }
 }
 
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = 0
+    func increment() { lock.lock(); stored += 1; lock.unlock() }
+    var value: Int { lock.lock(); defer { lock.unlock() }; return stored }
+}
+
+/// Scripted `SecKeychainSetUserInteractionAllowed` results: the policy is
+/// applied successfully and every later call — the restoration, and the forced
+/// fail-closed retry after it — fails.
+private final class PolicySetLedger: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private var sawForcedFailClosed = false
+    private let succeedFirst: Bool
+
+    init(succeedFirst: Bool) { self.succeedFirst = succeedFirst }
+
+    func set(_ value: UInt8) -> OSStatus {
+        lock.lock()
+        defer { lock.unlock() }
+        calls += 1
+        if calls == 1, succeedFirst { return errSecSuccess }
+        if value == 0 { sawForcedFailClosed = true }
+        return errSecNotAvailable
+    }
+
+    func reset() {
+        lock.lock()
+        calls = 0
+        sawForcedFailClosed = false
+        lock.unlock()
+    }
+
+    var forcedFailClosed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return sawForcedFailClosed
+    }
+}
+
 private final class MemoryKeyStore: DeviceAttestationRecoverableKeyStore, @unchecked Sendable {
     private let lock = NSLock()
     var values: [String: Data]
@@ -116,7 +157,102 @@ private struct Fixture {
         try run("harness-home", harnessHomeCapabilityTamperSwapAndCrash)
         try run("harness-home-rotation", harnessHomeRotationCrashRecovery)
         try run("keychain-authorization", keychainPromptDeadlineAndExplicitAuthorization)
-        print("DeviceAttestationAuthorityTests: 11 passed")
+        try run("interaction-policy", boundedInteractionPolicyAdmissionAndPolicyFailures)
+        print("DeviceAttestationAuthorityTests: 12 passed")
+    }
+
+    /// The process-wide interaction policy is a shared resource: an open
+    /// foreground prompt holds it. A background access must give up inside its
+    /// own bound instead of spending the caller's operation deadline, a policy
+    /// that cannot be established must not run the Keychain call at all, and a
+    /// user-initiated access whose policy cannot be returned to fail-closed
+    /// must discard its result rather than leave the process able to prompt.
+    static func boundedInteractionPolicyAdmissionAndPolicyFailures() throws {
+        let ran = Counter()
+        let background = MacOSDeviceAttestationKeychain(
+            service: "com.angadjairath.localharness.device-attestation.test-policy",
+            accessGroup: nil,
+            interaction: .forbidden,
+            admissionBound: 0.05
+        )
+        let foreground = MacOSDeviceAttestationKeychain(
+            service: "com.angadjairath.localharness.device-attestation.test-policy",
+            accessGroup: nil,
+            interaction: .userInitiated,
+            admissionBound: 0.05
+        )
+
+        // Contention: the policy is held exactly as an open native prompt holds
+        // it. The bounded background read fails closed inside its bound and
+        // never reaches the Keychain.
+        let held = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let holder = Thread {
+            LegacyKeychainInteraction.acquirePolicyForTesting()
+            held.signal()
+            release.wait()
+            LegacyKeychainInteraction.releasePolicyForTesting()
+        }
+        holder.start()
+        guard held.wait(timeout: .now() + 5) == .success else {
+            throw TestFailure.failed("the policy holder never started")
+        }
+        let started = Date()
+        try expectThrows(.keychainInteractionUnavailable(.contended)) {
+            _ = try background.read(account: "device-attestation-public-anchor-sha256-v1")
+        }
+        let waited = Date().timeIntervalSince(started)
+        try expect(waited < 2, "a bounded background admission waited \(waited)s behind the policy")
+        // The foreground path is bounded too: it reports contention instead of
+        // hanging when something else holds the policy.
+        try expectThrows(.keychainInteractionUnavailable(.contended)) {
+            _ = try foreground.read(account: "device-attestation-public-anchor-sha256-v1")
+        }
+        release.signal()
+        while !holder.isFinished { usleep(1_000) }
+
+        // Setup failure: the policy cannot be established, so the Keychain call
+        // is never made and nothing is reported as a permission decision.
+        let failingSet = LegacyKeychainInteraction.Primitives(
+            get: { pointer in pointer.pointee = 1; return errSecSuccess },
+            set: { _ in errSecNotAvailable },
+            status: { _, pointer in pointer.pointee = 1; return errSecSuccess }
+        )
+        try LegacyKeychainInteraction.withPrimitivesForTesting(failingSet) {
+            try expectThrows(.keychainInteractionUnavailable(.unavailable)) {
+                _ = try background.read(account: "device-attestation-public-anchor-sha256-v1")
+            }
+            try expectThrows(.keychainInteractionUnavailable(.unavailable)) {
+                _ = try foreground.read(account: "device-attestation-public-anchor-sha256-v1")
+            }
+        }
+
+        // Restoration failure. The policy is applied, the call runs, and the
+        // restore fails. A forbidden access is left fail-closed, so its status
+        // is honest and usable; a user-initiated one that cannot be forced back
+        // to fail-closed discards its result instead.
+        let restoreFailure = PolicySetLedger(succeedFirst: true)
+        try LegacyKeychainInteraction.withPrimitivesForTesting(
+            LegacyKeychainInteraction.Primitives(
+                get: { pointer in pointer.pointee = 1; return errSecSuccess },
+                set: { value in ran.increment(); return restoreFailure.set(value) },
+                status: { _, pointer in pointer.pointee = 1; return errSecSuccess }
+            )
+        ) {
+            // A read of an account that does not exist returns nil rather than
+            // throwing, which proves the forbidden call really ran.
+            let value = try background.read(account: "device-attestation-absent-account-v1")
+            try expect(value == nil, "the forbidden call did not run under a failed restore")
+            restoreFailure.reset()
+            try expectThrows(.keychainInteractionUnavailable(.unavailable)) {
+                _ = try foreground.read(account: "device-attestation-absent-account-v1")
+            }
+            try expect(
+                restoreFailure.forcedFailClosed,
+                "a user-initiated access did not try to force the fail-closed policy back"
+            )
+        }
+        try expect(ran.value > 0, "the substituted policy primitives were never used")
     }
 
     /// Faithful reproduction of the owner-visible failure and the explicit

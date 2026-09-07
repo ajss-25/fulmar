@@ -115,11 +115,15 @@ Updated: 2026-09-03 (Europe/London)
 - JavaScript: 898 exact lifecycle tests, 686 top-level tests; expected source result
   851 passed plus 47 reviewed skips, and expected candidate result 852 passed plus
   46 reviewed skips.
-- Swift: 1,448 exact function specifiers; sorted-specifier SHA-256
-  `5787c3b14a378c785034bd847b443a38aa5e0d5b2fd33b9453cbebd675a069d5`
-  (1,445 / `242833714f…` plus the three startup Keychain-UX regressions:
-  blocked-recovery descriptions, refused device-trust read with explicit
-  authorization, and unattended backup-key access verification).
+- Swift: 1,452 exact function specifiers; sorted-specifier SHA-256
+  `cdd266aed0d5957a0a18f7dde366df5eb87f774862fecdfa6cb3a82acc7c738d`
+  (1,448 / `5787c3b14a…` plus the four startup Keychain-UX correction tests:
+  missing-key verification without creation, the typed missing-key startup
+  failure, the authorization advisory surviving the later catalog refresh, and
+  one-attempt device-trust authorization with stale and post-shutdown
+  callbacks). The independently built `DeviceAttestationAuthorityTests`
+  executable target is 12 scenarios, adding bounded interaction-policy
+  admission with setup and restoration failures.
 
 These are fail-closed ledgers, not passing results. The canonical full JavaScript and
 Swift gates must execute after this source freeze. Any subsequent source, test,

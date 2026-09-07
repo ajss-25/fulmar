@@ -672,6 +672,198 @@ func refusedDeviceTrustReadBlocksWithKeychainRemedyAndExplicitAuthorizationResum
     #expect(!controller.ownsOllama)
 }
 
+/// One relaunched controller blocked on a refused device-trust read, with the
+/// interactive store still able to see the same items. Mirrors the state the
+/// authorization sheet is presented from.
+@MainActor
+private func makeBlockedDeviceTrustControllerFixture(prefix: String) async throws -> (
+    support: URL,
+    keys: LocalHarnessTestDeviceAttestationKeyStore,
+    refused: LocalHarnessTestDeviceAttestationKeyStore,
+    controller: HarnessController,
+    blocked: HarnessHomeRecoveryPendingState
+) {
+    let support = try makeHarnessControllerSecureSupportRoot(prefix: prefix)
+    let keys = LocalHarnessTestDeviceAttestationKeyStore()
+    let establishing = HarnessController(
+        lifecycleTestConfiguration: .init(
+            harnessProcess: nil,
+            ollamaProcess: nil,
+            initialState: .stopped,
+            stopProcess: { _, _ in Issue.record("No child process is owned") },
+            startReplacement: { Issue.record("No runtime may launch") },
+            harnessHomeRecoveryAuthenticationKey: Data(repeating: 0x41, count: 32),
+            deviceAttestationKeyStore: keys
+        ),
+        applicationSupportDirectory: support,
+        forbidCredentialHelper: true
+    )
+    try await prepareHarnessHomeForLifecycleTest(establishing)
+
+    let refused = LocalHarnessTestDeviceAttestationKeyStore(
+        sharing: keys,
+        readFailure: .keychainFailure(errSecUserCanceled)
+    )
+    let controller = HarnessController(
+        lifecycleTestConfiguration: .init(
+            harnessProcess: nil,
+            ollamaProcess: nil,
+            initialState: .stopped,
+            stopProcess: { _, _ in Issue.record("No child process is owned") },
+            startReplacement: { Issue.record("No runtime may launch") },
+            harnessHomeRecoveryAuthenticationKey: Data(repeating: 0x41, count: 32),
+            deviceAttestationKeyStore: refused,
+            deviceAttestationInteractiveKeyStore: keys
+        ),
+        applicationSupportDirectory: support,
+        forbidCredentialHelper: true
+    )
+    var observedPending: HarnessHomeRecoveryPendingState?
+    controller.onHarnessHomeRecoveryPending = { observedPending = $0 }
+    var preflight: Result<HarnessHomeRecoveryPreflightStatus, Error>?
+    controller.preflightHarnessHomeRecoveryForBackgroundSchedule(backgroundDetectionOnly: false) {
+        preflight = $0
+    }
+    let deadline = ContinuousClock.now + .seconds(3)
+    while preflight == nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    let blocked = try #require(observedPending)
+    guard case .blocked(_, _, .allowDeviceTrustKeychainAccess) = blocked else {
+        throw LifecycleFixtureError.readinessTimedOut
+    }
+    keys.resetObservations()
+    refused.resetObservations()
+    return (support, keys, refused, controller, blocked)
+}
+
+private func isReceiptlessRecoveryStateChanged(
+    _ result: Result<DeviceAttestationKeychainAuthorizationOutcome, Error>?
+) -> Bool {
+    guard case .failure(let error)? = result,
+          case .receiptlessRecoveryStateChanged? = error as? HarnessHomeError else { return false }
+    return true
+}
+
+@Test @MainActor
+func deviceTrustAuthorizationAdmitsOneAttemptAndStaleOrPostShutdownCallbacksResumeNothing() async throws {
+    // 1. A second authorization, and any background preflight, are refused
+    //    outright while the native prompt for the first one is still open, so
+    //    exactly one attempt can ever be in flight for a blocked startup.
+    var fixture = try await makeBlockedDeviceTrustControllerFixture(
+        prefix: "fulmar-controller-device-trust-exactly-once"
+    )
+    defer { try? FileManager.default.removeItem(at: fixture.support) }
+    var gate = LocalHarnessTestDeviceAttestationReadGate()
+    fixture.keys.setReadGate(gate)
+    // The unattended re-read would now succeed: without the admission and
+    // shutdown guards below, each of these callbacks would report `.persistent`
+    // and resume the blocked startup.
+    fixture.refused.setReadFailure(nil)
+    var first: Result<DeviceAttestationKeychainAuthorizationOutcome, Error>?
+    fixture.controller.authorizeDeviceAttestationKeychainAccess { first = $0 }
+    var deadline = ContinuousClock.now + .seconds(5)
+    while gate.arrivals == 0, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(gate.arrivals >= 1)
+    #expect(fixture.controller.harnessHomeRecoveryIsInFlight)
+    #expect(first == nil)
+
+    var second: Result<DeviceAttestationKeychainAuthorizationOutcome, Error>?
+    fixture.controller.authorizeDeviceAttestationKeychainAccess { second = $0 }
+    #expect(isReceiptlessRecoveryStateChanged(second))
+    var preflight: Result<HarnessHomeRecoveryPreflightStatus, Error>?
+    fixture.controller.preflightHarnessHomeRecoveryForBackgroundSchedule(backgroundDetectionOnly: false) {
+        preflight = $0
+    }
+    guard case .failure(let preflightError)? = preflight,
+          case .receiptlessRecoveryStateChanged? = preflightError as? HarnessHomeError else {
+        Issue.record("A preflight must not overlap an in-flight authorization")
+        return
+    }
+    #expect(fixture.controller.pendingHarnessHomeRecoveryState == fixture.blocked)
+
+    // 2. Quit arrives while that same prompt is open. The read changed nothing
+    //    and its callback may not consume the blocked state or resume startup.
+    var stopped: Result<Void, Error>?
+    fixture.controller.stopOwnedServicesForApplicationTermination { stopped = $0 }
+    gate.open()
+    deadline = ContinuousClock.now + .seconds(5)
+    while first == nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(isReceiptlessRecoveryStateChanged(first))
+    #expect(fixture.controller.pendingHarnessHomeRecoveryState == fixture.blocked)
+    #expect(!fixture.controller.harnessHomeRecoveryIsInFlight)
+    #expect(fixture.keys.observations().inserts.isEmpty)
+    #expect(fixture.keys.observations().deletes.isEmpty)
+    #expect(fixture.refused.observations().inserts.isEmpty)
+    #expect(fixture.refused.observations().deletes.isEmpty)
+    // Nothing may be admitted after the terminal barrier closes, so a user who
+    // clicks the still-visible sheet cannot start a second attempt either.
+    var afterShutdown: Result<DeviceAttestationKeychainAuthorizationOutcome, Error>?
+    fixture.controller.authorizeDeviceAttestationKeychainAccess { afterShutdown = $0 }
+    #expect(isReceiptlessRecoveryStateChanged(afterShutdown))
+    #expect(stopped != nil)
+    #expect(!fixture.controller.ownsHarness)
+    #expect(!fixture.controller.ownsOllama)
+
+    // 3. A stale callback: the exact blocked state this authorization was
+    //    admitted for is consumed by a separate explicit retry while the prompt
+    //    is open. The late persistent outcome must not consume a second time.
+    fixture = try await makeBlockedDeviceTrustControllerFixture(
+        prefix: "fulmar-controller-device-trust-stale-callback"
+    )
+    defer { try? FileManager.default.removeItem(at: fixture.support) }
+    gate = LocalHarnessTestDeviceAttestationReadGate()
+    fixture.keys.setReadGate(gate)
+    fixture.refused.setReadFailure(nil)
+    var stale: Result<DeviceAttestationKeychainAuthorizationOutcome, Error>?
+    fixture.controller.authorizeDeviceAttestationKeychainAccess { stale = $0 }
+    deadline = ContinuousClock.now + .seconds(5)
+    while gate.arrivals == 0, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(gate.arrivals >= 1)
+    #expect(fixture.controller.consumeBlockedHarnessHomeRecovery(fixture.blocked))
+    #expect(fixture.controller.pendingHarnessHomeRecoveryState == nil)
+    // The blocked state is consumable exactly once, whichever path gets there.
+    #expect(!fixture.controller.consumeBlockedHarnessHomeRecovery(fixture.blocked))
+    gate.open()
+    deadline = ContinuousClock.now + .seconds(5)
+    while stale == nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(isReceiptlessRecoveryStateChanged(stale))
+    #expect(fixture.controller.pendingHarnessHomeRecoveryState == nil)
+    #expect(fixture.keys.observations().inserts.isEmpty)
+    #expect(fixture.keys.observations().deletes.isEmpty)
+
+    // 4. The undisturbed sequence still resumes exactly once: the authorization
+    //    admitted for the live blocked state consumes it, and no later
+    //    authorization can consume it a second time.
+    fixture = try await makeBlockedDeviceTrustControllerFixture(
+        prefix: "fulmar-controller-device-trust-single-resume"
+    )
+    defer { try? FileManager.default.removeItem(at: fixture.support) }
+    fixture.refused.setReadFailure(nil)
+    var resumed: Result<DeviceAttestationKeychainAuthorizationOutcome, Error>?
+    fixture.controller.authorizeDeviceAttestationKeychainAccess { resumed = $0 }
+    deadline = ContinuousClock.now + .seconds(5)
+    while resumed == nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    guard case .success(.persistent)? = resumed else {
+        Issue.record("A verified unattended read must be reported as persistent")
+        return
+    }
+    #expect(fixture.controller.pendingHarnessHomeRecoveryState == nil)
+    #expect(!fixture.controller.consumeBlockedHarnessHomeRecovery(fixture.blocked))
+    #expect(fixture.keys.observations().inserts.isEmpty)
+    #expect(fixture.keys.observations().deletes.isEmpty)
+}
+
 @Test @MainActor
 func foregroundReadinessTimeoutReapsBothExactChildrenBeforePublishingFailure() throws {
     let harness = try launchLifecycleFixture()

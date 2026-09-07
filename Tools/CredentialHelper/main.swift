@@ -419,6 +419,22 @@ private func runBackupAuthenticationKeyLoadOrCreate() -> Never {
     exit(0)
 }
 
+/// Read-only verification counterpart of the unattended load-or-create command.
+/// It has no create branch: an absent item exits 3 (not found) so a probe can
+/// never mint a key, and every other refusal keeps its existing typed status.
+private func runBackupAuthenticationKeyReadExisting() -> Never {
+    let existing = lookupBackupAuthenticationKey(nonInteractive: true)
+    if existing.status == errSecItemNotFound { exit(3) }
+    guard existing.status == errSecSuccess else {
+        failBackupAuthenticationKeychain("read", status: existing.status)
+    }
+    guard let data = existing.data, data.count == 32 else {
+        fail("Backup authentication key has an invalid length")
+    }
+    FileHandle.standardOutput.write(data)
+    exit(0)
+}
+
 private func runBackupAuthenticationKeyForegroundAuthorization() -> Never {
     let existing = lookupBackupAuthenticationKey(nonInteractive: false)
     if existing.status == errSecItemNotFound { exit(3) }
@@ -1026,6 +1042,10 @@ guard setKeychainInteraction(0) == errSecSuccess else {
 if command == "backup-load-or-create" {
     guard arguments.count == 2 else { fail("backup-load-or-create takes no subject") }
     runBackupAuthenticationKeyLoadOrCreate()
+}
+if command == "backup-read-existing" {
+    guard arguments.count == 2 else { fail("backup-read-existing takes no subject") }
+    runBackupAuthenticationKeyReadExisting()
 }
 if command == "telemetry-lock" {
     guard arguments.count == 4 else { fail("telemetry-lock expects the application-support root and telemetry file") }

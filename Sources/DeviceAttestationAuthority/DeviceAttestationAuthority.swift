@@ -26,6 +26,21 @@ public enum DeviceAttestationError: Error, Equatable, Sendable {
     case injectedInterruption(ProviderHistoryNamespacePublicationPhase)
     case harnessHomeInjectedInterruption(HarnessHomeAttestationPublicationPhase)
     case harnessHomeRotationInjectedInterruption(HarnessHomeAttestationRotationPhase)
+    /// The process-wide Keychain interaction policy could not be applied, so
+    /// the Keychain call was never made or its result was discarded. Distinct
+    /// from `keychainFailure`: no permission decision was reached.
+    case keychainInteractionUnavailable(DeviceAttestationKeychainInteractionFailure)
+}
+
+/// Why a process-wide Keychain interaction policy could not be applied around
+/// one access. Never derived from item content.
+public enum DeviceAttestationKeychainInteractionFailure: Error, Equatable, Sendable {
+    /// The policy control is unavailable, could not be set, or could not be
+    /// returned to its fail-closed state afterwards.
+    case unavailable
+    /// Another holder of the process-wide policy — the explicit foreground
+    /// authorization and its native prompt — did not yield within the bound.
+    case contended
 }
 
 /// A deliberately tiny key store contract. Production uses the macOS Keychain;
@@ -95,15 +110,36 @@ public struct MacOSDeviceAttestationKeychain: DeviceAttestationRecoverableKeySto
     public let service: String
     public let accessGroup: String?
     public let interaction: DeviceAttestationKeychainInteraction
+    /// How long this store waits for the process-wide interaction policy before
+    /// failing closed. Background stores must give up well inside their
+    /// operation deadline so a foreground prompt cannot consume it.
+    public let admissionBound: TimeInterval
 
     public init(
         service: String,
         accessGroup: String? = nil,
         interaction: DeviceAttestationKeychainInteraction = .forbidden
     ) {
+        self.init(
+            service: service,
+            accessGroup: accessGroup,
+            interaction: interaction,
+            admissionBound: interaction == .forbidden
+                ? LegacyKeychainInteraction.backgroundAdmissionBound
+                : LegacyKeychainInteraction.foregroundAdmissionBound
+        )
+    }
+
+    @_spi(Testing) public init(
+        service: String,
+        accessGroup: String?,
+        interaction: DeviceAttestationKeychainInteraction,
+        admissionBound: TimeInterval
+    ) {
         self.service = service
         self.accessGroup = accessGroup
         self.interaction = interaction
+        self.admissionBound = admissionBound
     }
 
     public func read(account: String) throws -> Data? {
@@ -145,16 +181,34 @@ public struct MacOSDeviceAttestationKeychain: DeviceAttestationRecoverableKeySto
         }
     }
 
+    /// Applies the process-wide interaction policy around one Keychain call.
+    ///
+    /// A background access never waits behind an open native prompt: the policy
+    /// is acquired with a bound, and a holder that does not yield is reported as
+    /// `.contended` instead of consuming the caller's operation deadline. A
+    /// policy that cannot be established, or that cannot be returned to its
+    /// fail-closed state after a user-initiated access, discards the result
+    /// rather than leaving the process able to prompt unexpectedly.
     private func withInteractionPolicy(_ operation: () -> OSStatus) throws -> OSStatus {
+        let result: Result<LegacyKeychainInteraction.Outcome, DeviceAttestationKeychainInteractionFailure>
         switch interaction {
         case .forbidden:
-            guard let status = LegacyKeychainInteraction.withUserInteractionDisabled(operation) else {
-                // The fail-closed barrier is unavailable, so the call is not made.
-                throw DeviceAttestationError.keychainFailure(errSecInteractionNotAllowed)
-            }
-            return status
+            result = LegacyKeychainInteraction.withUserInteractionDisabled(bound: admissionBound, operation)
         case .userInitiated:
-            return LegacyKeychainInteraction.withUserInteractionEnabled(operation)
+            result = LegacyKeychainInteraction.withUserInteractionEnabled(bound: admissionBound, operation)
+        }
+        switch result {
+        case .success(let outcome):
+            // A `.forbidden` access that could not restore the previous policy
+            // leaves interaction disabled, which is the fail-closed direction
+            // and safe to report. A `.userInitiated` one that could not be
+            // forced back to disabled is not: the result is discarded.
+            guard outcome.policyRestored || interaction == .forbidden else {
+                throw DeviceAttestationError.keychainInteractionUnavailable(.unavailable)
+            }
+            return outcome.status
+        case .failure(let failure):
+            throw DeviceAttestationError.keychainInteractionUnavailable(failure)
         }
     }
 
@@ -175,12 +229,50 @@ public struct MacOSDeviceAttestationKeychain: DeviceAttestationRecoverableKeySto
 /// long-standing Security symbols are resolved dynamically, as the credential
 /// helper does, to keep the warning-clean macOS 15+ build free of the
 /// deprecated declarations.
-enum LegacyKeychainInteraction {
+public enum LegacyKeychainInteraction {
     private typealias SetInteraction = @convention(c) (UInt8) -> OSStatus
     private typealias GetInteraction = @convention(c) (UnsafeMutablePointer<UInt8>) -> OSStatus
     private typealias GetStatus = @convention(c) (OpaquePointer?, UnsafeMutablePointer<UInt32>) -> OSStatus
+
+    /// Result of one policed Keychain call: the call's own status, plus whether
+    /// the process-wide policy was returned to its previous (or fail-closed)
+    /// value afterwards.
+    public struct Outcome: Equatable, Sendable {
+        public let status: OSStatus
+        public let policyRestored: Bool
+    }
+
+    /// Replaceable policy primitives. Production resolves the long-standing
+    /// Security symbols; deterministic tests substitute failing ones. There is
+    /// no environment or argument that selects a substitute in a release run.
+    @_spi(Testing) public struct Primitives: @unchecked Sendable {
+        public let get: (UnsafeMutablePointer<UInt8>) -> OSStatus
+        public let set: (UInt8) -> OSStatus
+        public let status: (OpaquePointer?, UnsafeMutablePointer<UInt32>) -> OSStatus
+
+        public init(
+            get: @escaping (UnsafeMutablePointer<UInt8>) -> OSStatus,
+            set: @escaping (UInt8) -> OSStatus,
+            status: @escaping (OpaquePointer?, UnsafeMutablePointer<UInt32>) -> OSStatus
+        ) {
+            self.get = get
+            self.set = set
+            self.status = status
+        }
+    }
+
+    /// Bound for a background (`.forbidden`) access. It must stay well inside
+    /// the shortest background operation deadline so an open foreground prompt
+    /// can never consume that deadline: the access fails closed instead.
+    public static let backgroundAdmissionBound: TimeInterval = 1.5
+    /// Bound for the explicit foreground authorization. The user owns the
+    /// native prompt's wait; this covers only the policy handover itself.
+    public static let foregroundAdmissionBound: TimeInterval = 30
+
     private static let lock = NSLock()
-    private static let symbols: (set: SetInteraction, get: GetInteraction, status: GetStatus)? = {
+    private static let overrideLock = NSLock()
+    private static var overriddenPrimitives: Primitives?
+    private static let resolvedSymbols: (set: SetInteraction, get: GetInteraction, status: GetStatus)? = {
         guard let handle = dlopen(
             "/System/Library/Frameworks/Security.framework/Security",
             RTLD_LAZY | RTLD_LOCAL
@@ -195,38 +287,101 @@ enum LegacyKeychainInteraction {
     }()
 
     /// Runs `operation` with Keychain UI disabled process-wide, restoring the
-    /// previous setting afterwards. Returns nil, without calling `operation`,
-    /// when the barrier cannot be established.
-    static func withUserInteractionDisabled(_ operation: () -> OSStatus) -> OSStatus? {
-        run(allowingInteraction: false, operation)
+    /// previous setting afterwards. `operation` is not called when the barrier
+    /// cannot be established or when the policy is held past `bound`.
+    static func withUserInteractionDisabled(
+        bound: TimeInterval = backgroundAdmissionBound,
+        _ operation: () -> OSStatus
+    ) -> Result<Outcome, DeviceAttestationKeychainInteractionFailure> {
+        run(allowingInteraction: false, bound: bound, operation)
     }
 
     /// Runs `operation` with Keychain UI enabled process-wide, restoring the
-    /// previous setting afterwards. Falls back to the process default when the
-    /// symbols are unavailable, because enabling UI is never fail-closed.
-    static func withUserInteractionEnabled(_ operation: () -> OSStatus) -> OSStatus {
-        run(allowingInteraction: true, operation) ?? operation()
+    /// previous setting afterwards and forcing the fail-closed policy back if
+    /// that restoration fails.
+    static func withUserInteractionEnabled(
+        bound: TimeInterval = foregroundAdmissionBound,
+        _ operation: () -> OSStatus
+    ) -> Result<Outcome, DeviceAttestationKeychainInteractionFailure> {
+        run(allowingInteraction: true, bound: bound, operation)
     }
+
+    private static var primitives: Primitives? {
+        overrideLock.lock()
+        let overridden = overriddenPrimitives
+        overrideLock.unlock()
+        if let overridden { return overridden }
+        guard let resolvedSymbols else { return nil }
+        return Primitives(
+            get: resolvedSymbols.get,
+            set: resolvedSymbols.set,
+            status: resolvedSymbols.status
+        )
+    }
+
+    /// Test seam: substitutes the policy primitives for the duration of `body`.
+    /// Never reachable from a release path — no environment variable, argument
+    /// or Keychain value selects it.
+    @_spi(Testing) public static func withPrimitivesForTesting(
+        _ substitute: Primitives?,
+        _ body: () throws -> Void
+    ) rethrows {
+        overrideLock.lock()
+        let previous = overriddenPrimitives
+        overriddenPrimitives = substitute
+        overrideLock.unlock()
+        defer {
+            overrideLock.lock()
+            overriddenPrimitives = previous
+            overrideLock.unlock()
+        }
+        try body()
+    }
+
+    /// Test seam: holds the process-wide policy exactly as an open foreground
+    /// prompt does, so a bounded background admission can be observed failing
+    /// closed instead of waiting. Must be released from the same thread.
+    @_spi(Testing) public static func acquirePolicyForTesting() { lock.lock() }
+    @_spi(Testing) public static func releasePolicyForTesting() { lock.unlock() }
 
     /// True when the default (login) keychain reports a locked state; false
     /// when unlocked or when the state cannot be read.
     static func loginKeychainIsLocked() -> Bool {
-        guard let symbols else { return false }
+        guard let primitives else { return false }
         var status: UInt32 = 0
-        guard symbols.status(nil, &status) == errSecSuccess else { return false }
+        guard primitives.status(nil, &status) == errSecSuccess else { return false }
         // kSecUnlockStateStatus is bit 0 of SecKeychainStatus.
         return status & 1 == 0
     }
 
-    private static func run(allowingInteraction: Bool, _ operation: () -> OSStatus) -> OSStatus? {
-        guard let symbols else { return nil }
-        lock.lock()
+    private static func run(
+        allowingInteraction: Bool,
+        bound: TimeInterval,
+        _ operation: () -> OSStatus
+    ) -> Result<Outcome, DeviceAttestationKeychainInteractionFailure> {
+        guard let primitives else { return .failure(DeviceAttestationKeychainInteractionFailure.unavailable) }
+        // Bounded admission: a background access reports contention rather than
+        // waiting behind whatever holds the policy, which on this Mac is an open
+        // native prompt owned by the explicit foreground authorization.
+        guard lock.lock(before: Date().addingTimeInterval(max(0, bound))) else {
+            return .failure(DeviceAttestationKeychainInteractionFailure.contended)
+        }
         defer { lock.unlock() }
         var previous: UInt8 = 1
-        let hadPrevious = symbols.get(&previous) == errSecSuccess
-        guard symbols.set(allowingInteraction ? 1 : 0) == errSecSuccess else { return nil }
-        defer { if hadPrevious { _ = symbols.set(previous) } else { _ = symbols.set(1) } }
-        return operation()
+        let hadPrevious = primitives.get(&previous) == errSecSuccess
+        // Setup failure: the barrier does not exist, so the call is not made and
+        // no restoration is owed.
+        guard primitives.set(allowingInteraction ? 1 : 0) == errSecSuccess else {
+            return .failure(DeviceAttestationKeychainInteractionFailure.unavailable)
+        }
+        let status = operation()
+        var restored = primitives.set(hadPrevious ? previous : 1) == errSecSuccess
+        if !restored, allowingInteraction {
+            // Never leave process-wide Keychain UI enabled after a user-initiated
+            // access: force the fail-closed policy back before reporting.
+            restored = primitives.set(0) == errSecSuccess
+        }
+        return .success(Outcome(status: status, policyRestored: restored))
     }
 }
 

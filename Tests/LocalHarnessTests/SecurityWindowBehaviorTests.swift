@@ -232,6 +232,10 @@ private final class BackupOperationProbe {
     }
 
     var canAuthorize = true
+    /// What a fresh read-only unattended check reported for the last
+    /// authorization. `nil` means the manager recorded nothing.
+    var unattendedAccess: StateBackupUnattendedAccess?
+    var unattendedAccessQueries = 0
     var listCompletions: [@MainActor (Result<[StateBackup], Error>) -> Void] = []
     var authorizationCompletions: [@MainActor (Result<Void, Error>) -> Void] = []
     var creates: [CreateCall] = []
@@ -265,6 +269,10 @@ private final class BackupOperationProbe {
             deleteAsync: { [unowned self] backup, completion in
                 deletes.append(DeleteCall(backup: backup, completion: completion))
                 return StateBackupOperationCancellation()
+            },
+            lastAuthorizationUnattendedAccess: { [unowned self] in
+                unattendedAccessQueries += 1
+                return unattendedAccess
             }
         )
     }
@@ -654,6 +662,84 @@ private struct BackupWindowControls {
             }
         }
         #expect(authorizedContinuations == (["success", "denied"].contains(scenario) ? 1 : 0))
+    }
+}
+
+@MainActor
+@Test func authorizationUnattendedOutcomeIsAnnouncedOnceAndSurvivesTheLaterCatalogRefresh() throws {
+    ensureAppKitTestHostSurvivesAutomaticTermination()
+    let cases: [(StateBackupUnattendedAccess?, BackupWindowNotice?, Bool)] = [
+        (.authorizationRequired, .authorizationNotUnattended, true),
+        (.unavailable, .authorizationVerificationUnavailable, true),
+        (.verified, nil, false),
+        (nil, nil, false)
+    ]
+    for (outcome, expectedNotice, expectsAdvisory) in cases {
+        let operations = BackupOperationProbe()
+        operations.unattendedAccess = outcome
+        let interactions = BackupInteractionProbe()
+        let controller = BackupWindowController(
+            operations: operations.operations,
+            runtimeVersion: { "test" },
+            interactions: interactions.interactions
+        )
+        let controls = try backupWindowControls(controller)
+        let advisory = try #require(
+            try securityWindowViews(controller).compactMap { $0 as? NSTextField }
+                .first { $0.accessibilityLabel() == "Backup key authorization advisory" }
+        )
+        #expect(advisory.isHidden)
+        #expect(controller.authorizationAdvisorySentence == nil)
+
+        controls.reload.performClick(nil)
+        operations.completeList(.failure(BackupError.authenticationAuthorizationRequired))
+        controls.authorize.performClick(nil)
+        #expect(operations.authorizationCompletions.count == 1)
+        operations.authorizationCompletions[0](.success(()))
+
+        // The outcome is read exactly once per authorization and rendered
+        // before the catalog reload it triggers has completed.
+        #expect(operations.unattendedAccessQueries == 1)
+        #expect(interactions.notices == (expectedNotice.map { [$0] } ?? []))
+        #expect((controller.authorizationAdvisorySentence != nil) == expectsAdvisory)
+        #expect(advisory.isHidden == !expectsAdvisory)
+        #expect(advisory.stringValue == (controller.authorizationAdvisorySentence ?? ""))
+        if expectsAdvisory {
+            let sentence = try #require(controller.authorizationAdvisorySentence)
+            #expect(!sentence.isEmpty)
+            #expect(advisory.accessibilityHelp() == sentence)
+            // The warning states what was observed now, not what macOS will do
+            // at a later launch.
+            #expect(!sentence.lowercased().contains("will not be asked"))
+        }
+
+        // The reload lands afterwards and owns `status`. It must not erase the
+        // authorization warning, and it must not re-announce it.
+        #expect(operations.listCompletions.count == 1)
+        let statusBeforeReload = controls.status.stringValue
+        operations.completeList(.success([securityWindowBackup(10)]))
+        #expect(controls.status.stringValue != statusBeforeReload)
+        #expect(controls.create.isEnabled)
+        #expect((controller.authorizationAdvisorySentence != nil) == expectsAdvisory)
+        #expect(advisory.isHidden == !expectsAdvisory)
+        #expect(interactions.notices == (expectedNotice.map { [$0] } ?? []))
+        #expect(operations.unattendedAccessQueries == 1)
+
+        // A late duplicate callback cannot announce a second time either.
+        operations.authorizationCompletions[0](.success(()))
+        #expect(interactions.notices == (expectedNotice.map { [$0] } ?? []))
+        #expect(operations.unattendedAccessQueries == 1)
+        #expect((controller.authorizationAdvisorySentence != nil) == expectsAdvisory)
+
+        // A fresh authorization supersedes what the previous one proved: the
+        // stale warning is cleared the moment the new decision starts.
+        controls.reload.performClick(nil)
+        operations.completeList(.failure(BackupError.authenticationAuthorizationRequired))
+        operations.unattendedAccess = .verified
+        controls.authorize.performClick(nil)
+        #expect(controller.authorizationAdvisorySentence == nil)
+        #expect(advisory.isHidden)
+        #expect(operations.unattendedAccessQueries == 1)
     }
 }
 
