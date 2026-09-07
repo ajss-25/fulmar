@@ -37,6 +37,45 @@ const productionFixtureNamePattern = /^fulmar-release-evidence-test\.([A-Za-z0-9
 const isolatedRecoveryParentPattern =
   /^\/private\/tmp\/fulmar-release-evidence-recovery-fixture\.[a-f0-9]{32}$/u;
 
+// A synthetic unit's capability, lock and root all live in one admitted parent:
+// either the production namespace the wrapper script pins, or one owner-private
+// identity-attested isolated parent. Binding every pathname check, owner record
+// and reference scan to the same parent keeps the proof complete instead of
+// scanning a namespace the unit does not own.
+const capabilityBasenamePattern = /^fulmar-watchdog-capability\.([0-9]+)\.([a-f0-9]{64})$/u;
+// The capability field is matched as an opaque single line here and then bound
+// to the admitted parent by exact prefix and basename below, so no pattern is
+// ever built from a pathname.
+const capabilityOwnerRecordShape = /^([0-9]+)\n([0-9]+)\n([^\n]{1,512})\n([a-f0-9]{64})\n$/u;
+
+function admittedParent(parent) {
+  assert.ok(parent === productionFixtureParent || isolatedRecoveryParentPattern.test(parent),
+    "release-evidence synthetic parent is outside its reviewed namespaces");
+  return parent;
+}
+
+function matchCapabilityPath(path, parent) {
+  const prefix = `${admittedParent(parent)}/`;
+  if (typeof path !== "string" || !path.startsWith(prefix)) return null;
+  const name = path.slice(prefix.length);
+  if (name.includes("/")) return null;
+  return capabilityBasenamePattern.exec(name);
+}
+
+function matchCapabilityOwnerRecord(bytes, parent) {
+  const record = capabilityOwnerRecordShape.exec(bytes);
+  if (!record) return null;
+  return matchCapabilityPath(record[3], parent) ? record : null;
+}
+
+function capabilityPath(parent, rootPID, nonce) {
+  return join(admittedParent(parent), `fulmar-watchdog-capability.${rootPID}.${nonce}`);
+}
+
+function fixtureLockPath(parent, nonce) {
+  return join(parent, `FulmarEvidenceTest-${nonce}.lock`);
+}
+
 function processBirthIdentity(pid) {
   assert.ok(Number.isSafeInteger(pid) && pid > 1, "fixture owner is not a safe PID");
   const result = spawnSync("/bin/ps", ["-p", String(pid), "-o", "lstart="], {
@@ -92,7 +131,7 @@ function markerBytes(ownerPID, ownerStarted, createdAtMs, nonce, identity) {
   ].join("\n"));
 }
 
-async function publishFixtureOwnerMarker(root, capturedRoot, options = {}) {
+async function publishFixtureOwnerMarker(root, capturedRoot, options = {}, parent = productionFixtureParent) {
   const ownerPID = options.ownerPID ?? process.pid;
   const ownerStarted = options.ownerStarted ?? fixtureProcessStarted;
   const createdAtMs = options.createdAtMs ?? Date.now();
@@ -108,7 +147,7 @@ async function publishFixtureOwnerMarker(root, capturedRoot, options = {}) {
   await rename(pending, marker);
   const rootHandle = await open(root, constants.O_RDONLY | constants.O_NOFOLLOW);
   try { await rootHandle.sync(); } finally { await rootHandle.close(); }
-  return attestFixtureOwnerMarker(marker, root, capturedRoot.identity);
+  return attestFixtureOwnerMarker(marker, root, capturedRoot.identity, undefined, parent);
 }
 
 async function captureReleaseEvidenceFixtureRoot(root, parent = productionFixtureParent) {
@@ -127,22 +166,30 @@ async function captureReleaseEvidenceFixtureRoot(root, parent = productionFixtur
 }
 
 async function fixture(exitCode = 0, verifierBody = undefined, options = {}) {
-  const root = await mkdtemp("/private/tmp/fulmar-release-evidence-test.");
+  // Only an injected setup-failure branch may be admitted into an isolated
+  // parent: it starts no watchdog and runs no wrapper script. Every real
+  // watchdog-backed fixture stays in the production namespace that
+  // retain-release-verification.sh pins by exact pathname.
+  const parent = options.failurePoint && options.fixtureParent
+    ? options.fixtureParent
+    : productionFixtureParent;
+  admittedParent(parent);
+  const root = await mkdtemp(join(parent, "fulmar-release-evidence-test."));
   let capture;
   let value;
   try {
     capture = options.capture;
     if (capture) capture.root = root;
-    const capturedRoot = await captureReleaseEvidenceFixtureRoot(root);
+    const capturedRoot = await captureReleaseEvidenceFixtureRoot(root, parent);
     const setupState = { capability: undefined, rootMarker: undefined };
-    const lock = `/private/tmp/FulmarEvidenceTest-${capturedRoot.nonce}.lock`;
+    const lock = fixtureLockPath(parent, capturedRoot.nonce);
     const app = join(root, "project");
     const verifier = join(root, "fixture-verifier.zsh");
     value = Object.freeze({
       root, app, verifier, lock, rootIdentity: capturedRoot.identity, setupState,
-      capture
+      recoveryParent: parent, capture
     });
-    setupState.rootMarker = await publishFixtureOwnerMarker(root, capturedRoot);
+    setupState.rootMarker = await publishFixtureOwnerMarker(root, capturedRoot, {}, parent);
     if (capture) Object.assign(capture, { lock, value });
     if (options.failurePoint === "root-only") throw options.injectedFailure;
     if (options.failurePoint === "retained-capability") {
@@ -152,7 +199,9 @@ async function fixture(exitCode = 0, verifierBody = undefined, options = {}) {
       });
     }
     if (options.failurePoint === "retained-root") {
-      const capability = await createSyntheticRetainedFixtureState(value);
+      const capability = await createSyntheticRetainedFixtureState(value, {
+        duplicateReference: options.duplicateReference
+      });
       if (capture) capture.capability = capability;
       throw options.injectedFailure;
     }
@@ -232,14 +281,15 @@ exit ${exitCode}
     let cleanupError;
     try {
       if (!value) {
-        const capturedRoot = await captureReleaseEvidenceFixtureRoot(root);
+        const capturedRoot = await captureReleaseEvidenceFixtureRoot(root, parent);
         const setupState = { capability: undefined, rootMarker: undefined };
         value = Object.freeze({
           root,
           app: join(root, "project"),
           verifier: join(root, "fixture-verifier.zsh"),
-          lock: `/private/tmp/FulmarEvidenceTest-${capturedRoot.nonce}.lock`,
+          lock: fixtureLockPath(parent, capturedRoot.nonce),
           rootIdentity: capturedRoot.identity,
+          recoveryParent: parent,
           setupState,
           capture
         });
@@ -263,8 +313,10 @@ exit ${exitCode}
 async function createSyntheticRetainedFixtureState(value, options = {}) {
   const rootPID = 99_000_001;
   const processGroup = 99_000_002;
+  const parent = value.recoveryParent ?? productionFixtureParent;
   const nonce = digest(`fixture-construction-cleanup:${value.root}`);
-  const capability = `/private/tmp/fulmar-watchdog-capability.${rootPID}.${nonce}`;
+  const capability = capabilityPath(parent, rootPID, nonce);
+  const ownerRecord = `${rootPID}\n${processGroup}\n${capability}\n${nonce}\n`;
   await mkdir(value.lock, { mode: 0o700 });
   await writeFile(
     capability,
@@ -274,11 +326,15 @@ async function createSyntheticRetainedFixtureState(value, options = {}) {
   value.setupState.capability = capability;
   if (value.capture) value.capture.capability = capability;
   if (options.failAfterCapability) throw options.injectedFailure;
-  await writeFile(
-    join(value.lock, "owner.pid"),
-    `${rootPID}\n${processGroup}\n${capability}\n${nonce}\n`,
-    { flag: "wx", mode: 0o600 }
-  );
+  await writeFile(join(value.lock, "owner.pid"), ownerRecord, { flag: "wx", mode: 0o600 });
+  if (options.duplicateReference) {
+    // A second owner lock in the same admitted namespace referencing the same
+    // capability. Cleanup must refuse to unlink it.
+    const duplicate = join(parent, `FulmarEvidenceReference-${nonce.slice(0, 16)}.lock`);
+    await mkdir(duplicate, { mode: 0o700 });
+    await writeFile(join(duplicate, "owner.pid"), ownerRecord, { flag: "wx", mode: 0o600 });
+    if (value.capture) value.capture.duplicateReference = duplicate;
+  }
   return capability;
 }
 
@@ -532,7 +588,7 @@ async function recoverStaleReleaseEvidenceFixtures(options = {}) {
     };
     await cleanupFixture(Object.freeze({
       root,
-      lock: `/private/tmp/FulmarEvidenceTest-${rootCapture.nonce}.lock`,
+      lock: fixtureLockPath(parent, rootCapture.nonce),
       rootIdentity: rootCapture.identity,
       recoveryParent: parent,
       setupState
@@ -562,8 +618,8 @@ function assertEmptyProcessGroup(pgid) {
   assert.fail("retained process group is still live");
 }
 
-async function attestRetainedCapability(path) {
-  const pathMatch = /^\/private\/tmp\/fulmar-watchdog-capability\.([0-9]+)\.([a-f0-9]{64})$/u.exec(path);
+async function attestRetainedCapability(path, parent = productionFixtureParent) {
+  const pathMatch = matchCapabilityPath(path, parent);
   assert.ok(pathMatch, "retained fixture capability has an unsafe path");
   const record = await readAttestedPrivateFile(path);
   const payload = /^([0-9]+)\n([0-9]+)\n([a-f0-9]{64})\n$/u.exec(record.bytes.toString("utf8"));
@@ -578,17 +634,19 @@ async function attestRetainedCapability(path) {
   return Object.freeze({ ...record, rootPID, processGroup, nonce });
 }
 
-async function assertExclusiveCapabilityReference(capability, expectedLock) {
-  const privateTmpIdentity = await attestRecoveryParent(productionFixtureParent);
+async function assertExclusiveCapabilityReference(
+  capability, expectedLock, parent = productionFixtureParent
+) {
+  const parentIdentity = await attestRecoveryParent(parent);
   const references = [];
   let entryCount = 0;
   let lockCount = 0;
-  const directory = await opendir(productionFixtureParent);
+  const directory = await opendir(parent);
   for await (const entry of directory) {
     entryCount += 1;
     assert.ok(entryCount <= 4_096, "capability reference scan entry bound was exceeded");
     if (!/^[A-Za-z0-9._-]{1,200}\.lock$/u.test(entry.name)) continue;
-    const lockPath = join(productionFixtureParent, entry.name);
+    const lockPath = join(parent, entry.name);
     let lockDetails;
     try { lockDetails = await lstat(lockPath); } catch (error) {
       if (error?.code === "ENOENT") continue;
@@ -612,18 +670,18 @@ async function assertExclusiveCapabilityReference(capability, expectedLock) {
           || error?.code === "ERR_ASSERTION") continue;
       throw error;
     }
-    const ordinary = /^([0-9]+)\n([0-9]+)\n(\/private\/tmp\/fulmar-watchdog-capability\.[0-9]+\.[a-f0-9]{64})\n([a-f0-9]{64})\n$/u.exec(
-      owner.bytes.toString("utf8")
-    );
+    const ordinary = matchCapabilityOwnerRecord(owner.bytes.toString("utf8"), parent);
     if (ordinary?.[3] === capability) references.push(lockPath);
   }
-  assert.deepEqual(await attestRecoveryParent(productionFixtureParent), privateTmpIdentity,
+  assert.deepEqual(await attestRecoveryParent(parent), parentIdentity,
     "capability reference scan parent identity changed");
   assert.deepEqual(references.sort(), [expectedLock],
     "retained capability did not have one exclusive exact lock reference");
 }
 
 async function cleanupFixture(value) {
+  const parent = value.recoveryParent ?? productionFixtureParent;
+  admittedParent(parent);
   await attestFixtureRootForCleanup(value);
   let lockDetails;
   try { lockDetails = await lstat(value.lock); } catch (error) {
@@ -642,7 +700,7 @@ async function cleanupFixture(value) {
     if (entries.length === 0) {
       const capability = value.setupState.capability;
       if (capability) {
-        const capabilityRecord = await attestRetainedCapability(capability);
+        const capabilityRecord = await attestRetainedCapability(capability, parent);
         await unlinkAttestedPrivateFile(
           capability,
           capabilityRecord.identity,
@@ -655,7 +713,7 @@ async function cleanupFixture(value) {
       const ownerRecord = await readAttestedPrivateFile(owner);
       const ownerBytes = ownerRecord.bytes.toString("utf8");
       const successor = /^FULMAR_LOCK_SUCCESSOR_V1\n([0-9]+)\n([a-f0-9]{64})\n$/u.exec(ownerBytes);
-      const root = /^([0-9]+)\n([0-9]+)\n(\/private\/tmp\/fulmar-watchdog-capability\.[0-9]+\.[a-f0-9]{64})\n([a-f0-9]{64})\n$/u.exec(ownerBytes);
+      const root = matchCapabilityOwnerRecord(ownerBytes, parent);
       assert.ok(successor || root, "fixture lock owner has an unknown schema");
       if (successor) {
         assert.equal(value.setupState.capability, undefined,
@@ -668,20 +726,20 @@ async function cleanupFixture(value) {
         const nonce = root[4];
         assert.equal(
           capability,
-          `/private/tmp/fulmar-watchdog-capability.${rootPID}.${nonce}`,
+          capabilityPath(parent, rootPID, nonce),
           "retained capability path does not match its exact owner"
         );
         if (value.setupState.capability) {
           assert.equal(capability, value.setupState.capability,
             "setup capability differs from the retained lock owner");
         }
-        const capabilityRecord = await attestRetainedCapability(capability);
+        const capabilityRecord = await attestRetainedCapability(capability, parent);
         assert.deepEqual(
           [capabilityRecord.rootPID, capabilityRecord.processGroup, capabilityRecord.nonce],
           [rootPID, processGroup, nonce],
           "retained capability bytes do not match the exact dead root"
         );
-        await assertExclusiveCapabilityReference(capability, value.lock);
+        await assertExclusiveCapabilityReference(capability, value.lock, parent);
         assertDeadPID(rootPID, "retained watchdog root");
         assertEmptyProcessGroup(processGroup);
         await unlinkAttestedPrivateFile(
@@ -1189,23 +1247,72 @@ test("test verifier substitution is rejected outside the disposable fixture name
   assert.match(referenceScan, /entryCount <= 4_096/u);
   assert.match(referenceScan, /lockCount <= 256/u);
   assert.doesNotMatch(source, /(^|\n)\s*(env|export|set)\s*$/mu);
-  for (const failurePoint of ["root-only", "retained-capability", "retained-root"]) {
-    const capture = {};
-    const injectedFailure = new Error(`injected fixture setup failure: ${failurePoint}`);
+  // The synthetic setup-failure unit — root, lock and capability — is created
+  // together in one owner-private isolated parent. Its cleanup proves exclusive
+  // ownership by scanning that same parent, so the proof stays complete and
+  // bounded instead of enumerating the shared namespace. No watchdog and no
+  // wrapper script runs on any of these branches.
+  await withIsolatedRecoveryParent(async (parent) => {
+    for (const failurePoint of ["root-only", "retained-capability", "retained-root"]) {
+      const capture = {};
+      const injectedFailure = new Error(`injected fixture setup failure: ${failurePoint}`);
+      await assert.rejects(
+        fixture(0, undefined, { failurePoint, capture, injectedFailure, fixtureParent: parent }),
+        (error) => {
+          assert.equal(error, injectedFailure, "fixture cleanup must preserve the original setup error");
+          assert.equal(error.cleanupFailure, undefined, "attested setup cleanup must complete exactly");
+          return true;
+        }
+      );
+      // Nothing synthetic may be created in the shared namespace.
+      for (const path of [capture.root, capture.lock, capture.capability]) {
+        if (path === undefined) continue;
+        assert.equal(path.startsWith(`${parent}/`), true,
+          "synthetic setup-failure unit escaped its isolated parent");
+        assert.doesNotMatch(path, /^\/private\/tmp\/[^/]+$/u);
+      }
+      await assert.rejects(lstat(capture.root), { code: "ENOENT" });
+      await assert.rejects(lstat(capture.lock), { code: "ENOENT" });
+      if (capture.capability) {
+        await assert.rejects(lstat(capture.capability), { code: "ENOENT" });
+      }
+    }
+
+    // A second owner lock referencing the same capability inside the admitted
+    // namespace must stop cleanup: the removal is only safe while exactly one
+    // exact reference exists. Setup and cleanup then both genuinely failed, so
+    // the aggregate is truthful rather than a masked original error.
+    const duplicateCapture = {};
+    const duplicateSetupFailure = new Error("injected fixture setup failure: duplicate-reference");
     await assert.rejects(
-      fixture(0, undefined, { failurePoint, capture, injectedFailure }),
+      fixture(0, undefined, {
+        failurePoint: "retained-root",
+        capture: duplicateCapture,
+        injectedFailure: duplicateSetupFailure,
+        fixtureParent: parent,
+        duplicateReference: true
+      }),
       (error) => {
-        assert.equal(error, injectedFailure, "fixture cleanup must preserve the original setup error");
-        assert.equal(error.cleanupFailure, undefined, "attested setup cleanup must complete exactly");
+        assert.ok(error instanceof AggregateError);
+        assert.equal(error.cause, duplicateSetupFailure);
+        assert.equal(error.errors[0], duplicateSetupFailure);
+        assert.match(String(error.errors[1]), /one exclusive exact lock reference/u);
         return true;
       }
     );
-    await assert.rejects(lstat(capture.root), { code: "ENOENT" });
-    await assert.rejects(lstat(capture.lock), { code: "ENOENT" });
-    if (capture.capability) {
-      await assert.rejects(lstat(capture.capability), { code: "ENOENT" });
-    }
-  }
+    // The refused unit is intact: nothing was unlinked on the failed proof.
+    assert.equal((await lstat(duplicateCapture.root)).isDirectory(), true);
+    assert.equal((await lstat(duplicateCapture.lock)).isDirectory(), true);
+    assert.equal((await lstat(duplicateCapture.capability)).isFile(), true);
+    assert.equal((await lstat(duplicateCapture.duplicateReference)).isDirectory(), true);
+    // Removing the duplicate restores exclusivity, and the same attested
+    // cleanup then removes exactly the unit it owns.
+    await removeOwnedGlobalTestPath(duplicateCapture.duplicateReference, "directory");
+    await cleanupFixture(duplicateCapture.value);
+    await assert.rejects(lstat(duplicateCapture.root), { code: "ENOENT" });
+    await assert.rejects(lstat(duplicateCapture.lock), { code: "ENOENT" });
+    await assert.rejects(lstat(duplicateCapture.capability), { code: "ENOENT" });
+  });
   let captureSetterRoot;
   const captureSetterFailure = new Error("injected fixture capture setter failure");
   const throwingCapture = {};
@@ -1311,8 +1418,8 @@ async function syntheticRecoveryRoot(parent, options = {}) {
   return Object.freeze({ root, marker, captured });
 }
 
-async function createSuccessorLock(rootValue, pid) {
-  const lockPath = `/private/tmp/FulmarEvidenceTest-${rootValue.captured.nonce}.lock`;
+async function createSuccessorLock(rootValue, pid, parent) {
+  const lockPath = fixtureLockPath(parent, rootValue.captured.nonce);
   await mkdir(lockPath, { mode: 0o700 });
   await writeFile(
     join(lockPath, "owner.pid"),
@@ -1322,12 +1429,12 @@ async function createSuccessorLock(rootValue, pid) {
   return lockPath;
 }
 
-async function createOrdinaryLock(rootValue) {
+async function createOrdinaryLock(rootValue, parent) {
   const rootPID = 99_000_003;
   const processGroup = 99_000_004;
   const nonce = digest(`ordinary:${rootValue.root}`);
-  const capability = `/private/tmp/fulmar-watchdog-capability.${rootPID}.${nonce}`;
-  const lockPath = `/private/tmp/FulmarEvidenceTest-${rootValue.captured.nonce}.lock`;
+  const capability = capabilityPath(parent, rootPID, nonce);
+  const lockPath = fixtureLockPath(parent, rootValue.captured.nonce);
   await writeFile(capability, `${rootPID}\n${processGroup}\n${nonce}\n`, {
     flag: "wx", mode: 0o600
   });
@@ -1505,7 +1612,7 @@ process.kill(process.pid, "SIGKILL");
 
   await withIsolatedRecoveryParent(async (parent) => {
     const successor = await syntheticRecoveryRoot(parent, { createdAtMs });
-    const lockPath = await createSuccessorLock(successor, 99_000_002);
+    const lockPath = await createSuccessorLock(successor, 99_000_002, parent);
     const result = await recoverStaleReleaseEvidenceFixtures({ parent, nowMs });
     assert.deepEqual(result.removed, [successor.root]);
     await assert.rejects(lstat(lockPath), { code: "ENOENT" });
@@ -1513,7 +1620,7 @@ process.kill(process.pid, "SIGKILL");
 
   await withIsolatedRecoveryParent(async (parent) => {
     const ordinary = await syntheticRecoveryRoot(parent, { createdAtMs });
-    const unit = await createOrdinaryLock(ordinary);
+    const unit = await createOrdinaryLock(ordinary, parent);
     const result = await recoverStaleReleaseEvidenceFixtures({ parent, nowMs });
     assert.deepEqual(result.removed, [ordinary.root]);
     await assert.rejects(lstat(unit.lockPath), { code: "ENOENT" });
@@ -1522,8 +1629,8 @@ process.kill(process.pid, "SIGKILL");
 
   await withIsolatedRecoveryParent(async (parent) => {
     const ambiguous = await syntheticRecoveryRoot(parent, { createdAtMs });
-    const unit = await createOrdinaryLock(ambiguous);
-    const duplicate = `/private/tmp/FulmarEvidenceReference-${randomBytes(8).toString("hex")}.lock`;
+    const unit = await createOrdinaryLock(ambiguous, parent);
+    const duplicate = join(parent, `FulmarEvidenceReference-${randomBytes(8).toString("hex")}.lock`);
     await mkdir(duplicate, { mode: 0o700 });
     await writeFile(
       join(duplicate, "owner.pid"),
@@ -1543,7 +1650,7 @@ process.kill(process.pid, "SIGKILL");
 
   await withIsolatedRecoveryParent(async (parent) => {
     const blocked = await syntheticRecoveryRoot(parent, { createdAtMs });
-    const lockPath = await createSuccessorLock(blocked, process.pid);
+    const lockPath = await createSuccessorLock(blocked, process.pid, parent);
     await assert.rejects(
       recoverStaleReleaseEvidenceFixtures({ parent, nowMs }),
       /retained successor is still live/u
