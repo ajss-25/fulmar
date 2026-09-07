@@ -572,8 +572,8 @@ test("verification rejects deletion, substitution, extra files, a changed manife
       },
       message: /size or topology drifted: lib-1\.0\.tar\.gz/u
     },
-    { name: "extra top-level file", mutate: async (files) => writeFile(join(files.destination, "README.md"), "extra\n"), message: /unlisted file: README\.md/u },
-    { name: "extra nested file", mutate: async (files) => writeFile(join(files.destination, "notices", "rust-external", "stray-LICENSE"), "MIT\n"), message: /unlisted file: notices\/rust-external\/stray-LICENSE/u },
+    { name: "extra top-level file", entryBudget: true, extraDirectories: ["extra-empty"], mutate: async (files) => writeFile(join(files.destination, "README.md"), "extra\n"), message: /unlisted file: README\.md/u },
+    { name: "extra nested file", extraDirectories: ["notices/extra-empty", "notices/rust-external/extra-empty"], mutate: async (files) => writeFile(join(files.destination, "notices", "rust-external", "stray-LICENSE"), "MIT\n"), message: /unlisted file: notices\/rust-external\/stray-LICENSE/u },
     {
       name: "external notice material substituted",
       mutate: async (files) => writeFile(join(files.destination, "notices", "rust-external", "gamma-2.0.0-external-gamma-LICENSE"), "MIT License\n\nCopyright (c) Somebody Else\n"),
@@ -655,6 +655,26 @@ test("verification rejects deletion, substitution, extra files, a changed manife
         const staged = stage(files);
         assert.equal(staged.status, 0, staged.stderr);
         assert.equal(verify(files).status, 0);
+        if (current.entryBudget) {
+          const overflowDirectory = join(files.destination, "extra-empty-budget");
+          await mkdir(overflowDirectory, { mode: 0o700 });
+          // Exceed MAXIMUM_FILES * MAXIMUM_DEPTH using only empty directories.
+          for (let index = 0; index < 4096; index += 1) {
+            await mkdir(join(overflowDirectory, String(index)), { mode: 0o700 });
+          }
+          const overflowResult = verify(files);
+          assert.notEqual(overflowResult.status, 0, "empty directories must count toward the traversal budget");
+          assert.match(overflowResult.stderr, /carries more than 4096 filesystem entries/u);
+          await rm(overflowDirectory, { recursive: true });
+        }
+        for (const relative of current.extraDirectories ?? []) {
+          const extraDirectory = join(files.destination, ...relative.split("/"));
+          await mkdir(extraDirectory, { mode: 0o700 });
+          const extraResult = verify(files);
+          assert.notEqual(extraResult.status, 0, `unlisted empty directory ${relative} must fail`);
+          assert.ok(extraResult.stderr.includes(`delivery set carries an unlisted directory: ${relative}`), extraResult.stderr);
+          await rm(extraDirectory, { recursive: true });
+        }
         await current.mutate(files);
         const result = verify(files);
         assert.notEqual(result.status, 0, `${current.name} must fail`);

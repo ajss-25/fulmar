@@ -543,16 +543,21 @@ async function syncDirectories(root) {
 
 // Walks one published or staged tree: only real directories and unlinked
 // regular files, bounded in depth and count, returned as relative paths.
-async function walkTree(root, label) {
+async function walkTree(root, label, expected) {
   const found = new Map();
+  const expectedPaths = expected === undefined ? null : [...expected.keys()];
+  let entries = 0;
   async function visit(directory, relative, depth) {
     if (depth > MAXIMUM_DEPTH) fail(`${label} is nested too deeply: ${relative}`);
     for (const entry of (await readdir(directory, { withFileTypes: true })).sort((left, right) => byCodePoint(left.name, right.name))) {
+      entries += 1;
+      if (entries > MAXIMUM_FILES * MAXIMUM_DEPTH) fail(`${label} carries more than ${MAXIMUM_FILES * MAXIMUM_DEPTH} filesystem entries`);
       const path = join(directory, entry.name);
       const details = await lstat(path);
       const relativePath = relative === "" ? entry.name : `${relative}/${entry.name}`;
       if (details.isSymbolicLink()) fail(`${label} carries a symbolic link: ${relativePath}`);
       if (details.isDirectory()) {
+        if (expectedPaths !== null && !expectedPaths.some((path) => path.startsWith(`${relativePath}/`))) fail(`${label} carries an unlisted directory: ${relativePath}`);
         await visit(path, relativePath, depth + 1);
       } else if (details.isFile()) {
         if (details.nlink !== 1) fail(`${label} carries a hard-linked file: ${relativePath}`);
@@ -568,7 +573,7 @@ async function walkTree(root, label) {
 }
 
 async function hashTree(root, expected, label) {
-  const found = await walkTree(root, label);
+  const found = await walkTree(root, label, expected);
   const expectedPaths = [...expected.keys()].sort(byCodePoint);
   const foundPaths = [...found.keys()].sort(byCodePoint);
   for (const path of foundPaths) if (!expected.has(path)) fail(`${label} carries an unlisted file: ${path}`);
