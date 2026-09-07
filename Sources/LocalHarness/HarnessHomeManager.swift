@@ -73,11 +73,24 @@ struct HarnessHomeInterruptedRecoveryIntent: Equatable, Sendable {
     fileprivate let request: HarnessHomeInterruptedRecoveryRequest
 }
 
+/// The one foreground action a blocked recovery state can offer besides Keep
+/// Stopped. It is chosen from the typed failure, never from message text.
+enum HarnessHomeRecoveryBlockedRemedy: Equatable, Sendable {
+    /// Manual inspection of the private recovery folder is the only remedy.
+    case inspectRecoveryFolder
+    /// macOS needs an explicit, read-only Keychain permission decision for
+    /// Fulmar's device-trust items before verification can be retried.
+    case allowDeviceTrustKeychainAccess
+    /// The failure was transient (locked keychain, timeout); one explicit
+    /// retry is offered and nothing is prompted automatically.
+    case retry
+}
+
 enum HarnessHomeRecoveryPendingState: Equatable, Sendable {
     case initial(HarnessHomeReceiptlessRecoveryRequest)
     case interrupted(HarnessHomeInterruptedRecoveryRequest)
     case published(HarnessHomeReceiptlessRecoveryReceipt)
-    case blocked(root: URL, message: String)
+    case blocked(root: URL, message: String, remedy: HarnessHomeRecoveryBlockedRemedy)
 
     var root: URL {
         switch self {
@@ -87,7 +100,7 @@ enum HarnessHomeRecoveryPendingState: Equatable, Sendable {
             ?? receipt.quarantine.deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .appendingPathComponent("HarnessHome", isDirectory: true)
-        case .blocked(let root, _): return root
+        case .blocked(let root, _, _): return root
         }
     }
 

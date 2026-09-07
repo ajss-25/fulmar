@@ -1,6 +1,8 @@
 import Foundation
 import Darwin
+import Security
 import Testing
+import LocalHarnessDeviceAttestation
 @testable import LocalHarness
 
 private typealias LifecycleStopReply = (Result<Void, Error>) -> Void
@@ -491,6 +493,181 @@ func backgroundHomePreflightPublishesBlockedAttentionBeforeGenericFailureComplet
     }
     #expect(trace == ["pending", "completion"])
     #expect(controller.pendingHarnessHomeRecoveryState == observedPending)
+    #expect(!controller.ownsHarness)
+    #expect(!controller.ownsOllama)
+}
+
+@Test @MainActor
+func blockedRecoveryDescriptionsDistinguishKeychainDeadlineAndIntegrityStates() {
+    typealias Description = (message: String, remedy: HarnessHomeRecoveryBlockedRemedy)
+    let cancelled: Description = HarnessController.blockedHarnessHomeRecoveryDescription(
+        for: DeviceAttestationError.keychainFailure(errSecUserCanceled)
+    )
+    #expect(cancelled.remedy == .allowDeviceTrustKeychainAccess)
+    #expect(cancelled.message.contains("cancelled or denied"))
+    #expect(cancelled.message.contains("Nothing was changed or reset"))
+    let denied: Description = HarnessController.blockedHarnessHomeRecoveryDescription(
+        for: DeviceAttestationError.keychainFailure(errSecAuthFailed)
+    )
+    #expect(denied.remedy == .allowDeviceTrustKeychainAccess)
+    // Interaction-not-allowed is either an undecided permission or a locked
+    // login keychain; both are distinct from denial and both are foreground
+    // remedies that never reset a key.
+    let interaction: Description = HarnessController.blockedHarnessHomeRecoveryDescription(
+        for: DeviceAttestationError.keychainFailure(errSecInteractionNotAllowed)
+    )
+    #expect(interaction.remedy == .allowDeviceTrustKeychainAccess || interaction.remedy == .retry)
+    #expect(interaction.message.contains("login keychain"))
+    let timedOut: Description = HarnessController.blockedHarnessHomeRecoveryDescription(
+        for: DeviceAttestationError.deadlineExceeded
+    )
+    #expect(timedOut.remedy == .retry)
+    #expect(timedOut.message.contains("timed out"))
+    let other: Description = HarnessController.blockedHarnessHomeRecoveryDescription(
+        for: DeviceAttestationError.keychainFailure(errSecIO)
+    )
+    #expect(other.remedy == .inspectRecoveryFolder)
+    #expect(other.message.contains("\(errSecIO)"))
+    // Integrity failures keep the manual-inspection remedy: they are handled
+    // by the separate explicit trust-repair path, never by a permission button.
+    let integrity: Description = HarnessController.blockedHarnessHomeRecoveryDescription(
+        for: DeviceAttestationError.keyMaterialMismatch
+    )
+    #expect(integrity.remedy == .inspectRecoveryFolder)
+    #expect(!integrity.message.contains("Allow Keychain Access"))
+    let generic: Description = HarnessController.blockedHarnessHomeRecoveryDescription(
+        for: CocoaError(.fileReadUnknown)
+    )
+    #expect(generic.remedy == .inspectRecoveryFolder)
+    #expect(generic.message == "Harness-home recovery state could not be verified without foreground inspection.")
+    // No description ever renders userInfo, paths or payload text.
+    for description in [cancelled, denied, interaction, timedOut, other, integrity, generic] {
+        #expect(!description.message.contains("/Users/"))
+        #expect(!description.message.contains("userInfo"))
+    }
+}
+
+@Test @MainActor
+func refusedDeviceTrustReadBlocksWithKeychainRemedyAndExplicitAuthorizationResumesOnlyWhenPersistent() async throws {
+    let support = try makeHarnessControllerSecureSupportRoot(
+        prefix: "fulmar-controller-device-trust-keychain"
+    )
+    defer { try? FileManager.default.removeItem(at: support) }
+    let keys = LocalHarnessTestDeviceAttestationKeyStore()
+    // Establish an attested current home with an unrestricted store, exactly as
+    // the first successful foreground preparation did on the owner's Mac.
+    let establishing = HarnessController(
+        lifecycleTestConfiguration: .init(
+            harnessProcess: nil,
+            ollamaProcess: nil,
+            initialState: .stopped,
+            stopProcess: { _, _ in Issue.record("No child process is owned") },
+            startReplacement: { Issue.record("No runtime may launch") },
+            harnessHomeRecoveryAuthenticationKey: Data(repeating: 0x41, count: 32),
+            deviceAttestationKeyStore: keys
+        ),
+        applicationSupportDirectory: support,
+        forbidCredentialHelper: true
+    )
+    try await prepareHarnessHomeForLifecycleTest(establishing)
+    let established = keys.observations()
+    #expect(established.inserts.count == 2)
+
+    // A relaunched copy whose noninteractive store is refused, standing in for
+    // the login-keychain partition prompt that the production store now fails
+    // fast instead of blocking on. The interactive store sees the same items.
+    let refused = LocalHarnessTestDeviceAttestationKeyStore(
+        sharing: keys,
+        readFailure: .keychainFailure(errSecUserCanceled)
+    )
+    let controller = HarnessController(
+        lifecycleTestConfiguration: .init(
+            harnessProcess: nil,
+            ollamaProcess: nil,
+            initialState: .stopped,
+            stopProcess: { _, _ in Issue.record("No child process is owned") },
+            startReplacement: { Issue.record("No runtime may launch") },
+            harnessHomeRecoveryAuthenticationKey: Data(repeating: 0x41, count: 32),
+            deviceAttestationKeyStore: refused,
+            deviceAttestationInteractiveKeyStore: keys
+        ),
+        applicationSupportDirectory: support,
+        forbidCredentialHelper: true
+    )
+    var observedPending: HarnessHomeRecoveryPendingState?
+    controller.onHarnessHomeRecoveryPending = { observedPending = $0 }
+    var preflight: Result<HarnessHomeRecoveryPreflightStatus, Error>?
+    controller.preflightHarnessHomeRecoveryForBackgroundSchedule(backgroundDetectionOnly: false) {
+        preflight = $0
+    }
+    var deadline = ContinuousClock.now + .seconds(3)
+    while preflight == nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    guard case .failure(let failure)? = preflight,
+          case .keychainFailure(errSecUserCanceled)? = failure as? DeviceAttestationError else {
+        Issue.record("The refused read must fail closed with its typed Keychain status")
+        return
+    }
+    guard case .blocked(_, let message, let remedy)? = observedPending else {
+        Issue.record("A refused device-trust read must become a typed blocked state")
+        return
+    }
+    #expect(remedy == .allowDeviceTrustKeychainAccess)
+    #expect(message.contains("cancelled or denied"))
+    #expect(controller.pendingHarnessHomeRecoveryState == observedPending)
+    // The refusal is not a recoverable trust fault: no key reset is offered.
+    #expect(!DeviceAttestationTrustRecoveryCoordinator.isRecoverable(failure))
+    keys.resetObservations()
+    refused.resetObservations()
+
+    // Explicit authorization while the unattended reader is still refused
+    // (Allow once): the interactive read succeeds, the fresh noninteractive
+    // read does not, so the outcome is once-only and the blocked state stays.
+    refused.setReadFailure(.keychainFailure(errSecInteractionNotAllowed))
+    var outcome: Result<DeviceAttestationKeychainAuthorizationOutcome, Error>?
+    controller.authorizeDeviceAttestationKeychainAccess { outcome = $0 }
+    deadline = ContinuousClock.now + .seconds(3)
+    while outcome == nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    guard case .success(.onceOnly)? = outcome else {
+        Issue.record("A still-refused unattended read must be reported as once-only")
+        return
+    }
+    #expect(controller.pendingHarnessHomeRecoveryState == observedPending)
+    #expect(keys.observations().inserts.isEmpty)
+    #expect(keys.observations().deletes.isEmpty)
+    #expect(refused.observations().inserts.isEmpty)
+
+    // Persistent allowance: the unattended reader now succeeds, the blocked
+    // state is consumed, and the ordinary preflight verifies the same home.
+    refused.setReadFailure(nil)
+    outcome = nil
+    controller.authorizeDeviceAttestationKeychainAccess { outcome = $0 }
+    deadline = ContinuousClock.now + .seconds(3)
+    while outcome == nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    guard case .success(.persistent)? = outcome else {
+        Issue.record("A verified unattended read must be reported as persistent")
+        return
+    }
+    #expect(controller.pendingHarnessHomeRecoveryState == nil)
+    #expect(keys.observations().inserts.isEmpty)
+    #expect(keys.observations().deletes.isEmpty)
+    preflight = nil
+    controller.preflightHarnessHomeRecoveryForBackgroundSchedule(backgroundDetectionOnly: false) {
+        preflight = $0
+    }
+    deadline = ContinuousClock.now + .seconds(3)
+    while preflight == nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    guard case .success(.current)? = preflight else {
+        Issue.record("The attested home must verify once unattended access holds")
+        return
+    }
     #expect(!controller.ownsHarness)
     #expect(!controller.ownsOllama)
 }

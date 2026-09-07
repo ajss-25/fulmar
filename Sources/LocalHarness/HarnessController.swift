@@ -672,6 +672,10 @@ final class HarnessController {
         /// Process-local authority store for deterministic tests. Production
         /// always uses the shared noninteractive device-attestation Keychain.
         var deviceAttestationKeyStore: (any DeviceAttestationKeyStore)? = nil
+        /// Test-only stand-in for the one store that may prompt during the
+        /// explicit Keychain authorization action. Defaults to the
+        /// noninteractive test store above when omitted.
+        var deviceAttestationInteractiveKeyStore: (any DeviceAttestationKeyStore)? = nil
     }
 
     var onStateChange: ((State) -> Void)?
@@ -801,6 +805,8 @@ final class HarnessController {
     private let lifecycleBundleIntegrityVerification: (() throws -> Bool)?
     private let lifecycleHarnessHomeRecoveryAuthenticationKey: Data?
     private let deviceAttestationKeyStore: any DeviceAttestationKeyStore
+    /// Used by exactly one entry point, `authorizeDeviceAttestationKeychainAccess`.
+    private let deviceAttestationInteractiveKeyStore: any DeviceAttestationKeyStore
     private lazy var deviceAttestationTrustRecovery = DeviceAttestationTrustRecoveryCoordinator(
         applicationSupport: applicationSupportDirectoryURL(),
         keyStore: deviceAttestationKeyStore
@@ -830,6 +836,13 @@ final class HarnessController {
             .harnessHomeRecoveryAuthenticationKey
         deviceAttestationKeyStore = lifecycleTestConfiguration?.deviceAttestationKeyStore
             ?? ProviderHistoryDeviceAttestation.productionKeyStore()
+        if let configuration = lifecycleTestConfiguration,
+           let testStore = configuration.deviceAttestationKeyStore {
+            deviceAttestationInteractiveKeyStore = configuration.deviceAttestationInteractiveKeyStore
+                ?? testStore
+        } else {
+            deviceAttestationInteractiveKeyStore = ProviderHistoryDeviceAttestation.userInitiatedKeyStore()
+        }
         physicalMemoryBytes = lifecycleTestConfiguration?.physicalMemoryBytes
             ?? ProcessInfo.processInfo.physicalMemory
         modelSettingsStore = lifecycleTestConfiguration?.modelSettingsStore
@@ -1302,7 +1315,11 @@ final class HarnessController {
              .receiptlessRecoveryAuthenticationRequired,
              .receiptlessRecoveryAuthenticationUnavailable,
              .receiptlessRecoveryJournalInvalid:
-            return .blocked(root: harnessHomeDirectory(), message: error.localizedDescription)
+            return .blocked(
+                root: harnessHomeDirectory(),
+                message: error.localizedDescription,
+                remedy: .inspectRecoveryFolder
+            )
         default:
             return nil
         }
@@ -1315,13 +1332,133 @@ final class HarnessController {
            let pending = harnessHomeRecoveryPendingState(for: error) {
             return pending
         }
-        let message: String
+        let (message, remedy) = Self.blockedHarnessHomeRecoveryDescription(for: error)
+        return .blocked(root: harnessHomeDirectory(), message: message, remedy: remedy)
+    }
+
+    /// Sanitized, content-free description of a non-recoverable verification
+    /// failure. Only the typed case and, for Keychain failures, the OSStatus and
+    /// login-keychain lock state are consulted; no userInfo, path, journal, or
+    /// conversation data is rendered.
+    static func blockedHarnessHomeRecoveryDescription(
+        for error: Error
+    ) -> (message: String, remedy: HarnessHomeRecoveryBlockedRemedy) {
         if let error = error as? HarnessHomeError {
-            message = error.localizedDescription
-        } else {
-            message = "Harness-home recovery state could not be verified without foreground inspection."
+            return (error.localizedDescription, .inspectRecoveryFolder)
         }
-        return .blocked(root: harnessHomeDirectory(), message: message)
+        guard let error = error as? DeviceAttestationError else {
+            return (
+                "Harness-home recovery state could not be verified without foreground inspection.",
+                .inspectRecoveryFolder
+            )
+        }
+        switch error {
+        case .keychainFailure(let status):
+            switch DeviceAttestationKeychainAccessProblem.classify(status) {
+            case .keychainLocked:
+                return (
+                    "Fulmar's device-trust record is in your login keychain, which is currently locked. Unlock it, then try again. Nothing was changed.",
+                    .retry
+                )
+            case .authorizationRequired:
+                return (
+                    "macOS has not yet allowed this copy of Fulmar to read its own device-trust record (a local signing key and its fingerprint in your login keychain). Fulmar never asks in the background; choose Allow Keychain Access to decide once in the foreground.",
+                    .allowDeviceTrustKeychainAccess
+                )
+            case .deniedOrCancelled:
+                return (
+                    "The Keychain permission for Fulmar's device-trust record was cancelled or denied. Nothing was changed or reset. Choose Allow Keychain Access to decide again, or keep Fulmar stopped.",
+                    .allowDeviceTrustKeychainAccess
+                )
+            case .other(let code):
+                return (
+                    "Reading Fulmar's device-trust record failed with Keychain status \(code). Nothing was changed.",
+                    .inspectRecoveryFolder
+                )
+            }
+        case .deadlineExceeded:
+            return (
+                "Verifying Fulmar's device-trust record timed out before it finished. Nothing was changed. Try again; if a Keychain prompt appeared, it is now handled in the foreground instead.",
+                .retry
+            )
+        case .foregroundRequired:
+            return (
+                "Fulmar's device-trust record needs a foreground check before the runtime can start. Try again from the foreground.",
+                .retry
+            )
+        default:
+            return (
+                "Harness-home recovery state could not be verified without foreground inspection (device-trust check: \(String(describing: error).prefix(48))).",
+                .inspectRecoveryFolder
+            )
+        }
+    }
+
+    /// Consumes one exact blocked state before an explicit foreground retry so
+    /// a stale blocked record cannot outlive the retry it asked for. Only a
+    /// `.blocked` state with a retry or Keychain-access remedy is consumed.
+    @discardableResult
+    func consumeBlockedHarnessHomeRecovery(
+        _ pending: HarnessHomeRecoveryPendingState
+    ) -> Bool {
+        precondition(Thread.isMainThread)
+        guard case .blocked(_, _, let remedy) = pending,
+              remedy != .inspectRecoveryFolder,
+              pendingHarnessHomeRecoveryState == pending else { return false }
+        pendingHarnessHomeRecoveryState = nil
+        return true
+    }
+
+    /// Explicit, user-triggered, read-only Keychain authorization for the two
+    /// device-trust items, followed by a fresh noninteractive re-read through
+    /// the exact store every startup path uses. It never creates, replaces or
+    /// deletes an item and never starts the runtime; the caller resumes the
+    /// blocked startup exactly once after a `.persistent` outcome.
+    func authorizeDeviceAttestationKeychainAccess(
+        completion: @escaping (Result<DeviceAttestationKeychainAuthorizationOutcome, Error>) -> Void
+    ) {
+        precondition(Thread.isMainThread)
+        if case .failure(let error) = admitApplicationSupportRoot() {
+            completion(.failure(error))
+            return
+        }
+        guard !terminalShutdownRequested,
+              !harnessHomeRecoveryInFlight,
+              !isStarting,
+              stopGeneration == nil,
+              !ownsHarness,
+              !ownsOllama else {
+            completion(.failure(HarnessHomeError.receiptlessRecoveryStateChanged))
+            return
+        }
+        harnessHomeRecoveryInFlight = true
+        let support = applicationSupportDirectoryURL()
+        let noninteractive = deviceAttestationKeyStore
+        let interactive = deviceAttestationInteractiveKeyStore
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result {
+                try DeviceAttestationAuthority.authorizeExistingKeychainAccess(
+                    configuration: ProviderHistoryDeviceAttestation.configuration(
+                        applicationSupport: support
+                    ),
+                    interactiveStore: interactive,
+                    noninteractiveStore: noninteractive
+                )
+            }
+            DispatchQueue.main.async {
+                guard let self else {
+                    completion(.failure(HarnessHomeError.receiptlessRecoveryStateChanged))
+                    return
+                }
+                self.harnessHomeRecoveryInFlight = false
+                if case .success(.persistent) = result {
+                    // The blocked state is consumed only by a proven persistent
+                    // allowance; every other outcome leaves it for the caller.
+                    self.pendingHarnessHomeRecoveryState = nil
+                }
+                completion(result)
+            }
+        }
     }
 
     private func publishBackgroundHarnessHomeRecoveryPending(
@@ -1672,13 +1809,18 @@ final class HarnessController {
            case .receiptlessRecoveryInterrupted(let request) = error {
             return .interrupted(request)
         }
-        let message: String
         if let error = error as? HarnessHomeError {
-            message = error.localizedDescription
-        } else {
-            message = "The authenticated Harness-home recovery could not be verified."
+            return .blocked(root: root, message: error.localizedDescription, remedy: .inspectRecoveryFolder)
         }
-        return .blocked(root: root, message: message)
+        if error is DeviceAttestationError {
+            let (message, remedy) = Self.blockedHarnessHomeRecoveryDescription(for: error)
+            return .blocked(root: root, message: message, remedy: remedy)
+        }
+        return .blocked(
+            root: root,
+            message: "The authenticated Harness-home recovery could not be verified.",
+            remedy: .inspectRecoveryFolder
+        )
     }
 
     func preserveAndRepairPendingHarnessHome(

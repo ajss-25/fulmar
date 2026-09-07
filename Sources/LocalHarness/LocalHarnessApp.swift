@@ -856,6 +856,14 @@ final class StartupCredentialMigrationLifecycleGate {
     }
 }
 
+/// The one explicit choice offered for a blocked state that has a typed remedy.
+enum HarnessHomeRecoveryBlockedChoice: Equatable {
+    case allowKeychainAccess
+    case retry
+    case openRecoveryFolder
+    case keepStopped
+}
+
 @MainActor
 struct HarnessHomeRecoveryInteractions {
     var chooseInitial: (URL, URL) -> HarnessHomeRecoveryInitialChoice
@@ -864,6 +872,12 @@ struct HarnessHomeRecoveryInteractions {
     var showSuccess: (HarnessHomeReceiptlessRecoveryReceipt) -> Bool
     var showFailure: (String, URL) -> Bool
     var reveal: (URL) -> Void
+    /// Blocked state with a Keychain-access or retry remedy. The message is the
+    /// sanitized typed description; the remedy selects the primary button.
+    var chooseBlockedRemedy: (String, HarnessHomeRecoveryBlockedRemedy, URL) -> HarnessHomeRecoveryBlockedChoice
+    /// Shown after an explicit authorization that was allowed once only or
+    /// cancelled. Returns true to try the foreground authorization again.
+    var chooseAfterIncompleteAuthorization: (String) -> Bool
 
     static let live = HarnessHomeRecoveryInteractions(
         chooseInitial: { existingHome, recoveryFolder in
@@ -914,7 +928,49 @@ struct HarnessHomeRecoveryInteractions {
             alert.addButton(withTitle: "Keep Stopped")
             return alert.runModal() == .alertFirstButtonReturn
         },
-        reveal: { url in NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        reveal: { url in NSWorkspace.shared.activateFileViewerSelecting([url]) },
+        chooseBlockedRemedy: { message, remedy, recoveryFolder in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            switch remedy {
+            case .allowDeviceTrustKeychainAccess:
+                alert.messageText = "Allow Fulmar to read its device-trust record?"
+                alert.informativeText = "\(message)\n\nIf you continue, macOS shows its own Keychain prompt for the two items Fulmar keeps in your login keychain: a local signing key and its fingerprint, both created by Fulmar on this Mac. Always Allow means this copy of Fulmar is not asked again; Allow once means Fulmar asks again after the next launch. Fulmar only reads these items and never changes or resets them. Keeping the runtime stopped changes nothing."
+                alert.addButton(withTitle: "Allow Keychain Access…")
+                alert.addButton(withTitle: "Keep Stopped")
+                switch alert.runModal() {
+                case .alertFirstButtonReturn: return .allowKeychainAccess
+                default: return .keepStopped
+                }
+            case .retry:
+                alert.messageText = "Try the device-trust check again?"
+                alert.informativeText = "\(message) Fulmar did not delete the older home or any preserved copy.\n\n\(recoveryFolder.path)"
+                alert.addButton(withTitle: "Try Again")
+                alert.addButton(withTitle: "Open Recovery Folder")
+                alert.addButton(withTitle: "Keep Stopped")
+                switch alert.runModal() {
+                case .alertFirstButtonReturn: return .retry
+                case .alertSecondButtonReturn: return .openRecoveryFolder
+                default: return .keepStopped
+                }
+            case .inspectRecoveryFolder:
+                alert.alertStyle = .critical
+                alert.messageText = "Harness-home recovery remains stopped"
+                alert.informativeText = "\(message) Fulmar did not delete the older home or any preserved copy. Open the private recovery folder for manual inspection, or keep the runtime stopped and retry from Diagnostics.\n\n\(recoveryFolder.path)"
+                alert.addButton(withTitle: "Open Recovery Folder")
+                alert.addButton(withTitle: "Keep Stopped")
+                return alert.runModal() == .alertFirstButtonReturn ? .openRecoveryFolder : .keepStopped
+            }
+        },
+        chooseAfterIncompleteAuthorization: { message in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Keychain access is not persistent yet"
+            alert.informativeText = "\(message) Nothing was changed or reset, and the runtime remains stopped."
+            alert.addButton(withTitle: "Try Again")
+            alert.addButton(withTitle: "Keep Stopped")
+            return alert.runModal() == .alertFirstButtonReturn
+        }
     )
 }
 
@@ -4489,9 +4545,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
         case .published:
             statusMessage = "Harness-home recovery completed and its exact preserved copy needs acknowledgement before restart."
             activityDetail = "Waiting for foreground review of the exact preserved-copy receipt before clearing the authenticated completion marker."
-        case .blocked:
-            statusMessage = "Harness-home recovery could not be verified automatically. Agent work remains stopped for manual inspection."
-            activityDetail = "Waiting for manual inspection of the private recovery folder. No background credential access or recovery mutation was admitted."
+        case .blocked(_, _, let remedy):
+            switch remedy {
+            case .inspectRecoveryFolder:
+                statusMessage = "Harness-home recovery could not be verified automatically. Agent work remains stopped for manual inspection."
+                activityDetail = "Waiting for manual inspection of the private recovery folder. No background credential access or recovery mutation was admitted."
+            case .allowDeviceTrustKeychainAccess:
+                statusMessage = "Fulmar needs your Keychain decision to read its device-trust record. Agent work remains stopped and nothing was changed."
+                activityDetail = "Waiting for an explicit Allow Keychain Access or Keep Stopped decision. The background check asked for no permission and no item was changed."
+            case .retry:
+                statusMessage = "The device-trust check did not complete. Agent work remains stopped and nothing was changed."
+                activityDetail = "Waiting for an explicit Try Again or Keep Stopped decision. No credential was accessed automatically."
+            }
         }
         mainWindow.surface.showFailure(statusMessage)
         if let runtimeActivity {
@@ -4558,13 +4623,152 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                 recoveryFolder: recoveryFolder,
                 token: token
             )
-        case .blocked(_, let message):
-            presentHarnessHomeRecoveryFailureMessage(
-                message,
-                pending: pending,
-                recoveryFolder: recoveryFolder,
-                token: token
+        case .blocked(_, let message, let remedy):
+            switch remedy {
+            case .inspectRecoveryFolder:
+                presentHarnessHomeRecoveryFailureMessage(
+                    message,
+                    pending: pending,
+                    recoveryFolder: recoveryFolder,
+                    token: token
+                )
+            case .allowDeviceTrustKeychainAccess, .retry:
+                presentBlockedHarnessHomeRecoveryRemedy(
+                    message,
+                    remedy: remedy,
+                    pending: pending,
+                    recoveryFolder: recoveryFolder,
+                    token: token
+                )
+            }
+        }
+    }
+
+    /// A blocked state whose typed cause has exactly one foreground remedy.
+    /// Nothing here prompts automatically: every native Keychain dialog follows
+    /// an explicit button, a cancelled or once-only outcome ends in one stopped
+    /// state, and a proven persistent allowance resumes startup exactly once
+    /// through the same presentation token that admitted this dialog.
+    private func presentBlockedHarnessHomeRecoveryRemedy(
+        _ message: String,
+        remedy: HarnessHomeRecoveryBlockedRemedy,
+        pending: HarnessHomeRecoveryPendingState,
+        recoveryFolder: URL,
+        token: HarnessHomeRecoveryPresentationGate.Token
+    ) {
+        guard harnessHomeRecoveryPresentationAdmits(token, pending: pending) else { return }
+        let safeMessage = AuxiliaryDisplayPolicy.singleLine(
+            message,
+            maximumCharacters: 800,
+            fallback: "The device-trust check could not be verified."
+        )
+        let choice = harnessHomeRecoveryInteractions.chooseBlockedRemedy(safeMessage, remedy, recoveryFolder)
+        guard harnessHomeRecoveryPresentationAdmits(token, pending: pending) else { return }
+        switch choice {
+        case .keepStopped:
+            keepHarnessHomeRecoveryStopped(pending, token: token)
+        case .openRecoveryFolder:
+            revealRecoveryFolderOrExistingHome(recoveryFolder: recoveryFolder, existingHome: pending.root)
+            keepHarnessHomeRecoveryStopped(pending, token: token)
+        case .retry:
+            guard controller.consumeBlockedHarnessHomeRecovery(pending) else {
+                keepHarnessHomeRecoveryStopped(pending, token: token)
+                return
+            }
+            resumeStartupAfterHarnessHomeRecoveryRemedy(
+                token: token,
+                loadingMessage: "Retrying the device-trust check…",
+                activityTitle: "Device-trust check retried",
+                activityDetail: "The blocked verification was retried by request. No credential was accessed automatically."
             )
+        case .allowKeychainAccess:
+            authorizeDeviceTrustKeychainAccess(pending: pending, recoveryFolder: recoveryFolder, token: token)
+        }
+    }
+
+    private func authorizeDeviceTrustKeychainAccess(
+        pending: HarnessHomeRecoveryPendingState,
+        recoveryFolder: URL,
+        token: HarnessHomeRecoveryPresentationGate.Token
+    ) {
+        guard harnessHomeRecoveryPresentationAdmits(token, pending: pending) else { return }
+        showLoading("Waiting for your Keychain decision… Fulmar only reads its two device-trust items.")
+        controller.authorizeDeviceAttestationKeychainAccess { [weak self] result in
+            guard let self, self.harnessHomeRecoveryPresentationAdmits(token) else { return }
+            switch result {
+            case .success(.persistent):
+                self.resumeStartupAfterHarnessHomeRecoveryRemedy(
+                    token: token,
+                    loadingMessage: "Keychain access allowed. Verifying private state before startup…",
+                    activityTitle: "Keychain access allowed for the device-trust record",
+                    activityDetail: "A fresh noninteractive read of both device-trust items succeeded, so background checks will not ask again for this copy of Fulmar."
+                )
+            case .success(.onceOnly):
+                self.presentIncompleteDeviceTrustAuthorization(
+                    "macOS allowed the read this time only, so Fulmar would be asked again after the next launch. Choose Try Again and pick Always Allow if you want background checks to run unattended.",
+                    pending: pending,
+                    recoveryFolder: recoveryFolder,
+                    token: token
+                )
+            case .failure(let error):
+                let (description, remedy) = HarnessController.blockedHarnessHomeRecoveryDescription(for: error)
+                if remedy == .allowDeviceTrustKeychainAccess {
+                    self.presentIncompleteDeviceTrustAuthorization(
+                        description,
+                        pending: pending,
+                        recoveryFolder: recoveryFolder,
+                        token: token
+                    )
+                } else {
+                    self.presentHarnessHomeRecoveryFailureMessage(
+                        description,
+                        pending: pending,
+                        recoveryFolder: recoveryFolder,
+                        token: token
+                    )
+                }
+            }
+        }
+    }
+
+    private func presentIncompleteDeviceTrustAuthorization(
+        _ message: String,
+        pending: HarnessHomeRecoveryPendingState,
+        recoveryFolder: URL,
+        token: HarnessHomeRecoveryPresentationGate.Token
+    ) {
+        guard harnessHomeRecoveryPresentationAdmits(token) else { return }
+        mainWindow.surface.showFailure(message)
+        let retry = harnessHomeRecoveryInteractions.chooseAfterIncompleteAuthorization(
+            AuxiliaryDisplayPolicy.singleLine(message, maximumCharacters: 800, fallback: "Keychain access is not persistent yet.")
+        )
+        guard harnessHomeRecoveryPresentationAdmits(token) else { return }
+        if retry, controller.pendingHarnessHomeRecoveryState == pending {
+            authorizeDeviceTrustKeychainAccess(pending: pending, recoveryFolder: recoveryFolder, token: token)
+        } else {
+            keepHarnessHomeRecoveryStopped(controller.pendingHarnessHomeRecoveryState ?? pending, token: token)
+        }
+    }
+
+    /// The same exactly-once resumption the published-recovery receipt uses:
+    /// the presentation token is finished first, so a stale or repeated
+    /// callback can never start a second runtime.
+    private func resumeStartupAfterHarnessHomeRecoveryRemedy(
+        token: HarnessHomeRecoveryPresentationGate.Token,
+        loadingMessage: String,
+        activityTitle: String,
+        activityDetail: String
+    ) {
+        guard harnessHomeRecoveryPresentation.finish(token),
+              startupRuntimeContinuationPermitted else { return }
+        activityStore.addCompleted(.runtime, title: activityTitle, detail: activityDetail)
+        showLoading(loadingMessage)
+        beginProviderHistoryStartupGate(background: false) { [weak self] admitted in
+            guard let self, admitted else { return }
+            self.runStartupPrivacyMaintenance { [weak self] in
+                self?.startPeriodicPrivacyMaintenance()
+                self?.beginProtectedStartup()
+            }
         }
     }
 
@@ -4906,9 +5110,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
         case .published:
             message = "Harness remains stopped. The exact preserved-copy receipt is still durably pending acknowledgement and will be shown again on retry."
             detail = "Published Harness-home recovery remains pending explicit receipt acknowledgement."
-        case .blocked:
-            message = "Harness remains stopped. The private recovery folder was retained for manual inspection."
-            detail = "Harness-home recovery remained blocked and no automatic retry was admitted."
+        case .blocked(_, _, let remedy):
+            switch remedy {
+            case .inspectRecoveryFolder:
+                message = "Harness remains stopped. The private recovery folder was retained for manual inspection."
+                detail = "Harness-home recovery remained blocked and no automatic retry was admitted."
+            case .allowDeviceTrustKeychainAccess:
+                message = "Harness remains stopped. Nothing was changed or reset. Choose Restart Local Services when you are ready to decide on Keychain access for Fulmar's device-trust record."
+                detail = "Keychain access for the device-trust record was left undecided by request; no prompt will appear until Restart Local Services."
+            case .retry:
+                message = "Harness remains stopped. Nothing was changed. Choose Restart Local Services to run the device-trust check again."
+                detail = "The device-trust check was left stopped by request; no automatic retry was admitted."
+            }
         }
         mainWindow.surface.showFailure(message)
         mainWindow.updateStatus("Harness recovery paused · Runtime stopped", color: .systemOrange)
