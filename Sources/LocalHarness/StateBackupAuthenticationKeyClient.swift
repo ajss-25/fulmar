@@ -2,6 +2,19 @@ import CryptoKit
 import Darwin
 import Foundation
 
+/// Whether the unattended backup-key reader can access the existing item
+/// without interaction after an explicit foreground authorization.
+enum StateBackupUnattendedAccess: Equatable, Sendable {
+    /// The unattended consumer read the exact same key bytes without UI.
+    case verified
+    /// The unattended consumer is still refused; only the foreground helper was
+    /// allowed, so the authorization will be asked again after relaunch.
+    case authorizationRequired
+    /// The verification itself could not complete (timeout, helper unavailable
+    /// or different bytes); nothing about the allowance is known.
+    case unavailable
+}
+
 struct StateBackupAuthenticationKeyComponents: Sendable {
     let helper: URL
     let enforceIdentity: Bool
@@ -95,6 +108,25 @@ final class StateBackupAuthenticationKeyClient: @unchecked Sendable {
     /// them to the process cache.
     func authorizeExistingForForeground() throws -> Data {
         try run(command: "backup-authorize-existing", deadline: foregroundDeadline)
+    }
+
+    /// Fresh noninteractive verification through the actual unattended
+    /// consumer (the packaged helper's brokered `backup-load-or-create`, the
+    /// same command every startup runs), after a foreground authorization has
+    /// already read the existing item. The process cache is deliberately not
+    /// consulted or updated: a foreground allowance granted to the helper alone
+    /// must never be reported as unattended access. Because the item was just
+    /// read, the command's create branch is unreachable short of an external
+    /// deletion between the two calls, the same exposure every launch has.
+    func verifyUnattendedAccess(matching key: Data) -> StateBackupUnattendedAccess {
+        do {
+            let fresh = try run(command: "backup-load-or-create", deadline: backgroundDeadline)
+            return fresh == key ? .verified : .unavailable
+        } catch BackupError.authenticationAuthorizationRequired {
+            return .authorizationRequired
+        } catch {
+            return .unavailable
+        }
     }
 
     func admitValidatedKey(_ key: Data) {

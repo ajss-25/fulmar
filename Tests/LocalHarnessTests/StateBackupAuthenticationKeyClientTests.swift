@@ -28,6 +28,32 @@ private final class BackupKeyClientProbe: @unchecked Sendable {
     }
 }
 
+// Scripted unattended-read outcome for a runner closure, mutable between
+// calls without capturing a `var` in concurrently-executing code.
+private final class UnattendedReadScript: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedStatus: Int32
+    private var storedKey: Data
+
+    init(status: Int32, key: Data) {
+        storedStatus = status
+        storedKey = key
+    }
+
+    func set(status: Int32, key: Data) {
+        lock.lock()
+        storedStatus = status
+        storedKey = key
+        lock.unlock()
+    }
+
+    var response: CredentialMigrationProcessResult {
+        lock.lock()
+        defer { lock.unlock() }
+        return backupKeyResult(status: storedStatus, key: storedKey)
+    }
+}
+
 private final class BackupIntegrityProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var storedCalls = 0
@@ -184,6 +210,44 @@ private func makeTrustedBackupHelperFixture() throws -> (directory: URL, helper:
     #expect(try client.loadOrCreate() == authorized)
     #expect(probe.commands == [["backup-load-or-create"], ["backup-authorize-existing"]])
     #expect(probe.deadlines == [0.25, 7])
+}
+
+@Test func unattendedAccessVerificationUsesTheRealConsumerAndNeverTouchesTheCache() throws {
+    let probe = BackupKeyClientProbe()
+    let authorized = Data(repeating: 0x52, count: 32)
+    let unattended = UnattendedReadScript(status: 5, key: Data())
+    let client = backupKeyClient(foregroundDeadline: 7) { _, arguments, _, _, _, deadline in
+        probe.record(arguments: arguments, deadline: deadline)
+        return arguments == ["backup-authorize-existing"]
+            ? backupKeyResult(key: authorized)
+            : unattended.response
+    }
+
+    // The foreground helper read succeeds while the brokered unattended read
+    // is still refused (helper-only Always Allow): reported, not hidden.
+    #expect(try client.authorizeExistingForForeground() == authorized)
+    #expect(client.verifyUnattendedAccess(matching: authorized) == .authorizationRequired)
+    // The verification neither consults nor primes the process cache.
+    do {
+        _ = try client.loadOrCreate()
+        Issue.record("A refused unattended read must not be served from a cache the verification primed")
+    } catch let error as BackupError {
+        guard case .authenticationAuthorizationRequired = error else {
+            Issue.record("Expected the typed authorization-required result, got \(error)")
+            return
+        }
+    }
+    // Same bytes through the unattended consumer: verified. Different bytes
+    // or any other failure: unavailable, never a false positive.
+    unattended.set(status: 0, key: authorized)
+    #expect(client.verifyUnattendedAccess(matching: authorized) == .verified)
+    unattended.set(status: 0, key: Data(repeating: 0x53, count: 32))
+    #expect(client.verifyUnattendedAccess(matching: authorized) == .unavailable)
+    #expect(probe.commands == [
+        ["backup-authorize-existing"], ["backup-load-or-create"], ["backup-load-or-create"],
+        ["backup-load-or-create"], ["backup-load-or-create"]
+    ])
+    #expect(probe.deadlines == [7, 0.25, 0.25, 0.25, 0.25])
 }
 
 @Test func malformedSuccessfulBackupKeyPayloadFailsClosedWithoutCaching() {

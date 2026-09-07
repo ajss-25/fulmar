@@ -617,6 +617,9 @@ enum BackupWindowConfirmation: Equatable {
 enum BackupWindowNotice: Equatable {
     case protectedTransitionUnavailable
     case authorizationFailed
+    /// The foreground read succeeded and the key was validated, but a fresh
+    /// unattended read through the packaged reader is still refused.
+    case authorizationNotUnattended
     case acquireFailed(StateBackupProtectedOperation)
     case createFailed
     case restoreFailed
@@ -658,6 +661,10 @@ struct BackupWindowInteractions {
             case .authorizationFailed:
                 alert.messageText = "Backup-key authorization did not complete"
                 alert.informativeText = "The existing backup key was not admitted. No Keychain item was replaced or deleted."
+            case .authorizationNotUnattended:
+                alert.alertStyle = .warning
+                alert.messageText = "Authorized for this session only"
+                alert.informativeText = "The existing backup key was read, verified against your backups and kept in memory for this session. A fresh unattended read through Fulmar's packaged credential reader is still refused, so this authorization will be asked for again after the next launch. Nothing was replaced or deleted; making unattended access persistent for this pre-existing key item is an owner decision, not something Fulmar changes on its own."
             case .acquireFailed:
                 alert.messageText = "Protected backup transition did not start"
                 alert.informativeText = "Agent admissions and local-service state could not be verified, so no backup state was read or changed."
@@ -680,6 +687,9 @@ struct BackupWindowOperations {
     let validatedListAsync: @MainActor (@escaping @MainActor (Result<[StateBackup], Error>) -> Void) -> StateBackupOperationCancellation
     let canAuthorizeAuthenticationKeyForForeground: @MainActor () -> Bool
     let authorizeAuthenticationKeyForForegroundAsync: @MainActor (@escaping @MainActor (Result<Void, Error>) -> Void) -> StateBackupOperationCancellation
+    /// Fresh unattended-access outcome recorded by the most recent foreground
+    /// authorization; nil when none has run in this process.
+    let lastAuthorizationUnattendedAccess: @MainActor () -> StateBackupUnattendedAccess?
     let createAsync: @MainActor (
         _ label: String,
         _ sourceVersion: String,
@@ -702,6 +712,7 @@ struct BackupWindowOperations {
         authorizeAuthenticationKeyForForegroundAsync = {
             manager.authorizeAuthenticationKeyForForegroundAsync(completion: $0)
         }
+        lastAuthorizationUnattendedAccess = { manager.lastForegroundAuthorizationUnattendedAccessOutcome }
         createAsync = { label, sourceVersion, permit, completion in
             manager.createAsync(
                 label: label,
@@ -736,11 +747,13 @@ struct BackupWindowOperations {
         deleteAsync: @escaping @MainActor (
             StateBackup,
             @escaping @MainActor (Result<Void, Error>) -> Void
-        ) -> StateBackupOperationCancellation
+        ) -> StateBackupOperationCancellation,
+        lastAuthorizationUnattendedAccess: @escaping @MainActor () -> StateBackupUnattendedAccess? = { nil }
     ) {
         self.validatedListAsync = validatedListAsync
         self.canAuthorizeAuthenticationKeyForForeground = canAuthorizeAuthenticationKeyForForeground
         self.authorizeAuthenticationKeyForForegroundAsync = authorizeAuthenticationKeyForForegroundAsync
+        self.lastAuthorizationUnattendedAccess = lastAuthorizationUnattendedAccess
         self.createAsync = createAsync
         self.restoreAsync = restoreAsync
         self.deleteAsync = deleteAsync
@@ -941,6 +954,13 @@ final class BackupWindowController: NSWindowController, NSTableViewDataSource, N
                 self.operationState = .idle
                 self.backupKeyAuthorizationRequired = false
                 self.refresh()
+                // A helper-only allowance is reported exactly once, here, and
+                // never converted into an automatic re-authorization.
+                if self.operations.lastAuthorizationUnattendedAccess() == .authorizationRequired {
+                    self.status.textColor = .systemOrange
+                    self.status.stringValue = "Backup key authorized for this session only; the unattended reader is still refused, so this will be asked again after relaunch."
+                    self.interactions.presentNotice(.authorizationNotUnattended)
+                }
                 self.onAuthenticationAuthorized?()
             case .failure(let error):
                 self.operationState = .unavailable

@@ -508,6 +508,8 @@ final class StateBackupManager: @unchecked Sendable {
         qos: .utility
     )
     private let lock = NSLock()
+    private let unattendedAccessLock = NSLock()
+    private var lastForegroundAuthorizationUnattendedAccess: StateBackupUnattendedAccess?
     private var rootIdentity: FileIdentity?
     private var initializationError: Error?
     // Accessed only while `lock` is held.  They never escape one synchronous
@@ -728,6 +730,22 @@ final class StateBackupManager: @unchecked Sendable {
             _ = try loadBackups(key: key, budget: budget)
         }
         authenticationKeyClient.admitValidatedKey(candidate)
+        // The foreground allowance was granted to the helper that read the
+        // key; prove, through the unattended consumer, whether it also holds
+        // without interaction so the UI never reports a one-time allowance as
+        // persistent. This is observation only: the admitted key is unchanged.
+        let unattended = authenticationKeyClient.verifyUnattendedAccess(matching: candidate)
+        unattendedAccessLock.lock()
+        lastForegroundAuthorizationUnattendedAccess = unattended
+        unattendedAccessLock.unlock()
+    }
+
+    /// Outcome of the most recent foreground authorization's fresh unattended
+    /// verification, or nil before any authorization in this process.
+    var lastForegroundAuthorizationUnattendedAccessOutcome: StateBackupUnattendedAccess? {
+        unattendedAccessLock.lock()
+        defer { unattendedAccessLock.unlock() }
+        return lastForegroundAuthorizationUnattendedAccess
     }
 
     @discardableResult
