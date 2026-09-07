@@ -122,6 +122,41 @@ const publicBootstrap = read("scripts/bootstrap-source-checkout.sh");
 for (const expected of ["/usr/bin/env -i", "PATH=/usr/bin:/bin:/usr/sbin:/sbin", "run_pinned_node", "verify-prefix"]) {
   if (!publicBootstrap.includes(expected)) fail(`public source bootstrap is missing ${expected}`);
 }
+// The notice-material cache is prepared (HTTPS acquisition only when absent)
+// by the same environment-free pinned-Node lane, strictly after the complete
+// runtime verification, and the bootstrap only succeeds once it verifies.
+const noticeMaterialsPreparation = 'run_pinned_node "$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs" prepare "$PROJECT_DIR"';
+const noticeMaterialsPreparationOffset = publicBootstrap.indexOf(noticeMaterialsPreparation);
+const completeRuntimeVerificationOffset = publicBootstrap.indexOf('run_pinned_node "$PROJECT_DIR/scripts/runtime-inventory.mjs" verify \\');
+if (noticeMaterialsPreparationOffset < 0) fail("public source bootstrap does not prepare the notice-material cache");
+if (completeRuntimeVerificationOffset < 0 || noticeMaterialsPreparationOffset < completeRuntimeVerificationOffset) {
+  fail("public source bootstrap must verify the complete runtime before preparing the notice-material cache");
+}
+if (publicBootstrap.indexOf(noticeMaterialsPreparation, noticeMaterialsPreparationOffset + 1) >= 0) {
+  fail("public source bootstrap prepares the notice-material cache more than once");
+}
+const noticeMaterialsGlue = read("scripts/prepare-third-party-notice-materials.mjs");
+for (const expected of [
+  'PATH: "/usr/bin:/bin:/usr/sbin:/sbin"',
+  '"--transport", "https"',
+  'verified.transport !== "https" || verified.authoritative !== true',
+  "withAttestedDirectory"
+]) {
+  if (!noticeMaterialsGlue.includes(expected)) fail(`notice-material cache preparation is missing ${expected}`);
+}
+const noticeMaterialsOperand = '--rust-crate-materials "$RUST_CRATE_MATERIALS"';
+const noticeMaterialsLiteral = 'RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"';
+for (const releaseScript of ["scripts/build-app.sh", "scripts/verify-release.sh", "scripts/prepare-public-release-assets.sh", "scripts/verify-public-distribution.sh"]) {
+  const source = read(releaseScript);
+  if (!source.includes(noticeMaterialsLiteral)) fail(`${releaseScript} does not bind the literal checkout-local notice-material cache`);
+  if (!source.includes(noticeMaterialsOperand)) fail(`${releaseScript} does not pass the verified notice materials to the notices generator`);
+  if (source.indexOf('prepare-third-party-notice-materials.mjs') < 0 || !source.includes('verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"')) {
+    fail(`${releaseScript} does not verify the notice-material cache before generating notices`);
+  }
+  if (/prepare-third-party-notice-materials\.mjs" prepare|--transport/u.test(source)) {
+    fail(`${releaseScript} must never acquire notice materials`);
+  }
+}
 
 const plist = read("Resources/Info.plist");
 const plistValue = (key) => {

@@ -107,6 +107,11 @@ done
 TEMP_ROOT="$(/usr/bin/mktemp -d /private/tmp/fulmar-public-verify.XXXXXX)"
 NODE="$PROJECT_DIR/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node"
 FIRST_PARTY_LICENSE_POLICY="$PROJECT_DIR/scripts/first-party-license-policy.mjs"
+# The private checkout-local notice-material cache prepared by
+# scripts/bootstrap-source-checkout.sh; verified here, never acquired. A
+# missing cache means the bootstrap is required, never a comparison bypass.
+RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 PINNED_NODE_SHA256="$(/usr/bin/plutil -extract runtime.nodeSHA256 raw -o - "$RELEASE_IDENTITY")"
 MINIMUM_MACOS="$(/usr/bin/plutil -extract minimumMacOS raw -o - "$RELEASE_IDENTITY")"
 PRODUCT_BUNDLE_ID="$(/usr/bin/plutil -extract bundleIdentifier raw -o - "$RELEASE_IDENTITY")"
@@ -211,9 +216,11 @@ LOCAL="$RUNTIME/dsh/node_modules/@local-harness"
   "dsh/node_modules/@local-harness/dsh-client-security-bridge/package.json" \
   "dsh/node_modules/@local-harness/dsh-performance-profile/package.json" \
   "dsh/node_modules/@local-harness/dsh-web-fetch-safe/package.json" >/dev/null
+"$NODE" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"
 "$NODE" "$PROJECT_DIR/scripts/generate-third-party-notices.mjs" \
   "$PROJECT_DIR/Resources/THIRD_PARTY_NOTICES.md" "$RUNTIME" \
-  "$PROJECT_DIR/Config/ThirdPartyLicenseOverrides.json" "$TEMP_ROOT/notices.md"
+  "$PROJECT_DIR/Config/ThirdPartyLicenseOverrides.json" "$TEMP_ROOT/notices.md" \
+  --rust-crate-materials "$RUST_CRATE_MATERIALS"
 /usr/bin/cmp -s "$TEMP_ROOT/notices.md" "$NOTICES"
 
 details="$(/usr/bin/codesign -dvvv "$APP" 2>&1)"

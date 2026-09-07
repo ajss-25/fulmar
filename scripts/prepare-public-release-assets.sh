@@ -33,6 +33,10 @@ EXPECTED_CANDIDATE_BUILD="${6:-}"
 SYMBOL_ARCHIVE="$PROJECT_DIR/build/Fulmar.dSYMs.zip"
 NODE="$PROJECT_DIR/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node"
 FIRST_PARTY_LICENSE_POLICY="$PROJECT_DIR/scripts/first-party-license-policy.mjs"
+# The private checkout-local notice-material cache prepared by
+# scripts/bootstrap-source-checkout.sh; verified here, never acquired.
+RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 SOURCE_INPUT_INVENTORY="$PROJECT_DIR/build/source-build-inputs.json"
 SOURCE_INPUT_TOOL="$PROJECT_DIR/scripts/source-build-input-inventory.mjs"
 STATIC_SECURITY_SUMMARY="$PROJECT_DIR/build/static-security-summary.json"
@@ -203,9 +207,11 @@ LOCAL="$RUNTIME/dsh/node_modules/@local-harness"
   "dsh/node_modules/@local-harness/dsh-client-security-bridge/package.json" \
   "dsh/node_modules/@local-harness/dsh-performance-profile/package.json" \
   "dsh/node_modules/@local-harness/dsh-web-fetch-safe/package.json" >/dev/null
+"$NODE" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"
 "$NODE" "$PROJECT_DIR/scripts/generate-third-party-notices.mjs" \
   "$PROJECT_DIR/Resources/THIRD_PARTY_NOTICES.md" "$RUNTIME" \
-  "$PROJECT_DIR/Config/ThirdPartyLicenseOverrides.json" "$TEMP_ROOT/notices.md"
+  "$PROJECT_DIR/Config/ThirdPartyLicenseOverrides.json" "$TEMP_ROOT/notices.md" \
+  --rust-crate-materials "$RUST_CRATE_MATERIALS"
 /usr/bin/cmp -s "$TEMP_ROOT/notices.md" "$NOTICES"
 /bin/zsh -f "$PROJECT_DIR/scripts/verify-native-symbol-privacy.sh" "$APP" "$SYMBOL_ROOT"
 

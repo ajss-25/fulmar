@@ -169,6 +169,12 @@ else
 fi
 STATIC_SECURITY_VERIFIER="$PROJECT_DIR/scripts/verify-static-security-summary.mjs"
 FIRST_PARTY_LICENSE_POLICY="$PROJECT_DIR/scripts/first-party-license-policy.mjs"
+# The private checkout-local cache of verified Rust crate notice materials that
+# scripts/bootstrap-source-checkout.sh prepared over HTTPS. It is bound into the
+# generated notices, verified before compilation, and is neither acquired here
+# nor copied into the source snapshot, the app runtime or any release asset.
+RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 TOOLCHAIN_INVENTORY="$BUILD_OUTPUT_DIR/toolchain-inventory.json"
 TOOLCHAIN_TOOL="$PROJECT_DIR/scripts/toolchain-inventory.mjs"
 # The only file that may admit a non-root-owned (GitHub-hosted) Xcode tree into
@@ -325,6 +331,10 @@ fi
 "$NODE_BIN" "$PROJECT_DIR/scripts/verify-deepseek-runtime-contract.mjs" "$PROJECT_DIR"
 "$NODE_BIN" "$FIRST_PARTY_LICENSE_POLICY" state "$PROJECT_DIR" >/dev/null
 "$NODE_BIN" "$INVENTORY_TOOL" verify "$VENDOR_ROOT" "$VENDOR_INVENTORY" VendorRuntime
+# Verify the prepared notice-material cache with the trusted Node before any
+# native compilation. A missing, unsafe, stale or non-HTTPS cache fails here;
+# the build never downloads, and the generator re-verifies it at consumption.
+"$NODE_BIN" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"
 
 # Bind every native source, test, resource, and release-script input before the
 # compiler runs. The same inventory is rechecked after compilation and before
@@ -678,7 +688,8 @@ umask 077
   "$PROJECT_DIR/Resources/THIRD_PARTY_NOTICES.md" \
   "$RUNTIME_DIR" \
   "$PROJECT_DIR/Config/ThirdPartyLicenseOverrides.json" \
-  "$RESOURCES_DIR/THIRD_PARTY_NOTICES.md"
+  "$RESOURCES_DIR/THIRD_PARTY_NOTICES.md" \
+  --rust-crate-materials "$RUST_CRATE_MATERIALS"
 
 [[ -f "$RENDERED_ICON" ]] || { echo "Missing the reviewed Fulmar icon master." >&2; exit 1; }
 MASTER_ICON="$RENDERED_ICON"

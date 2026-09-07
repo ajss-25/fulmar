@@ -61,6 +61,10 @@ if [[ "$CI_EVIDENCE_SUMMARY" != "$PROJECT_DIR/build/ci-evidence-summary.json" ]]
 fi
 INVENTORY_TOOL="$PROJECT_DIR/scripts/runtime-inventory.mjs"
 INVENTORY_NODE="$VENDOR_ROOT/node-v22.23.1-darwin-arm64/bin/node"
+# The private checkout-local notice-material cache prepared by
+# scripts/bootstrap-source-checkout.sh; verified here, never acquired.
+RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 PRODUCT_DISPLAY_NAME="$(plutil -extract productDisplayName raw -o - "$RELEASE_IDENTITY")"
 PRODUCT_BUNDLE_ID="$(plutil -extract bundleIdentifier raw -o - "$RELEASE_IDENTITY")"
 PRODUCT_VERSION="$(plutil -extract appVersion raw -o - "$RELEASE_IDENTITY")"
@@ -141,6 +145,7 @@ ACTUAL_NODE_SHA256="$(/usr/bin/shasum -a 256 "$INVENTORY_NODE" | /usr/bin/awk '{
 "$INVENTORY_NODE" "$PROJECT_DIR/scripts/verify-deepseek-runtime-contract.mjs" "$PROJECT_DIR"
 "$INVENTORY_NODE" "$FIRST_PARTY_LICENSE_POLICY" state "$PROJECT_DIR" >/dev/null
 "$INVENTORY_NODE" "$INVENTORY_TOOL" verify "$VENDOR_ROOT" "$VENDOR_INVENTORY" VendorRuntime
+"$INVENTORY_NODE" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"
 "$INVENTORY_NODE" "$SOURCE_INPUT_TOOL" verify "$PROJECT_DIR" "$SOURCE_INPUT_INVENTORY"
 "$INVENTORY_NODE" "$STATIC_SECURITY_VERIFIER" \
   "$STATIC_SECURITY_SUMMARY" "$SOURCE_INPUT_INVENTORY" "$PROJECT_DIR/Config/SemgrepRules.json"
@@ -440,7 +445,8 @@ done
   "dsh/node_modules/@local-harness/dsh-web-fetch-safe/package.json"
 "$NODE" "$PROJECT_DIR/scripts/generate-third-party-notices.mjs" \
   "$PROJECT_DIR/Resources/THIRD_PARTY_NOTICES.md" "$RUNTIME_ROOT" \
-  "$PROJECT_DIR/Config/ThirdPartyLicenseOverrides.json" "$TEMP_ROOT/expected-notices.md"
+  "$PROJECT_DIR/Config/ThirdPartyLicenseOverrides.json" "$TEMP_ROOT/expected-notices.md" \
+  --rust-crate-materials "$RUST_CRATE_MATERIALS"
 cmp -s "$TEMP_ROOT/expected-notices.md" "$NOTICES"
 "$NODE" "$PROJECT_DIR/scripts/verify-dependency-audit.mjs" \
   "$AUDIT_SUMMARY" "$VENDOR_ROOT/package-lock.json"

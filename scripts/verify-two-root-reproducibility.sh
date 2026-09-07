@@ -33,6 +33,13 @@ REPRODUCIBILITY_TOOL="$PROJECT_DIR/scripts/unsigned-reproducibility-inventory.mj
 VENDOR_INVENTORY="$PROJECT_DIR/VendorRuntime.inventory.json"
 STATIC_SECURITY_SUMMARY="$PROJECT_DIR/build/static-security-summary.json"
 REPORT="$PROJECT_DIR/build/two-root-reproducibility-summary.json"
+# The private checkout-local notice-material cache prepared by
+# scripts/bootstrap-source-checkout.sh. Each clean clone receives its own
+# independent byte-identical copy at the identical relative path, verified
+# against that clone's tracked manifests before either offline build starts.
+NOTICE_MATERIALS_RELATIVE="build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+RUST_CRATE_MATERIALS="$PROJECT_DIR/$NOTICE_MATERIALS_RELATIVE"
+NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 
 [[ "$PROJECT_DIR" == /* && -d "$PROJECT_DIR" && ! -L "$PROJECT_DIR" \
    && "${PROJECT_DIR:A}" == "$PROJECT_DIR" \
@@ -154,6 +161,9 @@ clone_exact_source "$CHECKOUT_B"
 
 "$NODE" "$INVENTORY_TOOL" verify \
   "$PROJECT_DIR/VendorRuntime" "$VENDOR_INVENTORY" VendorRuntime
+# The source cache must already be complete, HTTPS-acquired and verified; the
+# gate never acquires, and neither clone build may download.
+"$NODE" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"
 for checkout in "$CHECKOUT_A" "$CHECKOUT_B"; do
   # Both builds deliberately consume independent copies of the same already
   # inventory-verified dependency tree. Dependency reconstruction is a separate
@@ -165,6 +175,15 @@ for checkout in "$CHECKOUT_A" "$CHECKOUT_B"; do
   "$checkout/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node" \
     "$checkout/scripts/runtime-inventory.mjs" verify \
     "$checkout/VendorRuntime" "$checkout/VendorRuntime.inventory.json" VendorRuntime
+  # An independent private copy of the verified notice-material cache, bytes,
+  # inventory and transport metadata preserved, verified by the clone's own
+  # pinned Node against the clone's tracked manifests before its build.
+  /bin/mkdir -m 0700 "$checkout/build/third-party-notice-materials"
+  /usr/bin/ditto --norsrc --noextattr --noacl --noqtn \
+    "$RUST_CRATE_MATERIALS" "$checkout/$NOTICE_MATERIALS_RELATIVE"
+  "$checkout/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node" \
+    "$checkout/scripts/prepare-third-party-notice-materials.mjs" verify \
+    "$checkout" "$checkout/$NOTICE_MATERIALS_RELATIVE"
   [[ "$(/usr/bin/git -C "$checkout" rev-parse --verify 'HEAD^{tree}')" == "$SOURCE_TREE" \
      && -z "$(/usr/bin/git -C "$checkout" status --porcelain=v1 --untracked-files=all)" ]] || {
     print -u2 "A prepared reproducibility clone changed its committed source tree."

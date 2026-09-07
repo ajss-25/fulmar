@@ -43,4 +43,12 @@ run_pinned_node "$PROJECT_DIR/scripts/runtime-inventory.mjs" verify \
 run_pinned_node "$PROJECT_DIR/scripts/verify-source-product-contract.mjs" "$PROJECT_DIR"
 run_pinned_node "$PROJECT_DIR/scripts/verify-deepseek-runtime-contract.mjs" "$PROJECT_DIR"
 
-print "Fulmar's pinned Node and DeepSeek Harness runtime are reconstructed and verified."
+# The generated third-party notices bind the verified Rust crate notice
+# materials from a private checkout-local cache. Only this clean bootstrap may
+# acquire it: an absent cache is fetched over HTTPS from the tracked manifests
+# through the same environment-free pinned-Node lane, an existing cache is
+# reused only after complete verification, and a stale or unsafe cache fails
+# with its exact path. The release scripts verify the cache and never acquire.
+run_pinned_node "$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs" prepare "$PROJECT_DIR"
+
+print "Fulmar's pinned Node, DeepSeek Harness runtime and third-party notice materials are reconstructed and verified."
