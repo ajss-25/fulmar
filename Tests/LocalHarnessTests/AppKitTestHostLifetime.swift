@@ -464,8 +464,12 @@ private func firstExecutableLine(in body: [String]) -> Int? {
     // process-level backup-key client tests, one AppKit-importing main-actor
     // backup-window test (a runtime-marker body), and one main-actor
     // HarnessController authorization test in a file that imports no AppKit.
-    #expect(testBodyCount == 1_452)
-    #expect(directMainActorBodyCount == 325)
+    // Codex's review pass added three more main-actor functions, all in
+    // DeviceTrustAuthorizationFailureRoutingTests, which drives AppDelegate's
+    // authorization-failure routing through the interaction seam and imports
+    // no AppKit and constructs no runtime object of its own.
+    #expect(testBodyCount == 1_455)
+    #expect(directMainActorBodyCount == 328)
     #expect(mainActorSuiteCount == 4)
     #expect(inheritedMainActorBodyCount == 39)
     #expect(appKitImportedActorBodyCount == 226)

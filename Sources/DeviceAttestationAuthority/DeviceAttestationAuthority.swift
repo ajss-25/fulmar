@@ -212,6 +212,17 @@ public struct MacOSDeviceAttestationKeychain: DeviceAttestationRecoverableKeySto
         }
     }
 
+    /// Test seam: runs `operation` through the exact interaction-policy wrapper
+    /// every production read uses — the same bounded admission, the same
+    /// restoration handling and the same typed mapping — while making no
+    /// Keychain call of any kind. Never reachable from a release path: no
+    /// environment variable, argument or Keychain value selects it.
+    @_spi(Testing) public func runThroughInteractionPolicyForTesting(
+        _ operation: () -> OSStatus
+    ) throws -> OSStatus {
+        try withInteractionPolicy(operation)
+    }
+
     private func base(account: String) -> [String: Any] {
         var value: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -367,15 +378,21 @@ public enum LegacyKeychainInteraction {
             return .failure(DeviceAttestationKeychainInteractionFailure.contended)
         }
         defer { lock.unlock() }
-        var previous: UInt8 = 1
-        let hadPrevious = primitives.get(&previous) == errSecSuccess
+        // The existing policy must be readable before anything is changed. A
+        // value that cannot be read cannot be restored either, and guessing one
+        // would let this call decide the process-wide policy for whoever set it.
+        // Nothing is set and the Keychain operation is not run.
+        var previous: UInt8 = 0
+        guard primitives.get(&previous) == errSecSuccess else {
+            return .failure(DeviceAttestationKeychainInteractionFailure.unavailable)
+        }
         // Setup failure: the barrier does not exist, so the call is not made and
         // no restoration is owed.
         guard primitives.set(allowingInteraction ? 1 : 0) == errSecSuccess else {
             return .failure(DeviceAttestationKeychainInteractionFailure.unavailable)
         }
         let status = operation()
-        var restored = primitives.set(hadPrevious ? previous : 1) == errSecSuccess
+        var restored = primitives.set(previous) == errSecSuccess
         if !restored, allowingInteraction {
             // Never leave process-wide Keychain UI enabled after a user-initiated
             // access: force the fail-closed policy back before reporting.

@@ -112,18 +112,20 @@ Updated: 2026-09-03 (Europe/London)
 
 ## Frozen test topology
 
-- JavaScript: 898 exact lifecycle tests, 686 top-level tests; expected source result
-  851 passed plus 47 reviewed skips, and expected candidate result 852 passed plus
+- JavaScript: 899 exact lifecycle tests, 687 top-level tests; expected source result
+  852 passed plus 47 reviewed skips, and expected candidate result 853 passed plus
   46 reviewed skips.
-- Swift: 1,452 exact function specifiers; sorted-specifier SHA-256
-  `cdd266aed0d5957a0a18f7dde366df5eb87f774862fecdfa6cb3a82acc7c738d`
-  (1,448 / `5787c3b14a…` plus the four startup Keychain-UX correction tests:
+- Swift: 1,455 exact function specifiers; sorted-specifier SHA-256
+  `4971265b754b0f5a9ccecea1b40aecbff53417ded0d7896fc90e2102d552a605`
+  (1,448 / `5787c3b14a…` plus the four startup Keychain-UX correction tests —
   missing-key verification without creation, the typed missing-key startup
   failure, the authorization advisory surviving the later catalog refresh, and
-  one-attempt device-trust authorization with stale and post-shutdown
-  callbacks). The independently built `DeviceAttestationAuthorityTests`
-  executable target is 12 scenarios, adding bounded interaction-policy
-  admission with setup and restoration failures.
+  one-attempt device-trust authorization with stale and post-shutdown callbacks
+  — plus the three authorization-failure routing tests that drive AppDelegate's
+  retry, recovery-folder and post-shutdown dialogs through the interaction
+  seam). The independently built `DeviceAttestationAuthorityTests` executable
+  target is 12 scenarios, whose interaction-policy scenario substitutes both the
+  policy primitives and the wrapped operation and makes no Keychain call.
 
 These are fail-closed ledgers, not passing results. The canonical full JavaScript and
 Swift gates must execute after this source freeze. Any subsequent source, test,

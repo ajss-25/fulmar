@@ -247,9 +247,9 @@ if (profile === "focused") {
   }
   // Frozen to the exact reviewed aggregate topology. Any added, removed,
   // skipped, or silently truncated test changes this ledger and fails closed.
-  const expectedTests = 898;
-  const expectedTopLevelTests = 686;
-  const expectedPassed = profile === "full-candidate" ? 852 : 851;
+  const expectedTests = 899;
+  const expectedTopLevelTests = 687;
+  const expectedPassed = profile === "full-candidate" ? 853 : 852;
   if (starts.length !== expectedTests || summaries[0].counts?.passed !== expectedPassed
       || topLevelStarts !== expectedTopLevelTests
       || skippedKeys.length !== allowedSkippedKeys.length) {

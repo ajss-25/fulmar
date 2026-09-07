@@ -4711,24 +4711,105 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                     token: token
                 )
             case .failure(let error):
-                let (description, remedy) = HarnessController.blockedHarnessHomeRecoveryDescription(for: error)
-                if remedy == .allowDeviceTrustKeychainAccess {
-                    self.presentIncompleteDeviceTrustAuthorization(
-                        description,
-                        pending: pending,
-                        recoveryFolder: recoveryFolder,
-                        token: token
-                    )
-                } else {
-                    self.presentHarnessHomeRecoveryFailureMessage(
-                        description,
-                        pending: pending,
-                        recoveryFolder: recoveryFolder,
-                        token: token
-                    )
-                }
+                self.presentDeviceTrustAuthorizationFailure(
+                    error,
+                    pending: pending,
+                    recoveryFolder: recoveryFolder,
+                    token: token
+                )
             }
         }
+    }
+
+    /// Routes one authorization failure to the dialog its typed remedy calls
+    /// for. A retryable cause — a contended or unestablishable interaction
+    /// policy, a locked keychain, a deadline — is a "try again" situation, not
+    /// a recovery-folder inspection, so it must not fall through to the generic
+    /// failure dialog. Internal so the actual routing is covered through the
+    /// same interaction seam production uses.
+    func presentDeviceTrustAuthorizationFailure(
+        _ error: Error,
+        pending: HarnessHomeRecoveryPendingState,
+        recoveryFolder: URL,
+        token: HarnessHomeRecoveryPresentationGate.Token
+    ) {
+        let (description, remedy) = HarnessController.blockedHarnessHomeRecoveryDescription(for: error)
+        switch remedy {
+        case .allowDeviceTrustKeychainAccess:
+            presentIncompleteDeviceTrustAuthorization(
+                description,
+                pending: pending,
+                recoveryFolder: recoveryFolder,
+                token: token
+            )
+        case .retry:
+            presentRetryableDeviceTrustAuthorizationFailure(
+                description,
+                pending: pending,
+                recoveryFolder: recoveryFolder,
+                token: token
+            )
+        case .inspectRecoveryFolder:
+            presentHarnessHomeRecoveryFailureMessage(
+                description,
+                pending: pending,
+                recoveryFolder: recoveryFolder,
+                token: token
+            )
+        }
+    }
+
+    /// The retry dialog for a failed authorization. Nothing retries by itself:
+    /// the button is explicit, the blocked state must still be the exact one
+    /// this sequence was admitted for, and consuming it is what makes the
+    /// resumption happen at most once. A stale or post-shutdown completion
+    /// fails both guards and leaves the runtime stopped.
+    private func presentRetryableDeviceTrustAuthorizationFailure(
+        _ message: String,
+        pending: HarnessHomeRecoveryPendingState,
+        recoveryFolder: URL,
+        token: HarnessHomeRecoveryPresentationGate.Token
+    ) {
+        guard harnessHomeRecoveryPresentationAdmits(token) else { return }
+        let safeMessage = AuxiliaryDisplayPolicy.singleLine(
+            message,
+            maximumCharacters: 800,
+            fallback: "The device-trust check did not complete."
+        )
+        let choice = harnessHomeRecoveryInteractions.chooseBlockedRemedy(safeMessage, .retry, recoveryFolder)
+        guard harnessHomeRecoveryPresentationAdmits(token) else { return }
+        switch choice {
+        case .retry:
+            guard controller.consumeBlockedHarnessHomeRecovery(pending) else {
+                keepHarnessHomeRecoveryStopped(controller.pendingHarnessHomeRecoveryState ?? pending, token: token)
+                return
+            }
+            resumeStartupAfterHarnessHomeRecoveryRemedy(
+                token: token,
+                loadingMessage: "Retrying the device-trust check…",
+                activityTitle: "Device-trust check retried",
+                activityDetail: "The device-trust check was retried by request after an incomplete Keychain authorization. No credential was accessed automatically."
+            )
+        case .openRecoveryFolder:
+            revealRecoveryFolderOrExistingHome(recoveryFolder: recoveryFolder, existingHome: pending.root)
+            keepHarnessHomeRecoveryStopped(pending, token: token)
+        case .keepStopped, .allowKeychainAccess:
+            keepHarnessHomeRecoveryStopped(pending, token: token)
+        }
+    }
+
+    /// Test seam: begins one presentation token exactly as a live blocked state
+    /// does, so the routing above can be exercised through the real interaction
+    /// seam rather than through a controller-state proxy.
+    func beginHarnessHomeRecoveryPresentationForTesting() -> HarnessHomeRecoveryPresentationGate.Token? {
+        harnessHomeRecoveryPresentation.begin()
+    }
+
+    /// Test seam: latches the presentation gate exactly as Quit does while a
+    /// dialog is still on screen, so a stale completion can be observed
+    /// resuming nothing.
+    func latchHarnessHomeRecoveryPresentationForTesting() {
+        harnessHomeRecoveryPresentation.latchTermination()
     }
 
     private func presentIncompleteDeviceTrustAuthorization(

@@ -1380,12 +1380,12 @@ final class HarnessController {
             switch reason {
             case .contended:
                 return (
-                    "Fulmar's background device-trust check stopped rather than wait behind a Keychain decision that was already open. Nothing was read or changed. Finish that decision, then try again.",
+                    "Fulmar's background device-trust check stopped rather than wait behind a Keychain decision that was already open, so the check did not finish. Fulmar only ever reads its two device-trust items and never changes, resets or deletes them. Finish that decision, then try again.",
                     .retry
                 )
             case .unavailable:
                 return (
-                    "Fulmar could not put macOS Keychain access into its no-prompt mode, so it made no Keychain call at all. Nothing was read or changed. Try again, and relaunch Fulmar if it keeps happening.",
+                    "Fulmar could not put macOS Keychain access into its no-prompt mode, so the device-trust check did not finish. An earlier step of the same check may already have read an item; Fulmar only ever reads its two device-trust items and never changes, resets or deletes them. Try again, and relaunch Fulmar if it keeps happening.",
                     .retry
                 )
             }
