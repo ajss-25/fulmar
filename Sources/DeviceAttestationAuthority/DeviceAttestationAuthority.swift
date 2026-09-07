@@ -42,26 +42,82 @@ public protocol DeviceAttestationRecoverableKeyStore: DeviceAttestationKeyStore 
     func delete(account: String) throws
 }
 
-/// Noninteractive generic-password storage. Every query explicitly forbids authentication UI.
+/// How a Keychain access may interact with the user. Production background and
+/// startup paths are always `.forbidden`; `.userInitiated` exists only for the
+/// explicit, read-only foreground authorization the user triggers by name.
+public enum DeviceAttestationKeychainInteraction: Equatable, Sendable {
+    case forbidden
+    case userInitiated
+}
+
+/// Why a noninteractive Keychain access could not complete. Derived only from
+/// the OSStatus and the login keychain's lock state; never from item content.
+public enum DeviceAttestationKeychainAccessProblem: Equatable, Sendable {
+    /// The keychain holding the items is locked; no permission decision exists yet.
+    case keychainLocked
+    /// macOS needs a foreground permission decision for this copy of the app.
+    case authorizationRequired
+    /// The user cancelled or denied the permission prompt.
+    case deniedOrCancelled
+    /// Another Keychain status; the exact code is reported, nothing else.
+    case other(OSStatus)
+
+    public static func classify(_ status: OSStatus) -> DeviceAttestationKeychainAccessProblem {
+        switch status {
+        case errSecInteractionNotAllowed:
+            return LegacyKeychainInteraction.loginKeychainIsLocked() ? .keychainLocked : .authorizationRequired
+        case errSecAuthFailed, errSecUserCanceled:
+            return .deniedOrCancelled
+        default:
+            return .other(status)
+        }
+    }
+}
+
+/// Outcome of the explicit foreground authorization: whether a fresh
+/// noninteractive read of the exact same items succeeds afterwards.
+public enum DeviceAttestationKeychainAuthorizationOutcome: Equatable, Sendable {
+    /// Both items are readable without interaction (for example, Always Allow).
+    case persistent
+    /// The interactive read succeeded, but a fresh noninteractive read still
+    /// needs interaction (for example, Allow once). Nothing was changed.
+    case onceOnly
+}
+
+/// Generic-password storage in the login keychain.
+///
+/// The per-query `kSecUseAuthenticationUI = fail` value does not cover every
+/// legacy generic-password ACL or partition prompt, so `.forbidden` stores also
+/// disable process-wide Keychain UI around each call, exactly as the signed
+/// credential helper and broker do. A prompt that would otherwise appear fails
+/// with `errSecInteractionNotAllowed` and is classified for the caller.
 public struct MacOSDeviceAttestationKeychain: DeviceAttestationRecoverableKeyStore, Sendable {
     public let service: String
     public let accessGroup: String?
+    public let interaction: DeviceAttestationKeychainInteraction
 
-    public init(service: String, accessGroup: String? = nil) {
+    public init(
+        service: String,
+        accessGroup: String? = nil,
+        interaction: DeviceAttestationKeychainInteraction = .forbidden
+    ) {
         self.service = service
         self.accessGroup = accessGroup
+        self.interaction = interaction
     }
 
     public func read(account: String) throws -> Data? {
         var query = base(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        // String values are the ABI values of kSecUseAuthenticationUI and
-        // kSecUseAuthenticationUIFail. Spelling them avoids a deployment-target
-        // deprecation warning while retaining the required fail-without-UI query.
-        query["u_AuthUI"] = "u_AuthUIF"
+        if interaction == .forbidden {
+            // String values are the ABI values of kSecUseAuthenticationUI and
+            // kSecUseAuthenticationUIFail. Spelling them avoids a deployment-target
+            // deprecation warning while retaining the required fail-without-UI query.
+            query["u_AuthUI"] = "u_AuthUIF"
+        }
         var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let status = try withInteractionPolicy { SecItemCopyMatching(query as CFDictionary, &result) }
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else {
             throw DeviceAttestationError.keychainFailure(status)
@@ -73,8 +129,8 @@ public struct MacOSDeviceAttestationKeychain: DeviceAttestationRecoverableKeySto
         var query = base(account: account)
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        query["u_AuthUI"] = "u_AuthUIF"
-        let status = SecItemAdd(query as CFDictionary, nil)
+        if interaction == .forbidden { query["u_AuthUI"] = "u_AuthUIF" }
+        let status = try withInteractionPolicy { SecItemAdd(query as CFDictionary, nil) }
         guard status == errSecSuccess else {
             throw DeviceAttestationError.keychainFailure(status)
         }
@@ -82,10 +138,23 @@ public struct MacOSDeviceAttestationKeychain: DeviceAttestationRecoverableKeySto
 
     public func delete(account: String) throws {
         var query = base(account: account)
-        query["u_AuthUI"] = "u_AuthUIF"
-        let status = SecItemDelete(query as CFDictionary)
+        if interaction == .forbidden { query["u_AuthUI"] = "u_AuthUIF" }
+        let status = try withInteractionPolicy { SecItemDelete(query as CFDictionary) }
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw DeviceAttestationError.keychainFailure(status)
+        }
+    }
+
+    private func withInteractionPolicy(_ operation: () -> OSStatus) throws -> OSStatus {
+        switch interaction {
+        case .forbidden:
+            guard let status = LegacyKeychainInteraction.withUserInteractionDisabled(operation) else {
+                // The fail-closed barrier is unavailable, so the call is not made.
+                throw DeviceAttestationError.keychainFailure(errSecInteractionNotAllowed)
+            }
+            return status
+        case .userInitiated:
+            return LegacyKeychainInteraction.withUserInteractionEnabled(operation)
         }
     }
 
@@ -98,6 +167,66 @@ public struct MacOSDeviceAttestationKeychain: DeviceAttestationRecoverableKeySto
         ]
         if let accessGroup { value[kSecAttrAccessGroup as String] = accessGroup }
         return value
+    }
+}
+
+/// Process-wide legacy Keychain UI policy, serialized so a `.forbidden` access
+/// can never run while a `.userInitiated` one has interaction enabled. The
+/// long-standing Security symbols are resolved dynamically, as the credential
+/// helper does, to keep the warning-clean macOS 15+ build free of the
+/// deprecated declarations.
+enum LegacyKeychainInteraction {
+    private typealias SetInteraction = @convention(c) (UInt8) -> OSStatus
+    private typealias GetInteraction = @convention(c) (UnsafeMutablePointer<UInt8>) -> OSStatus
+    private typealias GetStatus = @convention(c) (OpaquePointer?, UnsafeMutablePointer<UInt32>) -> OSStatus
+    private static let lock = NSLock()
+    private static let symbols: (set: SetInteraction, get: GetInteraction, status: GetStatus)? = {
+        guard let handle = dlopen(
+            "/System/Library/Frameworks/Security.framework/Security",
+            RTLD_LAZY | RTLD_LOCAL
+        ), let set = dlsym(handle, "SecKeychainSetUserInteractionAllowed"),
+           let get = dlsym(handle, "SecKeychainGetUserInteractionAllowed"),
+           let status = dlsym(handle, "SecKeychainGetStatus") else { return nil }
+        return (
+            unsafeBitCast(set, to: SetInteraction.self),
+            unsafeBitCast(get, to: GetInteraction.self),
+            unsafeBitCast(status, to: GetStatus.self)
+        )
+    }()
+
+    /// Runs `operation` with Keychain UI disabled process-wide, restoring the
+    /// previous setting afterwards. Returns nil, without calling `operation`,
+    /// when the barrier cannot be established.
+    static func withUserInteractionDisabled(_ operation: () -> OSStatus) -> OSStatus? {
+        run(allowingInteraction: false, operation)
+    }
+
+    /// Runs `operation` with Keychain UI enabled process-wide, restoring the
+    /// previous setting afterwards. Falls back to the process default when the
+    /// symbols are unavailable, because enabling UI is never fail-closed.
+    static func withUserInteractionEnabled(_ operation: () -> OSStatus) -> OSStatus {
+        run(allowingInteraction: true, operation) ?? operation()
+    }
+
+    /// True when the default (login) keychain reports a locked state; false
+    /// when unlocked or when the state cannot be read.
+    static func loginKeychainIsLocked() -> Bool {
+        guard let symbols else { return false }
+        var status: UInt32 = 0
+        guard symbols.status(nil, &status) == errSecSuccess else { return false }
+        // kSecUnlockStateStatus is bit 0 of SecKeychainStatus.
+        return status & 1 == 0
+    }
+
+    private static func run(allowingInteraction: Bool, _ operation: () -> OSStatus) -> OSStatus? {
+        guard let symbols else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        var previous: UInt8 = 1
+        let hadPrevious = symbols.get(&previous) == errSecSuccess
+        guard symbols.set(allowingInteraction ? 1 : 0) == errSecSuccess else { return nil }
+        defer { if hadPrevious { _ = symbols.set(previous) } else { _ = symbols.set(1) } }
+        return operation()
     }
 }
 
@@ -551,6 +680,46 @@ public final class DeviceAttestationAuthority: @unchecked Sendable {
             throw DeviceAttestationError.keyMaterialMismatch
         }
         return DeviceAttestationVerifier(publicKey: publicKey)
+    }
+
+    /// Explicit, user-triggered, read-only Keychain authorization for the two
+    /// existing attestation items. `interactiveStore` may present the native
+    /// permission prompt; it has no operation deadline because the user owns
+    /// the wait. Success is then proven through `noninteractiveStore`, the
+    /// exact store every background and startup path uses, so a one-time
+    /// allowance is reported as `.onceOnly` rather than as persistent access.
+    /// Nothing is created, replaced, or deleted: a missing half throws the
+    /// same typed errors the foreground bootstrap uses, and mismatched bytes
+    /// between the two reads throw `keyMaterialMismatch`.
+    public static func authorizeExistingKeychainAccess(
+        configuration: Configuration,
+        interactiveStore: any DeviceAttestationKeyStore,
+        noninteractiveStore: any DeviceAttestationKeyStore
+    ) throws -> DeviceAttestationKeychainAuthorizationOutcome {
+        let accounts = [configuration.privateKeyAccount, configuration.publicAnchorAccount]
+        var authorized: [Data] = []
+        for account in accounts {
+            guard let bytes = try interactiveStore.read(account: account) else {
+                throw account == configuration.privateKeyAccount
+                    ? DeviceAttestationError.privateKeyMissing
+                    : DeviceAttestationError.publicAnchorMissing
+            }
+            authorized.append(bytes)
+        }
+        for (account, expected) in zip(accounts, authorized) {
+            let fresh: Data?
+            do {
+                fresh = try noninteractiveStore.read(account: account)
+            } catch DeviceAttestationError.keychainFailure(errSecInteractionNotAllowed) {
+                // Interaction is still required without UI: the allowance was
+                // not persistent for this exact copy of the app.
+                return .onceOnly
+            }
+            guard let fresh, constantTimeEqual(fresh, expected) else {
+                throw DeviceAttestationError.keyMaterialMismatch
+            }
+        }
+        return .persistent
     }
 
     public func sign(payload: Data, domain: String) throws -> DeviceAttestationSignedEnvelope {

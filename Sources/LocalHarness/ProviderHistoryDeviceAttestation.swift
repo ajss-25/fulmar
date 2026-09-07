@@ -49,8 +49,18 @@ enum ProviderHistoryDeviceAttestation {
         )
     }
 
+    /// Background, startup, and every unattended path: Keychain UI is
+    /// disabled around each access, so a missing permission fails fast as
+    /// `errSecInteractionNotAllowed` instead of blocking on a prompt.
     static func productionKeyStore() -> MacOSDeviceAttestationKeychain {
-        MacOSDeviceAttestationKeychain(service: keychainService)
+        MacOSDeviceAttestationKeychain(service: keychainService, interaction: .forbidden)
+    }
+
+    /// The one store that may present the native permission prompt. It is
+    /// constructed only inside the explicit, user-triggered authorization
+    /// action and never retained.
+    static func userInitiatedKeyStore() -> MacOSDeviceAttestationKeychain {
+        MacOSDeviceAttestationKeychain(service: keychainService, interaction: .userInitiated)
     }
 
     static func openForeground(

@@ -47,6 +47,18 @@ private final class MemoryKeyStore: DeviceAttestationRecoverableKeyStore, @unche
     func resetObservations() { lock.withLock { reads = []; inserts = []; deletes = [] } }
 }
 
+/// Stands in for a legacy login-keychain read that blocks on a SecurityAgent
+/// prompt before returning the item: the read succeeds, but only after `delay`.
+private struct SlowKeyStore: DeviceAttestationKeyStore {
+    let backing: MemoryKeyStore
+    let delay: TimeInterval
+    func read(account: String) throws -> Data? {
+        usleep(UInt32(delay * 1_000_000))
+        return try backing.read(account: account)
+    }
+    func insert(_ data: Data, account: String) throws { try backing.insert(data, account: account) }
+}
+
 private struct Fixture {
     let root: URL
     let configuration: DeviceAttestationAuthority.Configuration
@@ -103,7 +115,76 @@ private struct Fixture {
         try run("tamper", markerTamperAndDeadline)
         try run("harness-home", harnessHomeCapabilityTamperSwapAndCrash)
         try run("harness-home-rotation", harnessHomeRotationCrashRecovery)
-        print("DeviceAttestationAuthorityTests: 10 passed")
+        try run("keychain-authorization", keychainPromptDeadlineAndExplicitAuthorization)
+        print("DeviceAttestationAuthorityTests: 11 passed")
+    }
+
+    /// Faithful reproduction of the owner-visible failure and the explicit
+    /// authorization contract that replaces it. No live Keychain is touched.
+    static func keychainPromptDeadlineAndExplicitAuthorization() throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let keys = MemoryKeyStore()
+        _ = try DeviceAttestationAuthority.openForeground(configuration: fixture.configuration, keyStore: keys)
+        let privateAccount = fixture.configuration.privateKeyAccount
+        let anchorAccount = fixture.configuration.publicAnchorAccount
+
+        // A "noninteractive" read that blocks on a permission prompt longer
+        // than the operation deadline succeeds too late: the verifier reports
+        // deadlineExceeded and the granted access is discarded. The same read
+        // returning promptly verifies.
+        let slow = SlowKeyStore(backing: keys, delay: 0.2)
+        let short = DeviceAttestationAuthority.Configuration(controlParent: fixture.root, operationDuration: 0.05)
+        try expectThrows(.deadlineExceeded) {
+            _ = try DeviceAttestationAuthority.openBackgroundVerifier(configuration: short, keyStore: slow)
+        }
+        _ = try DeviceAttestationAuthority.openBackgroundVerifier(configuration: fixture.configuration, keyStore: keys)
+
+        // Explicit authorization is read-only and proves persistence through
+        // the noninteractive store, never through the interactive one.
+        let interactive = MemoryKeyStore(keys.values)
+        try expect(try DeviceAttestationAuthority.authorizeExistingKeychainAccess(
+            configuration: fixture.configuration, interactiveStore: interactive, noninteractiveStore: keys
+        ) == .persistent, "both stores readable is persistent")
+        try expect(interactive.reads == [privateAccount, anchorAccount], "interactive read order")
+        try expect(interactive.inserts.isEmpty && interactive.deletes.isEmpty, "authorization mutated the Keychain")
+        let refused = MemoryKeyStore(keys.values); refused.failure = .keychainFailure(errSecInteractionNotAllowed)
+        try expect(try DeviceAttestationAuthority.authorizeExistingKeychainAccess(
+            configuration: fixture.configuration, interactiveStore: interactive, noninteractiveStore: refused
+        ) == .onceOnly, "a still-refused unattended read is once-only")
+        let cancelled = MemoryKeyStore(keys.values); cancelled.failure = .keychainFailure(errSecUserCanceled)
+        try expectThrows(.keychainFailure(errSecUserCanceled)) {
+            _ = try DeviceAttestationAuthority.authorizeExistingKeychainAccess(
+                configuration: fixture.configuration, interactiveStore: cancelled, noninteractiveStore: keys
+            )
+        }
+        try expect(cancelled.inserts.isEmpty, "cancellation mutated the Keychain")
+        let missingPrivate = MemoryKeyStore([anchorAccount: keys.values[anchorAccount]!])
+        try expectThrows(.privateKeyMissing) {
+            _ = try DeviceAttestationAuthority.authorizeExistingKeychainAccess(
+                configuration: fixture.configuration, interactiveStore: missingPrivate, noninteractiveStore: keys
+            )
+        }
+        let missingAnchor = MemoryKeyStore([privateAccount: keys.values[privateAccount]!])
+        try expectThrows(.publicAnchorMissing) {
+            _ = try DeviceAttestationAuthority.authorizeExistingKeychainAccess(
+                configuration: fixture.configuration, interactiveStore: missingAnchor, noninteractiveStore: keys
+            )
+        }
+        try expect(missingPrivate.inserts.isEmpty && missingAnchor.inserts.isEmpty, "a missing half was created")
+        let different = MemoryKeyStore(keys.values); different.values[anchorAccount] = Data(repeating: 1, count: 32)
+        try expectThrows(.keyMaterialMismatch) {
+            _ = try DeviceAttestationAuthority.authorizeExistingKeychainAccess(
+                configuration: fixture.configuration, interactiveStore: interactive, noninteractiveStore: different
+            )
+        }
+
+        // Status classification is content-free and distinguishes denial from
+        // a pending permission or lock; other codes are reported verbatim.
+        try expect(DeviceAttestationKeychainAccessProblem.classify(errSecAuthFailed) == .deniedOrCancelled, "auth failed")
+        try expect(DeviceAttestationKeychainAccessProblem.classify(errSecUserCanceled) == .deniedOrCancelled, "user cancelled")
+        try expect(DeviceAttestationKeychainAccessProblem.classify(errSecIO) == .other(errSecIO), "other status")
+        let interaction = DeviceAttestationKeychainAccessProblem.classify(errSecInteractionNotAllowed)
+        try expect(interaction == .authorizationRequired || interaction == .keychainLocked, "interaction not allowed")
     }
 
     static func run(_ name: String, _ body: () throws -> Void) throws {
