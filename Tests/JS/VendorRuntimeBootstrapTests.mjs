@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -16,10 +16,14 @@ import {
   patchPiAIReadmeEnglish,
   patchPiAIOpenAIClientNoAuth
 } from "../../scripts/materialize-vendor-runtime.mjs";
+import { loadManifest, loadRustNoticeMaterials, renderInventory } from "../../scripts/prepare-libvips-source-materials.mjs";
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const script = join(project, "scripts", "materialize-vendor-runtime.mjs");
 const nodeBootstrap = join(project, "scripts", "fetch-node-runtime.sh");
+const noticeMaterialsGlue = join(project, "scripts", "prepare-third-party-notice-materials.mjs");
+const noticeMaterialsRelative = ["build", "third-party-notice-materials", "sharp-libvips-1.3.2-rust-crate-materials"];
+const projectNoticeMaterials = join(project, ...noticeMaterialsRelative);
 const npmCLI = join(
   project,
   "VendorRuntime",
@@ -363,6 +367,183 @@ test("public bootstrap strips NODE_OPTIONS before any pinned Node process", asyn
     });
     assert.equal(result.status, 0, result.stderr);
     await assert.rejects(readFile(marker), { code: "ENOENT" });
+    // The same clean lane prepares the notice-material cache. A test run must
+    // stay offline: the cache prepared by the real bootstrap beforehand is
+    // re-verified as a hit, never acquired again, and only HTTPS-acquired,
+    // authoritative output is accepted.
+    assert.match(result.stderr, new RegExp(`^verified notice-material cache ${projectNoticeMaterials.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")}: transport https \\(authoritative\\); 159 items \\(12047290 bytes\\); inventory sha256:[0-9a-f]{64}; checksum list sha256:[0-9a-f]{64}; RUST_CRATE_NOTICES\\.md sha256:[0-9a-f]{64}; external notice material Config/SharpLibvipsRustNoticeMaterials\\.json \\(sha256:[0-9a-f]{64}; established 2, unresolved 4\\)$`, "mu"));
+    assert.doesNotMatch(result.stderr, /acquiring|published .* via .* transport|\(NOT authoritative\)/u, "the test run must not acquire the cache");
+    assert.match(result.stdout, /third-party notice materials are reconstructed and verified/u);
+    const cache = await stat(projectNoticeMaterials);
+    assert.ok(cache.isDirectory());
+    assert.equal(cache.mode & 0o777, 0o700);
+    assert.equal(cache.uid, process.getuid());
+    assert.equal((await stat(join(project, "build", "third-party-notice-materials"))).mode & 0o777, 0o700);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// The notice-material cache glue is exercised against a private fixture root
+// that carries the tracked manifests and their external notice material, plus
+// a fake acquisition tool that records what it received and refuses. Nothing
+// here touches the network; the one real cache it reads is the one the actual
+// bootstrap prepared above, copied and relabelled so that fixture-transport
+// output is proven to be refused.
+async function noticeMaterialsFixture() {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "fulmar-notice-materials.")));
+  await mkdir(join(root, "scripts"), { mode: 0o700 });
+  await mkdir(join(root, "Config"), { mode: 0o700 });
+  await mkdir(join(root, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.2", "rust"), { recursive: true, mode: 0o700 });
+  for (const name of ["SharpLibvipsRustProvenance.json", "SharpLibvipsRustNoticeMaterials.json", "ThirdPartyBinaryProvenance.json"]) {
+    await copyFile(join(project, "Config", name), join(root, "Config", name));
+  }
+  for (const name of ["mutants-0.0.4-external-cargo-mutants-LICENSE", "selectors-0.38.0-external-spdx-3.28.0-MPL-2.0.txt"]) {
+    await copyFile(join(project, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.2", "rust", name),
+      join(root, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.2", "rust", name));
+  }
+  const observed = join(root, "observed-acquisition.json");
+  await writeFile(join(root, "scripts", "prepare-libvips-source-materials.mjs"), [
+    'import { writeFileSync } from "node:fs";',
+    `writeFileSync(${JSON.stringify(observed)}, JSON.stringify({ env: process.env, args: process.argv.slice(2), execArgv: process.execArgv, cwd: process.cwd() }));`,
+    'process.stderr.write("fake acquisition tool refused\\n");',
+    "process.exit(3);",
+    ""
+  ].join("\n"));
+  return { root, observed, cache: join(root, ...noticeMaterialsRelative), cacheDirectory: join(root, "build", "third-party-notice-materials") };
+}
+
+function runNoticeMaterials(args, env = process.env) {
+  return spawnSync(process.execPath, [noticeMaterialsGlue, ...args], { encoding: "utf8", env, timeout: 120_000 });
+}
+
+test("notice-material cache preparation admits only a private canonical cache, refuses stale or fixture output and inherits nothing into acquisition", async () => {
+  const { root, observed, cache, cacheDirectory } = await noticeMaterialsFixture();
+  try {
+    // Absent cache: the existing acquisition tool is invoked exactly once with
+    // the tracked manifests, HTTPS transport and an environment that carries
+    // no loader, proxy, CA store, credential or registry setting.
+    const poisoned = {
+      ...process.env,
+      NODE_PATH: join(root, "attacker-modules"),
+      NODE_EXTRA_CA_CERTS: join(root, "attacker-ca.pem"),
+      HTTPS_PROXY: "http://credential@example.invalid:9999",
+      ALL_PROXY: "socks5://credential@example.invalid:9999",
+      SSH_AUTH_SOCK: join(root, "attacker-agent.sock"),
+      CARGO_REGISTRY_TOKEN: "must-not-reach-child",
+      NPM_TOKEN: "must-not-reach-child",
+      npm_config_registry: "https://example.invalid/"
+    };
+    const absent = runNoticeMaterials(["prepare", root], poisoned);
+    assert.notEqual(absent.status, 0);
+    assert.match(absent.stderr, /notice-material cache absent: .*; acquiring 159 crate materials \(12047290 bytes\) over HTTPS/u);
+    assert.match(absent.stderr, /fake acquisition tool refused/u);
+    assert.match(absent.stderr, /HTTPS acquisition failed \(status 3\); no cache was published at/u);
+    const acquisition = JSON.parse(await readFile(observed, "utf8"));
+    assert.deepEqual(acquisition.args, [
+      "acquire", join(root, "Config", "SharpLibvipsRustProvenance.json"), cache,
+      "--transport", "https", "--notice-materials", join(root, "Config", "SharpLibvipsRustNoticeMaterials.json")
+    ]);
+    assert.deepEqual(Object.keys(acquisition.env).filter((name) => name !== "__CF_USER_TEXT_ENCODING").sort(), ["LANG", "LC_ALL", "PATH", "TMPDIR"]);
+    assert.equal(acquisition.env.PATH, "/usr/bin:/bin:/usr/sbin:/sbin");
+    assert.deepEqual(acquisition.execArgv, []);
+    assert.equal(acquisition.cwd, root);
+    assert.equal((await stat(join(root, "build"))).mode & 0o777, 0o700);
+    assert.equal((await stat(cacheDirectory)).mode & 0o777, 0o700);
+    await assert.rejects(stat(cache), { code: "ENOENT" });
+    await rm(observed);
+
+    // Release-script verification never acquires: an absent cache names the
+    // bootstrap, an operand outside the literal path is refused outright.
+    const verifyAbsent = runNoticeMaterials(["verify", root, cache]);
+    assert.notEqual(verifyAbsent.status, 0);
+    assert.match(verifyAbsent.stderr, /notice-material cache is absent: .*; run scripts\/bootstrap-source-checkout\.sh \(which acquires it over HTTPS\)/u);
+    const wrongOperand = runNoticeMaterials(["verify", root, join(root, "build", "elsewhere")]);
+    assert.notEqual(wrongOperand.status, 0);
+    assert.match(wrongOperand.stderr, /is not the literal checkout-local cache/u);
+    await assert.rejects(stat(observed), { code: "ENOENT" });
+
+    // Unsafe pre-existing paths are refused before any acquisition and are
+    // never chmod-followed or removed.
+    const unsafe = [
+      {
+        name: "symbolic-link containing directory",
+        arrange: async () => { await rm(cacheDirectory, { recursive: true }); await mkdir(join(root, "elsewhere"), { mode: 0o700 }); await symlink(join(root, "elsewhere"), cacheDirectory); },
+        message: /notice-material cache directory is a symbolic link, which the release cache refuses/u,
+        restore: async () => { await rm(cacheDirectory); await rm(join(root, "elsewhere"), { recursive: true }); await mkdir(cacheDirectory, { mode: 0o700 }); }
+      },
+      {
+        name: "group- and world-readable containing directory",
+        arrange: async () => { await rm(cacheDirectory, { recursive: true }); await mkdir(cacheDirectory, { mode: 0o755 }); },
+        message: /notice-material cache directory is unsafe \(notice-material cache directory is not owner-private: third-party-notice-materials\)/u,
+        after: async () => assert.equal((await stat(cacheDirectory)).mode & 0o777, 0o755, "an unsafe mode is reported, never corrected"),
+        restore: async () => { await rm(cacheDirectory, { recursive: true }); await mkdir(cacheDirectory, { mode: 0o700 }); }
+      },
+      {
+        name: "regular file at the cache path",
+        arrange: async () => writeFile(cache, "not a directory\n", { mode: 0o600 }),
+        message: /notice-material cache is not a directory: .*; remove it deliberately/u,
+        restore: async () => rm(cache)
+      },
+      {
+        name: "symbolic link at the cache path",
+        arrange: async () => { await mkdir(join(root, "elsewhere"), { mode: 0o700 }); await symlink(join(root, "elsewhere"), cache); },
+        message: /notice-material cache is a symbolic link, which the release cache refuses/u,
+        restore: async () => { await rm(cache); await rm(join(root, "elsewhere"), { recursive: true }); }
+      },
+      {
+        name: "stale cache",
+        arrange: async () => { await mkdir(cache, { mode: 0o700 }); await writeFile(join(cache, "INVENTORY.json"), "stale\n", { mode: 0o600 }); },
+        message: /existing notice-material cache is invalid or stale: .*: destination is missing expected entries; inspect it with "scripts\/prepare-libvips-source-materials\.mjs verify Config\/SharpLibvipsRustProvenance\.json .* --notice-materials Config\/SharpLibvipsRustNoticeMaterials\.json", remove it deliberately if it is stale, then rerun scripts\/bootstrap-source-checkout\.sh; nothing is overwritten or deleted automatically/u,
+        after: async () => assert.equal(await readFile(join(cache, "INVENTORY.json"), "utf8"), "stale\n", "a stale cache is left in place for the operator"),
+        restore: async () => rm(cache, { recursive: true })
+      }
+    ];
+    for (const current of unsafe) {
+      await current.arrange();
+      for (const command of [["prepare", root], ["verify", root, cache]]) {
+        const result = runNoticeMaterials(command);
+        assert.notEqual(result.status, 0, `${current.name} must fail for ${command[0]}`);
+        assert.match(result.stderr, current.message, `${current.name} (${command[0]}): ${result.stderr}`);
+        assert.ok(result.stderr.includes(cacheDirectory), `${current.name} must name the exact path: ${result.stderr}`);
+        await assert.rejects(stat(observed), { code: "ENOENT" }, `${current.name} must not attempt acquisition`);
+      }
+      await current.after?.();
+      await current.restore();
+    }
+
+    // Fixture-transport output is refused for the production cache even when
+    // every byte verifies: the real HTTPS cache is copied and its inventory is
+    // re-rendered exactly as the acquisition tool would for local-fixture
+    // transport, so only the recorded acquisition mode differs.
+    await stat(projectNoticeMaterials).catch(() => {
+      throw new Error(`the real notice-material cache is absent at ${projectNoticeMaterials}; run scripts/bootstrap-source-checkout.sh before the JS suites`);
+    });
+    await mkdir(cache, { mode: 0o700 });
+    await cp(projectNoticeMaterials, cache, { recursive: true, errorOnExist: false, force: true });
+    const verifyHTTPSCopy = runNoticeMaterials(["verify", root, cache]);
+    assert.equal(verifyHTTPSCopy.status, 0, verifyHTTPSCopy.stderr);
+    assert.match(verifyHTTPSCopy.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 159 items/mu);
+    const { manifest, manifestSHA256, manifestPath } = await loadManifest(join(root, "Config", "SharpLibvipsRustProvenance.json"));
+    const noticeMaterials = await loadRustNoticeMaterials(join(root, "Config", "SharpLibvipsRustNoticeMaterials.json"), manifest, manifestPath);
+    const inventory = JSON.parse(await readFile(join(cache, "INVENTORY.json"), "utf8"));
+    assert.equal(inventory.transport, "https");
+    const relabelled = renderInventory(manifest, manifestSHA256, new Map(inventory.items.map((item) => [item.id, item.redirectHosts])), "local-fixture", inventory.rustNoticesSHA256, noticeMaterials);
+    assert.equal(relabelled.sumsText, await readFile(join(cache, "SHA256SUMS"), "utf8"));
+    await writeFile(join(cache, "INVENTORY.json"), relabelled.inventoryText, { mode: 0o600 });
+    for (const command of [["prepare", root], ["verify", root, cache]]) {
+      const result = runNoticeMaterials(command);
+      assert.notEqual(result.status, 0, `fixture transport must be refused for ${command[0]}`);
+      assert.match(result.stderr, /existing notice-material cache records transport local-fixture \(NOT authoritative\): .*; the release cache must be acquired over HTTPS, so remove it deliberately and rerun scripts\/bootstrap-source-checkout\.sh/u);
+      await assert.rejects(stat(observed), { code: "ENOENT" });
+    }
+    // The relabelled copy still verifies as fixture output for the materials
+    // tool itself, which is what proves the refusal came from the recorded
+    // transport rather than from drifted bytes.
+    const fixtureVerify = spawnSync(process.execPath, [join(project, "scripts", "prepare-libvips-source-materials.mjs"), "verify",
+      join(root, "Config", "SharpLibvipsRustProvenance.json"), cache, "--notice-materials", join(root, "Config", "SharpLibvipsRustNoticeMaterials.json")], { encoding: "utf8", timeout: 120_000 });
+    assert.equal(fixtureVerify.status, 0, fixtureVerify.stderr);
+    assert.match(fixtureVerify.stderr, /transport local-fixture \(NOT authoritative\)/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

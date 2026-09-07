@@ -654,6 +654,14 @@ test("sharp-libvips per-component notices bind end to end from the tracked prove
 });
 
 test("release call sites bind the runtime root and authoritative override config", async () => {
+  // Every caller binds the same literal checkout-local cache, verifies it with
+  // the integration glue before regenerating, hands the exact operand to the
+  // generator and never acquires or falls back to unbound notices.
+  const crateManifest = JSON.parse(await readFile(join(project, "Config", "SharpLibvipsRustProvenance.json"), "utf8"));
+  const literal = `RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/${crateManifest.outputDirectoryName}"`;
+  assert.equal(crateManifest.outputDirectoryName, "sharp-libvips-1.3.2-rust-crate-materials");
+  const verification = /"\$(?:NODE_BIN|INVENTORY_NODE|NODE)" "\$NOTICE_MATERIALS_TOOL" verify "\$PROJECT_DIR" "\$RUST_CRATE_MATERIALS"\n/u;
+  const generation = /generate-third-party-notices\.mjs" \\\n(?:  [^\n]*\\\n)*  --rust-crate-materials "\$RUST_CRATE_MATERIALS"\n/u;
   for (const path of [
     "scripts/build-app.sh",
     "scripts/verify-release.sh",
@@ -664,7 +672,19 @@ test("release call sites bind the runtime root and authoritative override config
     assert.match(source, /generate-third-party-notices\.mjs/u, path);
     assert.match(source, /Config\/ThirdPartyLicenseOverrides\.json/u, path);
     assert.doesNotMatch(source, /generate-third-party-notices\.mjs"[\s\\\n]+[^\n]*package-lock\.json/u, path);
+    assert.ok(source.includes(literal), `${path} must bind the literal checkout-local notice-material cache`);
+    assert.ok(source.includes('NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"'), path);
+    assert.equal((source.match(/generate-third-party-notices\.mjs/gu) ?? []).length, 1, `${path} regenerates notices exactly once`);
+    assert.match(source, generation, `${path} must pass the exact materials operand to the generator`);
+    const verificationOffset = source.search(verification);
+    assert.ok(verificationOffset >= 0, `${path} must verify the notice-material cache with the integration glue`);
+    assert.ok(verificationOffset < source.indexOf("generate-third-party-notices.mjs"), `${path} must verify the cache before regenerating notices`);
+    assert.ok(verificationOffset > source.indexOf("node-v22.23.1-darwin-arm64/bin/node"), `${path} must locate the pinned Node before verifying the cache`);
+    assert.doesNotMatch(source, /prepare-third-party-notice-materials\.mjs" prepare|prepare-libvips-source-materials\.mjs|--transport|--notice-materials/u, `${path} must never acquire notice materials`);
   }
+  const bootstrap = await readFile(join(project, "scripts", "bootstrap-source-checkout.sh"), "utf8");
+  assert.ok(bootstrap.includes('run_pinned_node "$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs" prepare "$PROJECT_DIR"'));
+  assert.doesNotMatch(bootstrap, /generate-third-party-notices\.mjs|--rust-crate-materials/u, "the bootstrap prepares the cache but never renders notices");
 });
 
 // ---------------------------------------------------------------------------

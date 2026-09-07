@@ -213,6 +213,33 @@ test("the production build exposes one bounded pre-sign mode and the gate proves
   assert.match(gate, /compare-inventories/u);
   assert.doesNotMatch(gate, /\/usr\/bin\/security|codesign|notarytool/u);
 
+  // The verified notice-material cache is transported into both clean clones
+  // as independent byte-preserving copies at the identical relative path, each
+  // verified by that clone's own pinned Node against its tracked manifests
+  // before either offline build; the gate and both builds never acquire.
+  const relative = "build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials";
+  assert.match(gate, new RegExp(`^NOTICE_MATERIALS_RELATIVE="${relative}"$`, "mu"));
+  assert.match(gate, /^RUST_CRATE_MATERIALS="\$PROJECT_DIR\/\$NOTICE_MATERIALS_RELATIVE"$/mu);
+  const sourceVerification = gate.indexOf('"$NODE" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"');
+  const cloneCopy = gate.indexOf('/usr/bin/ditto --norsrc --noextattr --noacl --noqtn \\\n    "$RUST_CRATE_MATERIALS" "$checkout/$NOTICE_MATERIALS_RELATIVE"');
+  const cloneVerification = gate.indexOf('"$checkout/scripts/prepare-third-party-notice-materials.mjs" verify \\\n    "$checkout" "$checkout/$NOTICE_MATERIALS_RELATIVE"');
+  const cloneTreeCheck = gate.indexOf("A prepared reproducibility clone changed its committed source tree.");
+  const firstBuild = gate.indexOf('build-app.sh" --unsigned-reproducibility-root');
+  assert.ok(sourceVerification >= 0 && cloneCopy > sourceVerification, "the source cache is verified before it is copied");
+  assert.ok(gate.indexOf('/bin/mkdir -m 0700 "$checkout/build/third-party-notice-materials"') < cloneCopy, "the containing directory is created privately before the copy");
+  assert.ok(cloneVerification > cloneCopy && cloneTreeCheck > cloneVerification && firstBuild > cloneTreeCheck,
+    "each clone copy is verified, then the committed tree is rechecked, before any build");
+  assert.equal((gate.match(/prepare-third-party-notice-materials\.mjs/gu) ?? []).length, 2, "the source tool binding plus one per-clone verification through the clone's own script");
+  assert.doesNotMatch(gate, /prepare-third-party-notice-materials\.mjs" prepare|prepare-libvips-source-materials\.mjs|--transport|--notice-materials|curl/u, "the gate never acquires");
+  assert.match(build, /^RUST_CRATE_MATERIALS="\$PROJECT_DIR\/build\/third-party-notice-materials\/sharp-libvips-1\.3\.2-rust-crate-materials"$/mu);
+  const buildVerification = build.indexOf('"$NODE_BIN" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"');
+  assert.ok(buildVerification >= 0 && buildVerification < build.indexOf("swift_release_command=("), "the build verifies the cache before compiling");
+  assert.ok(buildVerification > build.indexOf('ACTUAL_NODE_SHA256="$(/usr/bin/shasum -a 256 "$NODE_BIN"'), "the build verifies the cache only with the authenticated Node");
+  assert.match(build, /--rust-crate-materials "\$RUST_CRATE_MATERIALS"/u);
+  assert.doesNotMatch(build, /prepare-third-party-notice-materials\.mjs" prepare|prepare-libvips-source-materials\.mjs|--transport/u, "the build never acquires");
+  const snapshotRoots = /source_snapshot_roots=\(\n([\s\S]*?)\n\)/u.exec(build)?.[1].split("\n").map((line) => line.trim()).filter(Boolean);
+  assert.ok(snapshotRoots.length > 0 && !snapshotRoots.includes("build"), "the cache never enters the compiler-only source snapshot");
+
   assert.match(symbolVerifier, /exactly eight reviewed dSYM bundles/u);
   assert.match(symbolVerifier, /eight arm64 executables/u);
   for (const script of ["build-app.sh", "verify-two-root-reproducibility.sh"]) {
