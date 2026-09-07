@@ -77,8 +77,9 @@ members), "Acknowledgements required in accompanying documentation" (the exact
 FTL and IJG statements and the cairo retained-text clarification, verified
 verbatim against the documentation file) and "Delivery material inventory"
 (every consumed input and rendered output by SHA-256). The 29-component section
-and the first-party licence semantics are unchanged. Integration of the operand
-into `scripts/build-app.sh` is Codex work, see "Proposed packaging integration".
+and the first-party licence semantics are unchanged. The operand is wired into
+`scripts/build-app.sh` and the other three release call sites from a private
+checkout-local cache, see "Packaging integration".
 
 Facts surfaced by the exact texts that the upstream README table does not show,
 returned for owner/legal review rather than resolved here:
@@ -324,19 +325,41 @@ Because of items 8 and 9 (and the four unresolved crate notices),
 `Config/ThirdPartyBinaryProvenance.json` keeps `corresponding-source` and
 `relinking-and-installation-information` **open**.
 
-## Proposed packaging integration (for Codex; not applied)
+## Packaging integration
 
-The current nine-asset public package contract is unchanged. Two seams are
-now concrete and are Codex work:
+The current nine-asset public package contract is unchanged. The notice
+generation seam is wired; the delivery-set distribution remains Codex/owner
+work:
 
-- **Notice generation.** `scripts/build-app.sh` (and the other release call
-  sites of the generator) must pass
-  `--rust-crate-materials <verified sharp-libvips-1.3.2-rust-crate-materials>`,
-  a private build input acquired by
-  `prepare-libvips-source-materials.mjs acquire Config/SharpLibvipsRustProvenance.json … --notice-materials Config/SharpLibvipsRustNoticeMaterials.json`
-  (HTTPS for an authoritative label, or an offline re-read of retained bytes
-  labelled non-authoritative). Until it does, the production invocation fails
-  closed by design rather than shipping notices without the Rust texts.
+- **Notice generation (wired).** The verified crate materials are an internal
+  build input cached at the literal checkout-local path
+  `build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials`
+  (the crate manifest's `outputDirectoryName`, bound by
+  `scripts/prepare-third-party-notice-materials.mjs`). Only the clean source
+  bootstrap (`scripts/bootstrap-source-checkout.sh`, after the complete runtime
+  verification) prepares it: `prepare-third-party-notice-materials.mjs prepare`
+  creates the private (0700) containing directory, refuses an unsafe
+  pre-existing path instead of chmod-following it, reuses an existing cache
+  only after complete verification, fails a stale or invalid cache with its
+  exact path and recovery instruction (nothing is overwritten or deleted), and
+  acquires an absent cache over HTTPS by running the existing
+  `prepare-libvips-source-materials.mjs acquire … --transport https --notice-materials Config/SharpLibvipsRustNoticeMaterials.json`
+  in a child process that inherits no environment. `scripts/build-app.sh`
+  (before any native compilation), `scripts/verify-release.sh`,
+  `scripts/prepare-public-release-assets.sh` and
+  `scripts/verify-public-distribution.sh` each run
+  `prepare-third-party-notice-materials.mjs verify` with the pinned Node, which
+  re-verifies every byte against the tracked manifests and requires the
+  recorded acquisition to be transport `https` and authoritative (fixture
+  output is refused for the production cache), then pass
+  `--rust-crate-materials "$RUST_CRATE_MATERIALS"` to the generator, which
+  re-verifies at consumption. None of them acquires, downloads or falls back
+  to unbound notices. `scripts/verify-two-root-reproducibility.sh` verifies the
+  source cache, gives each clean clone an independent byte-preserving copy at
+  the identical relative path and verifies it with the clone's own pinned Node
+  before either offline build. The cache never enters the compiler-only source
+  snapshot, the app runtime, the runtime inventory or a public asset, and its
+  presence is not a corresponding-source offer.
 - **Delivery set.** `scripts/stage-libvips-delivery-materials.mjs` produces the
   verified `sharp-libvips-1.3.2-delivery-materials/` directory described above;
   deterministic archive packaging (a single ZIP/TAR of that directory) is one
