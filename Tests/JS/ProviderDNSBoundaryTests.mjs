@@ -349,8 +349,10 @@ test("runtime authentication stdin rejects malformed, linked, wrong-mode, oversi
         encoding: "utf8",
         timeout: 3_000
       });
-      assert.notEqual(result.status, 0, "preloader accepted an unsafe authentication record");
+      assert.equal(result.error, undefined, "unsafe authentication probe failed to launch");
+      assert.equal(result.status, 1, "preloader did not reject an unsafe authentication record before application code");
       assert.equal(result.signal, null, "preloader hung on an unsafe authentication record");
+      assert.match(result.stderr, /^Error: Fulmar refused an unsafe private runtime authentication input\.$/mu);
       assert.equal(result.stdout.includes(fixtureAuthToken) || result.stderr.includes(fixtureAuthToken)
         || result.stdout.includes(fixtureInstanceNonce) || result.stderr.includes(fixtureInstanceNonce), false,
       "preloader disclosed rejected authentication material");
@@ -377,7 +379,10 @@ test("runtime authentication stdin rejects malformed, linked, wrong-mode, oversi
       encoding: "utf8",
       timeout: 3_000
     });
-    assert.notEqual(legacy.status, 0, "preloader accepted legacy environment authentication");
+    assert.equal(legacy.error, undefined, "legacy authentication probe failed to launch");
+    assert.equal(legacy.status, 1, "preloader did not reject legacy environment authentication before application code");
+    assert.equal(legacy.signal, null, "preloader was signalled on legacy environment authentication");
+    assert.match(legacy.stderr, /^Error: Fulmar refused legacy runtime authentication material\.$/mu);
     assert.equal(legacy.stdout.includes(fixtureAuthToken) || legacy.stderr.includes(fixtureAuthToken)
       || legacy.stdout.includes(fixtureInstanceNonce) || legacy.stderr.includes(fixtureInstanceNonce), false,
     "preloader disclosed legacy authentication material");
@@ -404,10 +409,12 @@ test("runtime authentication rejects an unpublished, standard, or malformed desc
       const result = spawnSync(process.execPath, [
         "--import", preload, "--input-type=module", "-e", "process.exit(94)"
       ], { env: environment, stdio: handoff.stdio, encoding: "utf8", timeout: 3_000 });
-      assert.notEqual(result.status, 0,
-        `preloader accepted the descriptor number ${JSON.stringify(published)}`);
+      assert.equal(result.error, undefined, "descriptor-number probe failed to launch");
+      assert.equal(result.status, 1,
+        `preloader did not reject the descriptor number ${JSON.stringify(published)} before application code`);
       assert.equal(result.signal, null,
         `preloader aborted on the descriptor number ${JSON.stringify(published)}`);
+      assert.match(result.stderr, /^Error: Fulmar refused an unsafe private runtime authentication input\.$/mu);
       assert.equal(result.stdout.includes(fixtureAuthToken) || result.stderr.includes(fixtureAuthToken)
         || result.stdout.includes(fixtureInstanceNonce) || result.stderr.includes(fixtureInstanceNonce), false,
       "preloader disclosed authentication material while refusing a descriptor number");
@@ -432,8 +439,10 @@ test("runtime authentication refuses a record that is still reachable through st
       encoding: "utf8",
       timeout: 3_000
     });
-    assert.notEqual(result.status, 0, "preloader accepted a record still reachable through stdin");
+    assert.equal(result.error, undefined, "stdin-alias authentication probe failed to launch");
+    assert.equal(result.status, 1, "preloader did not reject a record still reachable through stdin before application code");
     assert.equal(result.signal, null, "preloader aborted on a record still reachable through stdin");
+    assert.match(result.stderr, /^Error: Fulmar refused an unsafe private runtime authentication input\.$/mu);
     assert.equal(result.stdout.includes(fixtureAuthToken) || result.stderr.includes(fixtureAuthToken)
       || result.stdout.includes(fixtureInstanceNonce) || result.stderr.includes(fixtureInstanceNonce), false,
     "preloader disclosed authentication material while refusing a reachable record");
