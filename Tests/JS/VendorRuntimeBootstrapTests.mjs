@@ -156,6 +156,74 @@ test("review manifest binds the lock, exact upstream packages, and every install
   } finally {
     await rm(home, { recursive: true, force: true });
   }
+
+  // The assembler relocates the dsh package itself out of node_modules. Invoke
+  // the exact standalone helper against that packaged layout; calling the boot
+  // exports from the npm checkout alone cannot catch a wrong manifest anchor.
+  // These are the real pinned boot import closure and its two shipped layers,
+  // not substituted exports or a copy of the complete 400 MB runtime.
+  const assembledRoot = await realpath(await mkdtemp(join(tmpdir(), "fulmar-assembled-profile.")));
+  try {
+    const resources = join(assembledRoot, "Resources");
+    const runtime = join(resources, "Runtime", "dsh");
+    const moduleRoot = join(runtime, "node_modules");
+    const bootModules = [
+      ["@deepseek-ai/dsh-app-boot", "lib/index.js"],
+      ["js-yaml", "dist/js-yaml.mjs"],
+      ["@deepseek-ai/cordis", "lib/index.js"],
+      ["@deepseek-ai/cordis-plugin-loader", "lib/index.js"],
+      ["@deepseek-ai/cordis-plugin-group", "lib/index.js"],
+      ["@deepseek-ai/dsh-home-paths", "lib/index.js"],
+      ["@deepseek-ai/dsh-launch-environment", "lib/index.js"],
+      ["@deepseek-ai/cosmokit", "lib/index.js"],
+      ["@deepseek-ai/dsh-base", "cordis.patch.yml"],
+      ["@deepseek-ai/dsh-web-app", "cordis.patch.yml"]
+    ];
+    let copiedBytes = 0;
+    for (const [name, entry] of bootModules) {
+      for (const relative of ["package.json", entry]) {
+        const source = join(project, "VendorRuntime", "node_modules", name, relative);
+        copiedBytes += (await stat(source)).size;
+        await copyRegular(source, join(moduleRoot, name, relative));
+      }
+    }
+    const helper = join(resources, "PrepareHarnessProfile.mjs");
+    await copyRegular(join(project, "Resources", "PrepareHarnessProfile.mjs"), helper);
+    await copyRegular(join(project, "VendorRuntime", "node_modules", "@deepseek-ai", "dsh", "package.json"),
+      join(runtime, "package.json"));
+    assert.ok(copiedBytes > 250_000 && copiedBytes < 512 * 1024,
+      "the assembled boot fixture must remain the bounded real import closure");
+    assert.equal(await stat(join(moduleRoot, "@deepseek-ai", "dsh", "package.json"))
+      .then(() => true, (error) => { if (error.code === "ENOENT") return false; throw error; }), false,
+    "the fixture must not preserve the npm-only manifest location");
+    for (const name of ["first-private-home", "second-private-home"]) {
+      const preparedHome = join(assembledRoot, name);
+      await mkdir(preparedHome, { mode: 0o700 });
+      const invokeHelper = () => spawnSync(process.execPath, [helper, preparedHome], {
+        env: { PATH: "/usr/bin:/bin", HOME: preparedHome, DSH_HOME: "/untrusted-ambient-dsh-home" },
+        encoding: "utf8", timeout: 10_000
+      });
+      const check = (result) => {
+        assert.equal(result.error, undefined);
+        assert.equal(result.signal, null);
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, "FULMAR_PROFILE_PREPARED\n");
+        assert.equal(result.stderr, "");
+      };
+      check(invokeHelper());
+      const manifest = join(preparedHome, "profiles", "web", "package.json");
+      const patch = join(preparedHome, "profiles", "web", "cordis.patch.yml");
+      const firstManifest = await readFile(manifest);
+      const firstPatch = await readFile(patch);
+      assert.deepEqual(JSON.parse(firstManifest).dsh.profile.bundles,
+        ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"]);
+      check(invokeHelper());
+      assert.deepEqual(await readFile(manifest), firstManifest);
+      assert.deepEqual(await readFile(patch), firstPatch);
+    }
+  } finally {
+    await rm(assembledRoot, { recursive: true, force: true });
+  }
 });
 
 test("every pi-ai no-auth transform accepts its exact upstream anchors and rejects anchor drift", () => {

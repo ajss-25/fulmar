@@ -23,7 +23,7 @@ function prepare() {
   const resources = fs.realpathSync.native(dirname(fileURLToPath(import.meta.url)));
   const runtime = join(resources, "Runtime", "dsh");
   const entry = join(runtime, "node_modules", "@deepseek-ai", "dsh-app-boot", "lib", "index.js");
-  const anchor = join(runtime, "node_modules", "@deepseek-ai", "dsh", "package.json");
+  const anchor = join(runtime, "package.json");
   for (const path of [entry, anchor]) {
     const metadata = fs.lstatSync(path);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1

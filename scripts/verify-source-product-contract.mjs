@@ -494,6 +494,7 @@ for (const preparationContract of [
   'process.argv.length !== 3',
   'process.execArgv.length !== 0',
   'fs.realpathSync.native(home) !== home',
+  'const anchor = join(runtime, "package.json")',
   'healProfilesModuleFallback(anchor, home)',
   'loadProfile("dsh", "web", anchor, home)',
   'process.umask(0o077)'
