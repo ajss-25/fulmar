@@ -130,7 +130,7 @@
       "level": "warn",
       "code": 3,
       "reason": "Semgrep 1.135 only partially parses the reviewed zsh line-array split and deliberately nested shell/Perl parent-death process fixture; the exact source SHA requires review after any edit.",
-      "sourceSha256": "a190612bcb9552ca60cb5e51b8ebe8178fe1c5ad1e19fcdf1ec827cd596f6153"
+      "sourceSha256": "16bd8416da797f93b480d4c9ce2b3bfd063dcd9149585d4347c5c43f1608b02e"
     },
     {
       "scan": "default",

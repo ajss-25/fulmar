@@ -142,6 +142,14 @@ else
 fi
 [[ -n "$RUNTIME_NODE" && -f "$RUNTIME_PRELOADER" ]] \
   || fail "could not locate the exact runtime and preloader for the descriptor-handoff case"
+# The lease admits only the target spelling Foundation's standardizedFileURL
+# produces, and that maps the /private aliases back to their short form. A
+# candidate staged under /private/tmp is therefore launched as /tmp, exactly as
+# the host app would spell it.
+case "$RUNTIME_NODE" in
+  /private/tmp/*|/private/var/*|/private/etc/*) RUNTIME_NODE="${RUNTIME_NODE#/private}" ;;
+esac
+[[ -x "$RUNTIME_NODE" ]] || fail "the exact runtime is not executable at its canonical path"
 
 HANDOFF_ROOT="$TEST_ROOT/handoff"
 HANDOFF_HOME="$HANDOFF_ROOT/home"
