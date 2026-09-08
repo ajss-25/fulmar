@@ -379,8 +379,12 @@ test("the web canary launches authenticated runtimes through one-shot stdin", as
     "utf8"
   );
   assert.ok(source.includes("openRuntimeAuthenticationInput(authentication.token, authentication.nonce)"));
-  assert.ok(source.includes('stdio: [authenticationInput, "pipe", stderrLog.fd]'));
+  assert.ok(source.includes("postHandoffRuntimeAuthenticationStdio(authenticationInput)"));
+  assert.ok(source.includes('stdio: [handoff.stdio[0], "pipe", stderrLog.fd, ...handoff.stdio.slice(3)]'));
   assert.ok(source.includes("closeSync(authenticationInput)"));
+  // The record must reach the runtime above stderr, never on a standard
+  // descriptor the runtime would then have to close.
+  assert.doesNotMatch(source, /stdio:\s*\[\s*authenticationInput/u);
   assert.doesNotMatch(source, /LOCAL_HARNESS_(?:AUTH_TOKEN|INSTANCE_NONCE):\s*state\./u);
 });
 

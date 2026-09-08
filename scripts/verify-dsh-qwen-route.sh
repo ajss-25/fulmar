@@ -381,7 +381,7 @@ chmod 600 "$MCP_CATALOG"
     LOCAL_HARNESS_PROVIDER_ORIGINS="$PROVIDER_ORIGINS" \
     LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
     NARB_DISABLE_NATIVE_CACHE=1 \
-    /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
+    /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
       "$TASK"
 ) >"$TEST_ROOT/output.txt" 2>"$TEST_ROOT/error.txt" &
 PROCESS_ID="$!"

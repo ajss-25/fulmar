@@ -7,7 +7,8 @@ import { join, resolve } from "node:path";
 import test, { after, before } from "node:test";
 import {
   fixtureAuthToken, fixtureInstanceNonce, openRuntimeAuthenticationFixture,
-  openRuntimeAuthenticationInput, runtimeAuthenticationFrame
+  openRuntimeAuthenticationInput, postHandoffRuntimeAuthenticationStdio,
+  runtimeAuthenticationFrame
 } from "../Fixtures/RuntimeAuthenticationInput.mjs";
 
 const project = resolve(import.meta.dirname, "../..");
@@ -70,13 +71,15 @@ async function runChild({
     ...childArguments
   ];
   const authenticationInput = openRuntimeAuthenticationInput(fixtureAuthToken, fixtureInstanceNonce);
+  const handoff = postHandoffRuntimeAuthenticationStdio(authenticationInput);
   let child;
   try {
     child = spawn(process.execPath, nodeArguments, {
-      env: childEnvironment(origins),
-      stdio: [authenticationInput, "pipe", "pipe"]
+      env: { ...childEnvironment(origins), ...handoff.env },
+      stdio: handoff.stdio
     });
   } finally {
+    handoff.close();
     closeSync(authenticationInput);
   }
   assert.throws(() => fstatSync(authenticationInput), (error) => error?.code === "EBADF",
@@ -230,29 +233,47 @@ test("local-network and on-device boundaries admit only matching peers", async (
   }
 });
 
-test("runtime authentication stdin is consumed once before application code", async () => {
+test("runtime authentication is consumed from its dedicated descriptor before application code", async () => {
   const ready = join(root, "runtime-auth-ready.json");
   const authenticationInput = openRuntimeAuthenticationInput(fixtureAuthToken, fixtureInstanceNonce);
+  const handoff = postHandoffRuntimeAuthenticationStdio(authenticationInput);
   let child;
   try {
     child = spawn(process.execPath, [
       "--import", preload, "--input-type=module", "-e", String.raw`
         import fs from "node:fs";
         const ready = process.argv[1];
-        let stdinClosed = false;
-        try { fs.fstatSync(0); } catch (error) { stdinClosed = error?.code === "EBADF"; }
-        const safe = stdinClosed
+        // Descriptor 0 must stay occupied for the whole process lifetime: libuv
+        // claims the lowest free descriptor while initializing a stream and
+        // aborts in uv__close when that number is a standard descriptor. The
+        // record itself must be unreachable, whichever descriptor carried it.
+        const standardInput = fs.fstatSync(0, { bigint: true });
+        let drained = -1;
+        try { drained = fs.readSync(0, Buffer.alloc(1), 0, 1, null); } catch { drained = -2; }
+        let reachable = 0;
+        for (let descriptor = 0; descriptor < 64; descriptor += 1) {
+          let metadata;
+          try { metadata = fs.fstatSync(descriptor, { bigint: true }); } catch { continue; }
+          if (metadata.isFile() && metadata.nlink === 0n && (metadata.mode & 0o777n) === 0o600n
+            && metadata.uid === BigInt(process.getuid())
+            && metadata.size >= 64n && metadata.size <= 384n) { reachable += 1; }
+        }
+        const safe = standardInput.isCharacterDevice() && drained === 0 && reachable === 0
+          && process.env.LOCAL_HARNESS_RUNTIME_AUTH_FD === undefined
           && process.env.LOCAL_HARNESS_AUTH_TOKEN === undefined
           && process.env.LOCAL_HARNESS_INSTANCE_NONCE === undefined
           && process.argv.length === 2;
-        fs.writeFileSync(ready, JSON.stringify({ pid: process.pid, ppid: process.ppid, safe }), { mode: 0o600 });
+        fs.writeFileSync(ready, JSON.stringify({
+          pid: process.pid, ppid: process.ppid, safe, drained, reachable
+        }), { mode: 0o600 });
         setTimeout(() => process.exit(safe ? 0 : 91), 1500);
       `, ready
     ], {
-      env: childEnvironment([]),
-      stdio: [authenticationInput, "pipe", "pipe"]
+      env: { ...childEnvironment([]), ...handoff.env },
+      stdio: handoff.stdio
     });
   } finally {
+    handoff.close();
     closeSync(authenticationInput);
   }
   assert.throws(() => fstatSync(authenticationInput), (error) => error?.code === "EBADF",
@@ -275,7 +296,9 @@ test("runtime authentication stdin is consumed once before application code", as
   }
   assert.equal(existsSync(ready), true, "paused runtime authentication probe did not start");
   const report = JSON.parse(await readFile(ready, "utf8"));
-  assert.equal(report.safe, true);
+  assert.equal(report.safe, true, JSON.stringify(report));
+  assert.equal(report.drained, 0, "standard input was not an empty, readable null device");
+  assert.equal(report.reachable, 0, "application code could still reach the authentication record");
   assert.equal(report.pid, child.pid);
 
   const processListing = spawnSync("/bin/ps", ["-axo", "pid=,ppid=,command="], {
@@ -288,10 +311,13 @@ test("runtime authentication stdin is consumed once before application code", as
     assert.equal(listing.includes(fixtureAuthToken) || listing.includes(fixtureInstanceNonce), false,
       "runtime authentication material appeared in a process listing");
   }
-  const descriptors = spawnSync("/usr/sbin/lsof", ["-a", "-p", String(child.pid), "-d", "0", "-Ff"], {
+  const descriptors = spawnSync("/usr/sbin/lsof", ["-a", "-p", String(child.pid), "-d", "0", "-Fftn"], {
     encoding: "utf8", timeout: 2_000
   });
-  assert.doesNotMatch(descriptors.stdout, /^f0$/mu, "application code retained runtime authentication stdin");
+  assert.match(descriptors.stdout, /^n\/dev\/null$/mu,
+    "application code did not receive the verified null device on standard input");
+  assert.doesNotMatch(descriptors.stdout, /^tREG$/mu,
+    "application code retained a regular file on standard input");
   const outcome = await outcomePromise;
   const transcript = Buffer.concat(output).toString("utf8");
   assert.deepEqual(outcome, { code: 0, signal: null }, transcript);
@@ -313,12 +339,13 @@ test("runtime authentication stdin rejects malformed, linked, wrong-mode, oversi
     openRuntimeAuthenticationFixture(validFrame, { consumeBytes: 1 })
   ];
   for (const fixture of fixtures) {
+    const handoff = postHandoffRuntimeAuthenticationStdio(fixture.descriptor);
     try {
       const result = spawnSync(process.execPath, [
         "--import", preload, "--input-type=module", "-e", "process.exit(92)"
       ], {
-        env: childEnvironment([]),
-        stdio: [fixture.descriptor, "pipe", "pipe"],
+        env: { ...childEnvironment([]), ...handoff.env },
+        stdio: handoff.stdio,
         encoding: "utf8",
         timeout: 3_000
       });
@@ -328,22 +355,25 @@ test("runtime authentication stdin rejects malformed, linked, wrong-mode, oversi
         || result.stdout.includes(fixtureInstanceNonce) || result.stderr.includes(fixtureInstanceNonce), false,
       "preloader disclosed rejected authentication material");
     } finally {
+      handoff.close();
       closeSync(fixture.descriptor);
       if (fixture.linkedPath) unlinkSync(fixture.linkedPath);
     }
   }
 
   const legacyInput = openRuntimeAuthenticationInput(fixtureAuthToken, fixtureInstanceNonce);
+  const legacyHandoff = postHandoffRuntimeAuthenticationStdio(legacyInput);
   try {
     const legacy = spawnSync(process.execPath, [
       "--import", preload, "--input-type=module", "-e", "process.exit(93)"
     ], {
       env: {
         ...childEnvironment([]),
+        ...legacyHandoff.env,
         LOCAL_HARNESS_AUTH_TOKEN: fixtureAuthToken,
         LOCAL_HARNESS_INSTANCE_NONCE: fixtureInstanceNonce
       },
-      stdio: [legacyInput, "pipe", "pipe"],
+      stdio: legacyHandoff.stdio,
       encoding: "utf8",
       timeout: 3_000
     });
@@ -352,6 +382,129 @@ test("runtime authentication stdin rejects malformed, linked, wrong-mode, oversi
       || legacy.stdout.includes(fixtureInstanceNonce) || legacy.stderr.includes(fixtureInstanceNonce), false,
     "preloader disclosed legacy authentication material");
   } finally {
+    legacyHandoff.close();
     closeSync(legacyInput);
+  }
+});
+
+test("runtime authentication rejects an unpublished, standard, or malformed descriptor number", () => {
+  // The descriptor number is the only thing the native lease publishes, so an
+  // absent, standard, or forged number must fail closed rather than let the
+  // preloader read or close something it does not own.
+  for (const published of [undefined, "", "0", "1", "2", "-1", "3.0", " 3", "03", "abc", "999999"]) {
+    const authenticationInput = openRuntimeAuthenticationInput(fixtureAuthToken, fixtureInstanceNonce);
+    const handoff = postHandoffRuntimeAuthenticationStdio(authenticationInput);
+    try {
+      const environment = { ...childEnvironment([]), ...handoff.env };
+      if (published === undefined) {
+        delete environment.LOCAL_HARNESS_RUNTIME_AUTH_FD;
+      } else {
+        environment.LOCAL_HARNESS_RUNTIME_AUTH_FD = published;
+      }
+      const result = spawnSync(process.execPath, [
+        "--import", preload, "--input-type=module", "-e", "process.exit(94)"
+      ], { env: environment, stdio: handoff.stdio, encoding: "utf8", timeout: 3_000 });
+      assert.notEqual(result.status, 0,
+        `preloader accepted the descriptor number ${JSON.stringify(published)}`);
+      assert.equal(result.signal, null,
+        `preloader aborted on the descriptor number ${JSON.stringify(published)}`);
+      assert.equal(result.stdout.includes(fixtureAuthToken) || result.stderr.includes(fixtureAuthToken)
+        || result.stdout.includes(fixtureInstanceNonce) || result.stderr.includes(fixtureInstanceNonce), false,
+      "preloader disclosed authentication material while refusing a descriptor number");
+    } finally {
+      handoff.close();
+      closeSync(authenticationInput);
+    }
+  }
+});
+
+test("runtime authentication refuses a record that is still reachable through standard input", () => {
+  // Descriptor 0 must never carry the record once the runtime is executing:
+  // application code would be able to read it, and closing it is what aborted
+  // libuv. Publishing a second descriptor onto the same record is refused.
+  const authenticationInput = openRuntimeAuthenticationInput(fixtureAuthToken, fixtureInstanceNonce);
+  try {
+    const result = spawnSync(process.execPath, [
+      "--import", preload, "--input-type=module", "-e", "process.exit(95)"
+    ], {
+      env: { ...childEnvironment([]), LOCAL_HARNESS_RUNTIME_AUTH_FD: "3" },
+      stdio: [authenticationInput, "pipe", "pipe", authenticationInput],
+      encoding: "utf8",
+      timeout: 3_000
+    });
+    assert.notEqual(result.status, 0, "preloader accepted a record still reachable through stdin");
+    assert.equal(result.signal, null, "preloader aborted on a record still reachable through stdin");
+    assert.equal(result.stdout.includes(fixtureAuthToken) || result.stderr.includes(fixtureAuthToken)
+      || result.stdout.includes(fixtureInstanceNonce) || result.stderr.includes(fixtureInstanceNonce), false,
+    "preloader disclosed authentication material while refusing a reachable record");
+  } finally {
+    closeSync(authenticationInput);
+  }
+});
+
+test("runtime authentication survives pipe-backed streams and a lazy process import", () => {
+  // The reproduced startup abort. Consuming the record used to close descriptor
+  // 0; libuv then claimed that vacant standard slot while initializing a
+  // pipe-backed stream and aborted in uv__close ("fd > STDERR_FILENO"). Node's
+  // own spawn uses socket pairs, which never reproduced it, so this case drives
+  // the runtime through a shell that gives it real POSIX pipes on both output
+  // streams, exactly as Foundation's Process does. Completion is ordinary
+  // event-loop exhaustion, never process.exit().
+  const observation = String.raw`
+    await import("node:process");
+    const fs = await import("node:fs");
+    const standardInput = fs.fstatSync(0, { bigint: true });
+    let drained = -1;
+    try { drained = fs.readSync(0, Buffer.alloc(1), 0, 1, null); } catch { drained = -2; }
+    let reachable = 0;
+    for (let descriptor = 0; descriptor < 64; descriptor += 1) {
+      let metadata;
+      try { metadata = fs.fstatSync(descriptor, { bigint: true }); } catch { continue; }
+      if (metadata.isFile() && metadata.nlink === 0n && (metadata.mode & 0o777n) === 0o600n
+        && metadata.uid === BigInt(process.getuid())
+        && metadata.size >= 64n && metadata.size <= 384n) { reachable += 1; }
+    }
+    const safe = standardInput.isCharacterDevice() && drained === 0 && reachable === 0
+      && process.env.LOCAL_HARNESS_RUNTIME_AUTH_FD === undefined;
+    process.stderr.write("HANDOFF_STDERR\n");
+    process.stdout.write(safe ? "HANDOFF_OK\n" : "HANDOFF_BAD_" + drained + "_" + reachable + "\n");
+  `;
+  const shapes = [
+    { name: "merged pipe", shell: 'setopt PIPE_FAIL; ulimit -c 0; "$@" 2>&1 | /bin/cat', merged: true },
+    { name: "separate pipes", shell: 'ulimit -c 0; "$@" > >(/bin/cat) 2> >(/bin/cat >&2); exit $?', merged: false }
+  ];
+  for (const shape of shapes) {
+    for (const order of ["stdout-first", "stderr-first"]) {
+      const lead = order === "stdout-first"
+        ? 'process.stdout.write("");'
+        : 'process.stderr.write("");';
+      const authenticationInput = openRuntimeAuthenticationInput(fixtureAuthToken, fixtureInstanceNonce);
+      const handoff = postHandoffRuntimeAuthenticationStdio(authenticationInput);
+      try {
+        const result = spawnSync("/bin/zsh", [
+          "-f", "-c", shape.shell, "probe",
+          process.execPath, "--import", preload, "--input-type=module", "-e", lead + observation
+        ], {
+          env: { ...childEnvironment([]), ...handoff.env },
+          stdio: handoff.stdio,
+          encoding: "utf8",
+          timeout: 5_000
+        });
+        const label = `${shape.name}/${order}`;
+        assert.equal(result.signal, null, `${label} runtime was signalled: ${result.stderr}`);
+        assert.equal(result.status, 0,
+          `${label} runtime did not complete normally: ${result.stdout}${result.stderr}`);
+        assert.match(result.stdout, /HANDOFF_OK/u,
+          `${label} runtime did not observe the expected descriptor state: ${result.stdout}`);
+        const transcript = shape.merged ? result.stdout : result.stderr;
+        assert.match(transcript, /HANDOFF_STDERR/u, `${label} runtime lost its standard error`);
+        assert.equal(result.stdout.includes(fixtureAuthToken) || result.stderr.includes(fixtureAuthToken)
+          || result.stdout.includes(fixtureInstanceNonce) || result.stderr.includes(fixtureInstanceNonce),
+        false, `${label} runtime disclosed authentication material`);
+      } finally {
+        handoff.close();
+        closeSync(authenticationInput);
+      }
+    }
   }
 });

@@ -87,9 +87,15 @@ const securityPreload = read("Resources/RuntimeSecurityPreload.mjs");
 requireText(securityPreload, "LOCAL_HARNESS_PROVIDER_ORIGINS", "Fulmar egress preload");
 requireText(securityPreload, "com.fulmar.runtime.approved-web-fetch.v1", "Fulmar approved web-fetch boundary");
 requireText(securityPreload, "isPublicIPAddress", "Fulmar approved web-fetch boundary");
-requireText(securityPreload, "consumeRuntimeAuthenticationInput()", "Fulmar private runtime authentication boundary");
+requireText(securityPreload, "consumeRuntimeAuthenticationInput(runtimeAuthenticationDescriptor())", "Fulmar private runtime authentication boundary");
 requireText(securityPreload, "fs.fstatSync(0, { bigint: true })", "Fulmar private runtime authentication boundary");
-requireText(securityPreload, "fs.closeSync(0)", "Fulmar private runtime authentication boundary");
+requireText(securityPreload, "fs.fstatSync(descriptor, { bigint: true })", "Fulmar private runtime authentication boundary");
+requireText(securityPreload, "fs.closeSync(descriptor)", "Fulmar private runtime authentication boundary");
+// A vacant standard descriptor is what libuv reuses during stream setup and
+// then aborts on in uv__close, so the preloader must never close one.
+if (/fs\.closeSync\([012]\)/u.test(securityPreload)) {
+  fail("Fulmar runtime authentication must never close a standard descriptor");
+}
 if (/const\s+(?:token|nonce)\s*=\s*process\.env\.LOCAL_HARNESS_/u.test(securityPreload)) {
   fail("Fulmar runtime authentication must not be sourced from the child environment");
 }

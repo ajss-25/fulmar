@@ -194,7 +194,7 @@ cd "$TEST_ROOT/workspace"
 if runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e 'process.exit(0)' >/dev/null 2>&1; then
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e 'process.exit(0)' >/dev/null 2>&1; then
   print -u2 "Runtime preloader unexpectedly accepted a missing DSH_HOME."
   exit 1
 fi
@@ -204,7 +204,7 @@ ln -s "$TEST_ROOT/unsafe-dsh-target" "$TEST_ROOT/unsafe-dsh-link"
 if runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/unsafe-dsh-link" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e 'process.exit(0)' >/dev/null 2>&1; then
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e 'process.exit(0)' >/dev/null 2>&1; then
   print -u2 "Runtime preloader unexpectedly accepted a linked DSH_HOME."
   exit 1
 fi
@@ -221,7 +221,7 @@ runtime_auth_frame | env -i HOME="$TEST_ROOT/home" USER="$(id -un)" LOGNAME="$(i
   LOCAL_HARNESS_CREDENTIAL_HELPER="$PROJECT_DIR/Tests/Fixtures/CanaryCredentialHelper.sh" LOCAL_HARNESS_CREDENTIAL_HOME="$TEST_ROOT/credential-home" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e '
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e '
     const cp = require("node:child_process");
     const helper = process.argv[1];
     const privateHome = process.argv[2];
@@ -236,7 +236,7 @@ runtime_auth_frame | env -i HOME="$TEST_ROOT/home" USER="$(id -un)" LOGNAME="$(i
 runtime_auth_frame | env -i HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" PATH="/usr/bin:/bin" LANG="en_US.UTF-8" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=0 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[{"scheme":"https","host":"public.example","port":443,"boundary":"cloud"}]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" \
     --import "$PROJECT_DIR/Tests/Fixtures/RuntimeSecurityGuardedFetchStubPreload.mjs" \
     --import "$PRELOADER" \
   "$PROJECT_DIR/Tests/Fixtures/RuntimeSecurityGuardedFetchTLSProbe.mjs" public.example \
@@ -244,7 +244,7 @@ runtime_auth_frame | env -i HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" PA
 runtime_auth_frame | env -i HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" PATH="/usr/bin:/bin" LANG="en_US.UTF-8" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" \
     --import "$PROJECT_DIR/Tests/Fixtures/RuntimeSecurityGuardedFetchStubPreload.mjs" \
     --import "$PRELOADER" \
     "$PROJECT_DIR/Tests/Fixtures/RuntimeSecurityAuxiliaryWebProbe.mjs" \
@@ -252,25 +252,25 @@ runtime_auth_frame | env -i HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" PA
 runtime_auth_frame | env -i HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" PATH="/usr/bin:/bin" LANG="en_US.UTF-8" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=0 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[{"scheme":"https","host":"93.184.216.34","port":443,"boundary":"cloud"},{"scheme":"http","host":"192.168.1.20","port":8080,"boundary":"localNetwork"},{"scheme":"http","host":"127.0.0.1","port":11434,"boundary":"onDevice"}]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$PROJECT_DIR/Tests/Fixtures/RuntimeSecurityNetworkProbe.mjs" \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$PROJECT_DIR/Tests/Fixtures/RuntimeSecurityNetworkProbe.mjs" \
   >/dev/null
 runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" --input-type=module -e \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" --input-type=module -e \
   'import fs, { realpathSync } from "node:fs"; const expected=process.argv[1]; const a=fs.realpathSync.native(expected); const b=realpathSync.native(expected); process.exit(a===expected&&b===expected?0:8)' \
   "$APP_DIR/Contents/Resources/Runtime/dsh" >/dev/null 2>&1
 
 runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e \
   'try{require("net").connect(443,"1.1.1.1");process.exit(5)}catch(e){process.exit(e.code==="EACCES"?0:4)}' \
   >/dev/null 2>&1
 runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e '
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e '
     const expectDenied = (fn) => { try { fn(); return false; } catch (error) { return error?.code === "EACCES"; } };
     const socket = new (require("node:net").Socket)();
     const udp = require("node:dgram").createSocket("udp4");
@@ -299,7 +299,7 @@ AUTH_TEST_PORT="$("$NODE" -e 'const n=require("node:net").createServer();n.liste
 runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS="[{\"scheme\":\"http\",\"host\":\"127.0.0.1\",\"port\":$AUTH_TEST_PORT,\"boundary\":\"onDevice\"}]" LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e '
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e '
     const http = require("node:http");
     const server = new http.Server();
     server.on("request", (_request, response) => response.end("UNWRAPPED"));
@@ -316,7 +316,7 @@ runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT
 runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e \
   'const cp=require("node:child_process");const external=cp.spawnSync("/usr/bin/curl",["-fsS","--max-time","2","https://example.com/"],{stdio:"ignore"});const local=cp.spawnSync("/usr/bin/curl",["-fsS","--max-time","2","http://127.0.0.1:11434/api/tags"],{stdio:"ignore"});process.exit(external.status!==0&&local.status!==0?0:6)' \
   >/dev/null 2>&1
 printf 'LOCAL_HARNESS_RG_OK\n' > "$TEST_ROOT/workspace/search-canary.txt"
@@ -324,14 +324,14 @@ RG_PATH="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@vscode/ripgrep-da
 runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e \
   'const cp=require("node:child_process");const r=cp.spawnSync(process.argv[1],["--no-config","LOCAL_HARNESS_RG_OK",process.argv[2]],{encoding:"utf8"});process.exit(r.status===0&&r.stdout.includes("LOCAL_HARNESS_RG_OK")?0:7)' \
   "$RG_PATH" "$TEST_ROOT/workspace" >/dev/null 2>&1
 KEYCHAIN_FILE="$HOME/Library/Keychains/login.keychain-db"
 if [[ -f "$KEYCHAIN_FILE" ]] && runtime_auth_frame | env -i HOME="$HOME" PATH="/usr/bin:/bin" TMPDIR="$TEST_ROOT" DSH_HOME="$TEST_ROOT/home/.dsh" \
   LOCAL_HARNESS_SANDBOX_HELPER="$SANDBOX_HELPER" LOCAL_HARNESS_WORKSPACE_ROOTS="[\"$TEST_ROOT/workspace\"]" LOCAL_HARNESS_READONLY_ROOTS="[\"$SKILL_ROOT\"]" LOCAL_HARNESS_SANDBOX_TEMP="$TEST_ROOT" LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e 'require("fs").readFileSync(process.argv[1])' \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e 'require("fs").readFileSync(process.argv[1])' \
   "$KEYCHAIN_FILE" >/dev/null 2>&1; then
   print -u2 "Strict Local unexpectedly allowed reading the login Keychain file."
   exit 1
@@ -368,7 +368,7 @@ runtime_auth_frame | env -i \
   LOCAL_HARNESS_STRICT_LOCAL=1 \
   LOCAL_HARNESS_PROVIDER_ORIGINS='[]' \
   LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
-  /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$DSH" web --patch "$PATCH" \
+  /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" web --patch "$PATCH" \
     --no-open --host 127.0.0.1 --port 0 \
     >"$EVIDENCE_ROOT/runtime.log" 2>"$EVIDENCE_ROOT/runtime-error.log" &
 PROCESS_ID="$!"

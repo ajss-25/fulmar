@@ -271,7 +271,7 @@ invoke_headless() {
   local task="$2"
   (
     cd "$TEST_ROOT/workspace"
-    runtime_auth_frame | env -i "${matrix_environment[@]}" /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" "$task"
+    runtime_auth_frame | env -i "${matrix_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" "$task"
   ) >"$TEST_ROOT/$label.out" 2>"$TEST_ROOT/$label.err" &
   HEADLESS_PID="$!"
   for _ in {1..1200}; do
@@ -442,7 +442,7 @@ for route in deepseek responses anthropic custom; do
   label="$route-cancel"
   (
     cd "$TEST_ROOT/workspace"
-    runtime_auth_frame | env -i "${matrix_environment[@]}" /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
+    runtime_auth_frame | env -i "${matrix_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
       "Begin the cancellable protocol-matrix stream. MATRIX_CANCEL"
   ) >"$TEST_ROOT/$label.out" 2>"$TEST_ROOT/$label.err" &
   HEADLESS_PID="$!"

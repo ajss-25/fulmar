@@ -25,7 +25,9 @@ import { runInNewContext } from "node:vm";
 
 import { readAttestedRegularFile } from "./attested-regular-file.mjs";
 import { snapshotLocalTree } from "./local-tree-snapshot.mjs";
-import { openRuntimeAuthenticationInput } from "../Tests/Fixtures/RuntimeAuthenticationInput.mjs";
+import {
+  openRuntimeAuthenticationInput, postHandoffRuntimeAuthenticationStdio
+} from "../Tests/Fixtures/RuntimeAuthenticationInput.mjs";
 
 export const EXPECTED_PROVIDER = "ollama";
 export const EXPECTED_MODEL = "qwen3.8:27b-mlx";
@@ -713,6 +715,7 @@ async function startHarness(layout, testRoot, environment, workspace, authentica
   const stdoutLog = await openLog(stdoutPath);
   const stderrLog = await openLog(stderrPath);
   const authenticationInput = openRuntimeAuthenticationInput(authentication.token, authentication.nonce);
+  const handoff = postHandoffRuntimeAuthenticationStdio(authenticationInput);
   let child;
   try {
     child = trackExactChild(spawn(layout.node, [
@@ -725,10 +728,11 @@ async function startHarness(layout, testRoot, environment, workspace, authentica
       "--port", "0"
     ], {
       cwd: workspace,
-      env: environment,
-      stdio: [authenticationInput, "pipe", stderrLog.fd]
+      env: { ...environment, ...handoff.env },
+      stdio: [handoff.stdio[0], "pipe", stderrLog.fd, ...handoff.stdio.slice(3)]
     }));
   } finally {
+    handoff.close();
     closeSync(authenticationInput);
   }
   child.once("error", (error) => { child.canarySpawnError = error; });
@@ -853,6 +857,7 @@ async function expectPreloadTargetRefusal(layout, state, runtimeRoot, label, exp
     LOCAL_HARNESS_RUNTIME_ROOT: runtimeRoot
   };
   const authenticationInput = openRuntimeAuthenticationInput(state.token, state.nonce);
+  const handoff = postHandoffRuntimeAuthenticationStdio(authenticationInput);
   let child;
   try {
     child = trackExactChild(spawn(layout.node, [
@@ -860,10 +865,11 @@ async function expectPreloadTargetRefusal(layout, state, runtimeRoot, label, exp
       "--eval", "process.stdout.write('UNREACHABLE_PRELOAD_PROBE')"
     ], {
       cwd: state.workspace,
-      env: environment,
-      stdio: [authenticationInput, "pipe", "pipe"]
+      env: { ...environment, ...handoff.env },
+      stdio: handoff.stdio
     }));
   } finally {
+    handoff.close();
     closeSync(authenticationInput);
   }
   child.once("error", (error) => { child.canarySpawnError = error; });

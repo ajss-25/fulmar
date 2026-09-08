@@ -189,6 +189,12 @@ test("clean release canaries never depend on ambient Homebrew ripgrep", async ()
       `${name} must exercise the private descriptor transport, not revive legacy environment authentication`);
     assert.match(source, /RuntimeAuthenticationRelay\.pl/u,
       `${name} must use the reviewed source-tree runtime-authentication relay`);
+    // These probes launch the runtime directly, so the relay must reproduce the
+    // layout the native lease leaves behind rather than the lease's own input.
+    assert.doesNotMatch(source, /"\$AUTH_RELAY" "\$NODE"/u,
+      `${name} must present the record above stderr, not on the runtime's standard input`);
+    assert.match(source, /"\$AUTH_RELAY" --fulmar-post-handoff "\$NODE"/u,
+      `${name} must request the relay's post-handoff descriptor layout`);
   }
 
   // Exercise the actual canary frame through the actual relay and preloader:
@@ -215,6 +221,7 @@ test("clean release canaries never depend on ambient Homebrew ripgrep", async ()
     await symlink(dshHome, linkedHome);
     const run = (selectedHome) => spawnSync("/usr/bin/perl", [
       join(process.cwd(), "Tests", "Fixtures", "RuntimeAuthenticationRelay.pl"),
+      "--fulmar-post-handoff",
       process.execPath, "--import", join(process.cwd(), "Resources", "RuntimeSecurityPreload.mjs"),
       "-e", "process.exit(73)"
     ], {
@@ -979,6 +986,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
     "JSTestRunnerTests.mjs": 4,
     "MachOCompatibilityTests.mjs": 1,
     "OllamaFixtureIsolationTests.mjs": 1,
+    "ProviderDNSBoundaryTests.mjs": 1,
     "PublicDistributionScriptsTests.mjs": 8,
     "ReleaseEvidenceRetentionTests.mjs": 3,
     "ReleaseVerificationScriptTests.mjs": 8,
@@ -1021,7 +1029,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
       `${name} changed the reviewed literal zsh command topology`);
     auditedZshCommands += fileCommands;
   }
-  assert.equal(auditedZshCommands, 45, "the literal zsh command audit must remain complete");
+  assert.equal(auditedZshCommands, 46, "the literal zsh command audit must remain complete");
 });
 
 test("every production watchdog and privileged shell callsite suppresses ambient startup injection", async () => {

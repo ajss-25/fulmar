@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import {
-  fixtureAuthToken, fixtureInstanceNonce, openRuntimeAuthenticationInput
+  fixtureAuthToken, fixtureInstanceNonce, openRuntimeAuthenticationInput,
+  postHandoffRuntimeAuthenticationStdio
 } from "../Fixtures/RuntimeAuthenticationInput.mjs";
 
 const project = resolve(import.meta.dirname, "../..");
@@ -158,6 +159,9 @@ async function runPreloadResponseProbe(ready, marker, mode, probeRoot, probeRunt
     })().catch(()=>process.exit(23));
   `;
   const authenticationInput = openRuntimeAuthenticationInput(fixtureAuthToken, fixtureInstanceNonce);
+  // Slot four keeps the probe's own third pipe, matching the runtime's
+  // post-handoff layout: null device on stdin, record above stderr.
+  const handoff = postHandoffRuntimeAuthenticationStdio(authenticationInput, { slot: 4 });
   let child;
   try {
     child = spawn(process.execPath, [
@@ -177,11 +181,13 @@ async function runPreloadResponseProbe(ready, marker, mode, probeRoot, probeRunt
           boundary: "onDevice"
         }]),
         LOCAL_HARNESS_MAX_PROVIDER_RESPONSE_BYTES: "65536",
-        LOCAL_HARNESS_RUNTIME_ROOT: probeRuntimeRoot
+        LOCAL_HARNESS_RUNTIME_ROOT: probeRuntimeRoot,
+        ...handoff.env
       },
-      stdio: [authenticationInput, "pipe", "pipe", "pipe"]
+      stdio: [handoff.stdio[0], "pipe", "pipe", "pipe", handoff.stdio[4]]
     });
   } finally {
+    handoff.close();
     closeSync(authenticationInput);
   }
   const stdout = [];

@@ -79,3 +79,46 @@ export function openRuntimeAuthenticationFixture(
     }
   }
 }
+
+/// Builds the descriptor layout the runtime sees after the native lease has
+/// completed its handoff: a verified null device on stdin, the private record on
+/// a dedicated descriptor above stderr, and only that descriptor number
+/// published. Use this for probes that launch the runtime directly; the native
+/// lease performs the handoff itself and must still receive the record on stdin.
+/// The caller owns `nullDescriptor` and calls `close()` once the child is spawned.
+export function postHandoffRuntimeAuthenticationStdio(
+  descriptor,
+  { slot = 3, env = {} } = {}
+) {
+  if (!Number.isSafeInteger(descriptor) || descriptor < 0) {
+    throw new Error("runtime authentication fixture descriptor is invalid");
+  }
+  if (!Number.isSafeInteger(slot) || slot < 3 || slot > 16) {
+    throw new Error("runtime authentication descriptor slot must be above stderr");
+  }
+  const nullDescriptor = openSync(
+    "/dev/null",
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_CLOEXEC
+  );
+  try {
+    if (!fstatSync(nullDescriptor).isCharacterDevice()) {
+      throw new Error("the null device fixture is not a character device");
+    }
+  } catch (error) {
+    closeSync(nullDescriptor);
+    throw error;
+  }
+  const stdio = [nullDescriptor, "pipe", "pipe"];
+  while (stdio.length < slot) {
+    stdio.push("ignore");
+  }
+  stdio.push(descriptor);
+  return {
+    stdio,
+    nullDescriptor,
+    env: { ...env, LOCAL_HARNESS_RUNTIME_AUTH_FD: String(slot) },
+    close() {
+      try { closeSync(nullDescriptor); } catch {}
+    }
+  };
+}

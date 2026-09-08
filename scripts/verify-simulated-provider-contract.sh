@@ -172,14 +172,14 @@ contract_environment=(
 # Exercise model-list transport through the same preload and prove that an
 # adjacent IP or wrong port is denied before a socket is opened.
 STAGE="catalog-transport"
-runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e '
+runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e '
   const [origin,key,model]=process.argv.slice(1);
   const response=await fetch(`${origin}/v1/models`,{headers:{authorization:`Bearer ${key}`}});
   const body=await response.json();
   if(response.status!==200 || body.data?.length!==1 || body.data[0]?.id!==model) process.exit(1);
 ' "$ORIGIN" "$CREDENTIAL_VALUE" "$MODEL"
 STAGE="exact-origin-denial"
-runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" -e '
+runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" -e '
   const port=process.argv[1];
   for(const url of [`http://127.0.0.2:${port}/v1/models`,`http://127.0.0.1:1/v1/models`]) {
     let denied=false;
@@ -195,7 +195,7 @@ run_headless() {
   STAGE="headless-$label"
   (
     cd "$TEST_ROOT/workspace"
-    runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" "$task"
+    runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" "$task"
   ) >"$TEST_ROOT/$label.out" 2>"$TEST_ROOT/$label.err"
   /usr/bin/grep -Eq -- "$expected" "$TEST_ROOT/$label.out"
   assert_extended_pattern_absent "$CREDENTIAL_VALUE|MISSING_CREDENTIAL|no credential for provider route" "$TEST_ROOT/$label.out" "$TEST_ROOT/$label.err"
@@ -211,7 +211,7 @@ STAGE="tool-artifact"
 STAGE="bounded-provider-error"
 if (
   cd "$TEST_ROOT/workspace"
-  runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
+  runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
     "Trigger the bounded provider failure. CONTRACT_ERROR"
 ) >"$TEST_ROOT/error.out" 2>"$TEST_ROOT/error.err"; then
   print -u2 "Simulated provider error unexpectedly succeeded."
@@ -223,7 +223,7 @@ assert_extended_pattern_absent "$CREDENTIAL_VALUE" "$TEST_ROOT/error.out" "$TEST
 STAGE="transport-cancellation"
 (
   cd "$TEST_ROOT/workspace"
-  runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
+  runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
     "Begin a long response and wait. CONTRACT_CANCEL"
 ) >"$TEST_ROOT/cancel.out" 2>"$TEST_ROOT/cancel.err" &
 HEADLESS_PID="$!"

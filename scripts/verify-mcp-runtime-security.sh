@@ -64,7 +64,7 @@ chmod 600 "$TEST_ROOT/outside-sentinel.txt"
     LOCAL_HARNESS_STRICT_LOCAL=0 \
     LOCAL_HARNESS_PROVIDER_ORIGINS='[]' \
     LOCAL_HARNESS_RUNTIME_ROOT="$RUNTIME_ROOT" \
-    /usr/bin/perl "$AUTH_RELAY" "$NODE" --import "$PRELOADER" "$PROJECT_DIR/scripts/verify-mcp-guard-runtime.mjs" "$APP_DIR" "$TEST_ROOT"
+    /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$PROJECT_DIR/scripts/verify-mcp-guard-runtime.mjs" "$APP_DIR" "$TEST_ROOT"
 )
 
 [[ ! -e "$TEST_ROOT/workspace/MCP_WRITE_MUST_FAIL" ]]

@@ -509,13 +509,27 @@ for (const authenticationContract of [
 }
 const runtimePreload = read("Resources/RuntimeSecurityPreload.mjs");
 for (const authenticationContract of [
+  'const runtimeAuthenticationDescriptorVariable = "LOCAL_HARNESS_RUNTIME_AUTH_FD"',
+  'delete process.env[runtimeAuthenticationDescriptorVariable]',
   'fs.fstatSync(0, { bigint: true })',
+  'fs.fstatSync(descriptor, { bigint: true })',
   'before.nlink !== 0n',
-  'fs.readSync(0, bytes',
-  'fs.closeSync(0)'
+  'fs.readSync(descriptor, bytes',
+  'fs.closeSync(descriptor)'
 ]) {
   if (!runtimePreload.includes(authenticationContract)) {
     fail(`runtime preloader authentication consumer is missing ${authenticationContract}`);
+  }
+}
+// Closing a standard descriptor leaves a slot libuv reuses during stream
+// initialisation and then aborts on in uv__close.
+for (const forbiddenDescriptorClose of [
+  "fs.closeSync(0)",
+  "fs.closeSync(1)",
+  "fs.closeSync(2)"
+]) {
+  if (runtimePreload.includes(forbiddenDescriptorClose)) {
+    fail(`runtime preloader must never close a standard descriptor: ${forbiddenDescriptorClose}`);
   }
 }
 if (/const\s+(?:token|nonce)\s*=\s*process\.env\.LOCAL_HARNESS_/u.test(runtimePreload)) {
@@ -528,9 +542,19 @@ for (const leaseContract of [
   "Darwin.kill(exactGroup, SIGTERM)",
   "Darwin.kill(exactGroup, SIGKILL)",
   "validateRuntimeAuthenticationInput()",
+  'private let runtimeAuthenticationDescriptorVariable = "LOCAL_HARNESS_RUNTIME_AUTH_FD"',
+  "handOffRuntimeAuthentication(cleanup:",
+  "Darwin.fcntl(STDIN_FILENO, F_DUPFD, STDERR_FILENO + 1)",
+  'Darwin.open("/dev/null", O_RDONLY | O_CLOEXEC | O_NOFOLLOW)',
+  "Darwin.dup2(nullDescriptor, STDIN_FILENO) == STDIN_FILENO",
+  "Darwin.setenv(runtimeAuthenticationDescriptorVariable",
   "CommandLine.unsafeArgv.advanced(by: targetIndex)"
 ]) {
   if (!runtimeLease.includes(leaseContract)) fail(`runtime lease implementation is missing ${leaseContract}`);
+}
+// The record must never be published as a value, only as a descriptor number.
+if (/setenv\([^)]*(?:token|nonce|frame)/iu.test(runtimeLease)) {
+  fail("runtime lease must publish only the authentication descriptor number");
 }
 const presetSanitizer = read("scripts/sanitize-agent-presets.mjs");
 for (const contract of [

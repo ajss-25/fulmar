@@ -16,30 +16,56 @@ import { isAbsolute, join, normalize } from "node:path";
 
 const runtimeAuthenticationVersion = "FULMAR_RUNTIME_AUTH_V1";
 const maximumRuntimeAuthenticationBytes = 384;
+const runtimeAuthenticationDescriptorVariable = "LOCAL_HARNESS_RUNTIME_AUTH_FD";
 
-function consumeRuntimeAuthenticationInput() {
+// The native lease hands the private record over on a dedicated descriptor
+// above stderr and leaves a verified null device on stdin. Only the published
+// descriptor number crosses the exec boundary; the material never does.
+function runtimeAuthenticationDescriptor() {
+  const published = process.env[runtimeAuthenticationDescriptorVariable];
+  // Remove it before any failure path so no child can inherit the number.
+  delete process.env[runtimeAuthenticationDescriptorVariable];
+  const descriptor = typeof published === "string" && /^[1-9][0-9]{0,4}$/u.test(published)
+    ? Number(published)
+    : -1;
+  if (!Number.isSafeInteger(descriptor) || descriptor <= 2) {
+    throw new Error("Fulmar refused an unsafe private runtime authentication input.");
+  }
+  return descriptor;
+}
+
+// Consume and close exactly that descriptor. Never close a standard descriptor:
+// libuv claims the lowest free descriptor while initializing a stream and then
+// aborts in uv__close when that number is a standard descriptor.
+function consumeRuntimeAuthenticationInput(descriptor) {
   let bytes;
   let before;
   try {
-    before = fs.fstatSync(0, { bigint: true });
+    // Every standard descriptor must already be occupied when application code
+    // runs, and the private record must not be reachable through stdin.
+    const standardInput = fs.fstatSync(0, { bigint: true });
+    before = fs.fstatSync(descriptor, { bigint: true });
     const expectedOwner = BigInt(process.getuid());
     if (!before.isFile() || before.nlink !== 0n || before.uid !== expectedOwner
         || (before.mode & 0o777n) !== 0o600n || before.size < 64n
         || before.size > BigInt(maximumRuntimeAuthenticationBytes)) {
       throw new Error("unsafe metadata");
     }
+    if (standardInput.dev === before.dev && standardInput.ino === before.ino) {
+      throw new Error("authentication material is still reachable through stdin");
+    }
     const expectedBytes = Number(before.size);
     bytes = Buffer.alloc(expectedBytes);
     let used = 0;
     while (used < expectedBytes) {
-      const count = fs.readSync(0, bytes, used, expectedBytes - used, null);
+      const count = fs.readSync(descriptor, bytes, used, expectedBytes - used, null);
       if (count === 0) break;
       used += count;
     }
     const extra = Buffer.alloc(1);
-    const extraCount = fs.readSync(0, extra, 0, 1, null);
+    const extraCount = fs.readSync(descriptor, extra, 0, 1, null);
     extra.fill(0);
-    const after = fs.fstatSync(0, { bigint: true });
+    const after = fs.fstatSync(descriptor, { bigint: true });
     if (used !== expectedBytes || extraCount !== 0
         || before.dev !== after.dev || before.ino !== after.ino
         || before.mode !== after.mode || before.nlink !== after.nlink
@@ -60,7 +86,7 @@ function consumeRuntimeAuthenticationInput() {
     throw new Error("Fulmar refused an unsafe private runtime authentication input.");
   } finally {
     bytes?.fill(0);
-    try { fs.closeSync(0); } catch {}
+    try { fs.closeSync(descriptor); } catch {}
   }
 }
 
@@ -68,7 +94,7 @@ const legacyRuntimeAuthentication = Object.hasOwn(process.env, "LOCAL_HARNESS_AU
   || Object.hasOwn(process.env, "LOCAL_HARNESS_INSTANCE_NONCE");
 delete process.env.LOCAL_HARNESS_AUTH_TOKEN;
 delete process.env.LOCAL_HARNESS_INSTANCE_NONCE;
-const { token, nonce } = consumeRuntimeAuthenticationInput();
+const { token, nonce } = consumeRuntimeAuthenticationInput(runtimeAuthenticationDescriptor());
 if (legacyRuntimeAuthentication) {
   throw new Error("Fulmar refused legacy runtime authentication material.");
 }
