@@ -78,7 +78,7 @@ if (!packageManifest.includes(`.macOS(.v${minimumMacOSMajor})`)) {
 }
 
 const vendorPatchManifest = JSON.parse(read("Config/VendorRuntimePatches.json"));
-if (vendorPatchManifest.schemaVersion !== 1 || vendorPatchManifest.patches?.length !== 13) {
+if (vendorPatchManifest.schemaVersion !== 1 || vendorPatchManifest.patches?.length !== 14) {
   fail("vendored runtime patch manifest is missing or unsupported");
 }
 const vendorMaterializer = read("scripts/materialize-vendor-runtime.mjs");
@@ -476,6 +476,30 @@ if (!/- id: web-search-deepseek\s+disabled: true/u.test(runtimePatch)) {
   fail("local sessions must not expose unavailable DeepSeek web search");
 }
 const harnessController = read("Sources/LocalHarness/HarnessController.swift");
+for (const preparationContract of [
+  'enum HarnessProfilePreparation',
+  'appendingPathComponent("PrepareHarnessProfile.mjs")',
+  'try HarnessProfilePreparation.run(',
+  'try budget.remainingTimeInterval(maximum: 15)',
+  'standardInputDescriptor: FileHandle.nullDevice.fileDescriptor'
+]) {
+  if (!harnessController.includes(preparationContract)) fail(`native profile preparation is missing ${preparationContract}`);
+}
+if (harnessController.indexOf('try HarnessProfilePreparation.run(')
+    >= harnessController.indexOf('let runtimeWriteSandbox = try HarnessRuntimeWriteSandbox.prepare(')) {
+  fail("native profile preparation must precede the runtime write boundary");
+}
+const profilePreparer = read("Resources/PrepareHarnessProfile.mjs");
+for (const preparationContract of [
+  'process.argv.length !== 3',
+  'process.execArgv.length !== 0',
+  'fs.realpathSync.native(home) !== home',
+  'healProfilesModuleFallback(anchor, home)',
+  'loadProfile("dsh", "web", anchor, home)',
+  'process.umask(0o077)'
+]) {
+  if (!profilePreparer.includes(preparationContract)) fail(`bundled profile preparation is missing ${preparationContract}`);
+}
 if (!harnessController.includes("static let ownedOllamaReadinessTimeout: TimeInterval = 90")) {
   fail("owned Ollama readiness budget must tolerate warm macOS resource reclamation");
 }

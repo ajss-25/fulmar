@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  patchDSHProfileReadOnlyBoot,
   patchDeepSeekRuntime,
   patchPiAIAdapterRuntime,
   patchPiAIAnthropicClientNoAuth,
@@ -73,17 +74,87 @@ test("review manifest binds the lock, exact upstream packages, and every install
   const review = JSON.parse(await readFile(join(project, "Config", "VendorRuntimePatches.json"), "utf8"));
   assert.equal(sha256(await readFile(join(project, "VendorRuntime", "package.json"))), review.runtimePackageSHA256);
   assert.equal(sha256(await readFile(join(project, "VendorRuntime", "package-lock.json"))), review.reviewedLockSHA256);
-  assert.equal(review.patches.length, 13);
+  assert.equal(review.patches.length, 14);
   assert.deepEqual(
     review.upstreamTarballs.map(({ package: name, resolved }) => [name, new URL(resolved).origin]),
     [
       ["@deepseek-ai/dsh", "https://registry.npmjs.org"],
-      ["@deepseek-ai/dsh-llm-deepseek", "https://registry.npmjs.org"]
+      ["@deepseek-ai/dsh-llm-deepseek", "https://registry.npmjs.org"],
+      ["@deepseek-ai/dsh-app-boot", "https://registry.npmjs.org"]
     ]
   );
   for (const patch of review.patches) {
     const installed = await readFile(join(project, "VendorRuntime", "node_modules", ...patch.path.split("/")));
     assert.equal(sha256(installed), patch.afterSHA256, patch.id);
+  }
+
+  const bootPatch = review.patches.find(({ id }) => id === "dsh-profile-read-only-boot");
+  assert.equal(bootPatch.beforeSHA256, "9d4b7f214cd35b3e8ce4e027b12cca34a416d355577aeacbf08a5b324f0cabb6");
+  assert.equal(bootPatch.afterSHA256, "df332740cc09975ac403fb785beb2fff226ce5307115dffa4b41a4e53065e5db");
+  const upstreamAnchors = Buffer.from([
+    'function initProfile(dir, bundles) {\n\tmkdirSync(dir, { recursive: true });',
+    '\tconst modulesDir = join(join(home, PROFILES_DIR), "node_modules");\n\tmkdirSync(modulesDir, { recursive: true });',
+    '\t\tconst link = join(modulesDir, packageName);\n\t\tmkdirSync(dirname(link), { recursive: true });'
+  ].join("\n// exact upstream anchor\n"));
+  const transformed = patchDSHProfileReadOnlyBoot(upstreamAnchors).toString("utf8");
+  assert.match(transformed, /metadata = lstatSync\(path\)/u);
+  assert.match(transformed, /metadata\.isDirectory\(\).*metadata\.isSymbolicLink\(\)/u);
+  assert.match(transformed, /ensureRealProfileDirectory\(modulesDir\)/u);
+  assert.throws(() => patchDSHProfileReadOnlyBoot(Buffer.concat([upstreamAnchors, upstreamAnchors])),
+    /patch anchor was absent or ambiguous/u);
+  assert.throws(() => patchDSHProfileReadOnlyBoot(Buffer.from(transformed)),
+    /patch anchor was absent or ambiguous/u);
+
+  // Exercise the actual materialized boot exports: after native preparation,
+  // an existing web profile must boot without even an idempotent write syscall.
+  // This is complementary to the real native Seatbelt boundary regression.
+  const home = await realpath(await mkdtemp(join(tmpdir(), "fulmar-prepared-profile.")));
+  try {
+    const outcome = spawnSync(process.execPath, ["--input-type=module", "-e", String.raw`
+      import assert from "node:assert/strict";
+      import fs from "node:fs";
+      import { join } from "node:path";
+      import { pathToFileURL } from "node:url";
+      import { syncBuiltinESMExports } from "node:module";
+      const [entry, anchor, home] = process.argv.slice(1);
+      const boot = await import(pathToFileURL(entry).href);
+      process.umask(0o077);
+      boot.healProfilesModuleFallback(anchor, home);
+      const profile = boot.loadProfile("dsh", "web", anchor, home);
+      assert.equal(profile.dir, join(home, "profiles", "web"));
+      assert.deepEqual(profile.layers.map(layer => layer.packageName),
+        ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"]);
+      const before = fs.readFileSync(join(profile.dir, "package.json"), "utf8");
+      const originals = new Map(["mkdirSync", "writeFileSync", "symlinkSync", "unlinkSync"]
+        .map(name => [name, fs[name]]));
+      for (const name of originals.keys()) fs[name] = () => { throw new Error("unexpected profile write: " + name); };
+      syncBuiltinESMExports();
+      boot.healProfilesModuleFallback(anchor, home);
+      const reloaded = boot.loadProfile("dsh", "web", anchor, home);
+      boot.initProfile(profile.dir, ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"]);
+      assert.equal(reloaded.dir, profile.dir);
+      assert.equal(fs.readFileSync(join(profile.dir, "package.json"), "utf8"), before);
+      for (const [name, value] of originals) fs[name] = value;
+      syncBuiltinESMExports();
+      const fallback = join(home, "profiles", "node_modules");
+      fs.renameSync(fallback, fallback + "-retained");
+      fs.symlinkSync(fallback + "-retained", fallback);
+      assert.throws(() => boot.healProfilesModuleFallback(anchor, home), /not a real directory/u);
+      fs.unlinkSync(fallback);
+      fs.writeFileSync(fallback, "not a directory");
+      assert.throws(() => boot.healProfilesModuleFallback(anchor, home), /not a real directory/u);
+      process.stdout.write("PREPARED_PROFILE_READ_ONLY_OK\n");
+    `, join(project, "VendorRuntime", "node_modules", ...bootPatch.path.split("/")),
+    join(project, "VendorRuntime", "node_modules", "@deepseek-ai", "dsh", "package.json"), home], {
+      env: { HOME: home, DSH_HOME: home, PATH: "/usr/bin:/bin", DSH_TELEMETRY_MODE: "DISABLED" },
+      encoding: "utf8", timeout: 10_000
+    });
+    assert.equal(outcome.error, undefined);
+    assert.equal(outcome.signal, null);
+    assert.equal(outcome.status, 0, outcome.stderr);
+    assert.equal(outcome.stdout, "PREPARED_PROFILE_READ_ONLY_OK\n");
+  } finally {
+    await rm(home, { recursive: true, force: true });
   }
 });
 

@@ -271,7 +271,7 @@ plutil -lint "$INFO" "$MIGRATION_XPC_INFO" "$BROKER_XPC_INFO" \
 cmp -s "$PROJECT_DIR/VendorRuntime/package-lock.json" "$LOCKFILE"
 cmp -s "$PROJECT_DIR/VendorRuntime/node-v22.23.1-darwin-arm64/LICENSE" "$NODE_LICENSE"
 
-for resource in Info.plist RuntimeSecurityPreload.mjs LocalHarness.patch.yml StrictLocal.sb MigrateCredentials.mjs ReleaseIdentity.json; do
+for resource in Info.plist RuntimeSecurityPreload.mjs PrepareHarnessProfile.mjs LocalHarness.patch.yml StrictLocal.sb MigrateCredentials.mjs ReleaseIdentity.json; do
   if [[ "$resource" == "Info.plist" ]]; then
     cmp -s "$PROJECT_DIR/Resources/$resource" "$APP_DIR/Contents/$resource"
   elif [[ "$resource" == "ReleaseIdentity.json" ]]; then

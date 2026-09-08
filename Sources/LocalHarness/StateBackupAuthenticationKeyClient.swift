@@ -7,8 +7,8 @@ import Foundation
 enum StateBackupUnattendedAccess: Equatable, Sendable {
     /// The unattended consumer read the exact same key bytes without UI.
     case verified
-    /// The unattended consumer is still refused; only the foreground helper was
-    /// allowed, so the authorization will be asked again after relaunch.
+    /// The same helper identity is still refused without interaction. A
+    /// foreground read alone does not establish unattended access after relaunch.
     case authorizationRequired
     /// The verification itself could not complete (timeout, helper unavailable
     /// or different bytes); nothing about the allowance is known.
@@ -110,17 +110,18 @@ final class StateBackupAuthenticationKeyClient: @unchecked Sendable {
         try run(command: "backup-authorize-existing", deadline: foregroundDeadline)
     }
 
-    /// Fresh noninteractive verification through the same packaged helper and
-    /// broker every startup uses, after a foreground authorization has already
-    /// read the existing item.
+    /// Fresh noninteractive verification through the same packaged helper
+    /// identity every startup and explicit foreground authorization use. Native
+    /// backup commands require the exact running app as their immediate parent;
+    /// provider credentials retain their separate broker boundary.
     ///
     /// The command is `backup-read-existing`, which has no create branch at
     /// all: a verification probe can never mint a key, not even if the item is
     /// deleted between the authorization and this call. A missing item is
     /// therefore reported as `.unavailable` — the allowance is unknown — and
     /// never as verified. The process cache is deliberately neither consulted
-    /// nor updated: a foreground allowance granted to the helper alone must
-    /// never be reported as unattended access.
+    /// nor updated: successful foreground access alone must never be reported
+    /// as unattended access.
     func verifyUnattendedAccess(matching key: Data) -> StateBackupUnattendedAccess {
         do {
             let fresh = try run(command: "backup-read-existing", deadline: backgroundDeadline)

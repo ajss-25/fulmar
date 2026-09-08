@@ -566,6 +566,7 @@ plutil -replace LSMinimumSystemVersion -string "$MINIMUM_MACOS" \
   "$BUILD_SCRATCH/broker-xpc-info.json"
 cp "$PROJECT_DIR/Resources/THIRD_PARTY_NOTICES.md" "$RESOURCES_DIR/THIRD_PARTY_NOTICES.md"
 cp "$PROJECT_DIR/Resources/RuntimeSecurityPreload.mjs" "$RESOURCES_DIR/RuntimeSecurityPreload.mjs"
+cp "$PROJECT_DIR/Resources/PrepareHarnessProfile.mjs" "$RESOURCES_DIR/PrepareHarnessProfile.mjs"
 cp "$PROJECT_DIR/Resources/LocalHarness.patch.yml" "$RESOURCES_DIR/LocalHarness.patch.yml"
 cp "$PROJECT_DIR/Resources/StrictLocal.sb" "$RESOURCES_DIR/StrictLocal.sb"
 cp "$PROJECT_DIR/Resources/MigrateCredentials.mjs" "$RESOURCES_DIR/MigrateCredentials.mjs"

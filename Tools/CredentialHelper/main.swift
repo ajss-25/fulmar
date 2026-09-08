@@ -1002,10 +1002,23 @@ let arguments = CommandLine.arguments
 guard arguments.count >= 2 else { fail("expected a command") }
 let command = arguments[1]
 
-// Every unattended runtime credential operation crosses the mutually
-// code-bound broker. The DSH descendant never receives a metadata-directory
-// capability and this helper never performs those Keychain/metadata writes.
-dispatchCredentialBrokerCommandIfNeeded(command: command, arguments: arguments)
+// Native backup reads use the same fixed helper identity as the explicit
+// foreground authorization, not a different XPC Keychain reader. Both cold
+// startup and verification must follow this route; never try another identity
+// after a refusal. Only the exact running app may request these fixed-account
+// operations, and the process-wide no-UI barrier below still applies.
+let nativeBackupCommand = command == "backup-load-or-create"
+    || command == "backup-read-existing"
+if nativeBackupCommand {
+    guard arguments.count == 2 else { fail("native backup-key commands take no subject") }
+    guard exactPackagedApplicationIsImmediateParent() else {
+        fail("native backup-key access is unavailable")
+    }
+} else {
+    // Provider/runtime credential operations retain the mutually code-bound
+    // broker. DSH descendants gain no direct backup-key or metadata access.
+    dispatchCredentialBrokerCommandIfNeeded(command: command, arguments: arguments)
+}
 
 if command == "backup-authorize-existing" {
     guard arguments.count == 2 else { fail("backup-authorize-existing takes no subject") }

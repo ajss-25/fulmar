@@ -5442,7 +5442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HarnessWebViewControll
                         self.mainWindow.updateStatus("Authorize backup key to finish setup", color: .systemOrange)
                         let alert = NSAlert()
                         alert.messageText = "Backup-key authorization is required"
-                        alert.informativeText = "Harness remains stopped. Fulmar's unattended credential reader was refused access to the existing backup key, and Fulmar did not replace or delete that Keychain item. Open Backups & Restore to deliberately authorize the exact key and verify it against your authenticated backups. If macOS shows no prompt yet this appears at every launch, the key item admits Fulmar's foreground helper but not its unattended reader; that needs an owner decision, not another authorization."
+                        alert.informativeText = "Fulmar is paused because macOS did not allow its backup helper to read your existing backup key without a prompt. Open Backups & Restore to authorize that key and check it against your backups. Fulmar will then check the same helper again with prompts disabled. Your key and backups have not been replaced or deleted."
                         alert.alertStyle = .warning
                         alert.addButton(withTitle: "Open Backups & Restore")
                         alert.addButton(withTitle: "Keep Runtime Stopped")

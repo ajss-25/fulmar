@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "root": "VendorRuntime",
   "entryCount": 38501,
-  "totalFileBytes": "394622078",
+  "totalFileBytes": "394622662",
   "entries": [
     {
       "path": "node-v22.23.1-darwin-arm64",
@@ -62603,8 +62603,8 @@
       "path": "node_modules/@deepseek-ai/dsh-app-boot/lib/index.js",
       "type": "file",
       "mode": "0644",
-      "size": 52478,
-      "sha256": "9d4b7f214cd35b3e8ce4e027b12cca34a416d355577aeacbf08a5b324f0cabb6"
+      "size": 53062,
+      "sha256": "df332740cc09975ac403fb785beb2fff226ce5307115dffa4b41a4e53065e5db"
     },
     {
       "path": "node_modules/@deepseek-ai/dsh-app-boot/lib/invariant.js",

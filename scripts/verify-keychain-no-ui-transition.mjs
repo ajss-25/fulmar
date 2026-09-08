@@ -12,6 +12,7 @@ assert.ok(helper, "credential helper path is required");
 assert.ok(historicalHelper, "separately built DEBUG historical credential fixture is required");
 assert.notEqual(historicalHelper, helper, "the historical fixture must not reuse the current candidate helper");
 assert.equal(process.argv.length, 4, "expected only the current helper and historical fixture paths");
+const packagedHelper = /\/[^/]+\.app\/Contents\/MacOS\/LocalHarnessCredentialHelper$/u.test(helper);
 const root = await mkdtemp(join(tmpdir(), "fulmar-keychain-no-ui-"));
 const legacy = join(root, "LegacyCredentialHelper");
 const reference = `FULMAR_NO_UI_${randomUUID().replaceAll("-", "").toUpperCase()}`;
@@ -76,29 +77,20 @@ try {
   ]);
   assert.equal(result.status, 0, result.stderr.toString("utf8"));
 
-  // Exercise the exact production backup-authentication service/account. This
-  // canary deliberately never deletes or replaces that item: when it is absent,
-  // the current reviewed helper creates the same device-only key Fulmar needs;
-  // when a previous signature owns it, denial must be typed and prompt-free.
-  const currentBackupKey = await run(helper, ["backup-load-or-create"]);
-  assert.equal(currentBackupKey.signal, null);
-  assert.ok(currentBackupKey.elapsedMilliseconds < 2_500, "backup-key access waited for authorization UI");
-  assert.ok([0, 5].includes(currentBackupKey.status), `unexpected backup-key status ${currentBackupKey.status}`);
-  if (currentBackupKey.status === 0) {
-    assert.equal(currentBackupKey.stdout.length, 32, "backup helper returned a malformed key");
-    assert.equal(currentBackupKey.stderr.includes(currentBackupKey.stdout), false, "backup helper diagnostic exposed key bytes");
-
-    const changedSignatureBackupRead = await run(legacy, ["backup-load-or-create"]);
-    assert.equal(changedSignatureBackupRead.signal, null);
-    assert.ok(changedSignatureBackupRead.elapsedMilliseconds < 2_500, "changed-signature backup read waited for authorization UI");
-    assert.ok([0, 5].includes(changedSignatureBackupRead.status), `unexpected changed-signature backup status ${changedSignatureBackupRead.status}`);
-    if (changedSignatureBackupRead.status === 0) {
-      assert.deepEqual(changedSignatureBackupRead.stdout, currentBackupKey.stdout, "changed-signature backup access rotated the existing key");
+  // This Node process is not the exact packaged application. Fixed-account
+  // backup operations must reject it before any Keychain lookup or creation.
+  // This is an unauthorized-access test, not live backup-key qualification.
+  // Never probe a standalone DEBUG fixture: its source-test seam admits this
+  // parent and could otherwise read or create the real production backup key.
+  if (packagedHelper) {
+    for (const command of ["backup-load-or-create", "backup-read-existing"]) {
+      const deniedBackupAccess = await run(helper, [command]);
+      assert.equal(deniedBackupAccess.signal, null);
+      assert.ok(deniedBackupAccess.elapsedMilliseconds < 2_500, "unauthorized backup access waited for authorization UI");
+      assert.equal(deniedBackupAccess.status, 2, "a non-application parent reached a native backup-key command");
+      assert.equal(deniedBackupAccess.stdout.length, 0, "unauthorized backup access returned bytes");
+      assert.equal(deniedBackupAccess.stderr.toString("utf8"), "Credential helper: native backup-key access is unavailable\n");
     }
-
-    const retainedBackupKey = await run(helper, ["backup-load-or-create"]);
-    assert.equal(retainedBackupKey.status, 0, retainedBackupKey.stderr.toString("utf8"));
-    assert.deepEqual(retainedBackupKey.stdout, currentBackupKey.stdout, "changed-signature probing mutated the backup key");
   }
 
   result = await run(legacy, ["set", reference], secret);
@@ -145,7 +137,10 @@ try {
   assert.equal(adopted.status, 0, adopted.stderr.toString("utf8"));
   assert.deepEqual(adopted.stdout, replacement, "the metadata-less credential was not atomically adopted and replaced");
 
-  process.stdout.write("Changed-signature and metadata-less Keychain transitions completed without an authorization dialog or credential loss.\n");
+  process.stdout.write("Changed-signature and metadata-less provider Keychain transitions completed without an authorization dialog or credential loss.\n");
+  process.stdout.write(packagedHelper
+    ? "Packaged backup commands rejected the unauthorized Node parent without returning key bytes. App-owned backup reads and relaunch require separate live qualification.\n"
+    : "Packaged backup parent rejection was not exercised by this standalone helper fixture. No backup-key operation was attempted; app-owned backup reads and relaunch require separate live qualification.\n");
 } finally {
   await run(helper, ["unset", orphanReference], undefined).catch(() => {});
   await run(helper, ["unset", reference], undefined).catch(() => {});

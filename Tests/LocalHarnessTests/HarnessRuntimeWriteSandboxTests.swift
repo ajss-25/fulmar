@@ -143,6 +143,60 @@ exit 0
     #expect(try String(contentsOf: fixture.profileManifest, encoding: .utf8) == "manifest")
     #expect(try String(contentsOf: fixture.profileModules.appendingPathComponent("trusted"), encoding: .utf8) == "module")
     #expect(!FileManager.default.fileExists(atPath: fixture.home.appendingPathComponent("moved-receipt").path))
+
+    // Exercise the real pinned boot functions, not just touch/printf probes.
+    // The old unconditional mkdir on profiles/node_modules failed even when
+    // the native side had already created the directory. Both a fresh profile
+    // and a second boot must work without allowing runtime composition writes.
+    try FileManager.default.removeItem(at: fixture.profileManifest)
+    try FileManager.default.removeItem(at: fixture.profileModules.appendingPathComponent("trusted"))
+    let project = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let node = project.appendingPathComponent("VendorRuntime/node-v22.23.1-darwin-arm64/bin/node")
+    let boot = project.appendingPathComponent("VendorRuntime/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js")
+    let anchor = project.appendingPathComponent("VendorRuntime/node_modules/@deepseek-ai/dsh/package.json")
+    let bootScript = #"""
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const [entry, anchor, home, protectedRun] = process.argv.slice(1);
+process.umask(0o077);
+const { healProfilesModuleFallback, loadProfile } = await import(pathToFileURL(entry).href);
+healProfilesModuleFallback(anchor, home);
+const profile = loadProfile('dsh', 'web', anchor, home);
+assert.equal(profile.dir, home + '/profiles/web');
+assert.deepEqual(profile.layers.map(layer => layer.packageName),
+  ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']);
+if (protectedRun === 'yes') {
+  for (const target of [home + '/profiles/web/package.json',
+      home + '/profiles/web/cordis.patch.yml', home + '/profiles/node_modules/forged.js',
+      home + '/profiles/web/node_modules/forged.js']) {
+    assert.throws(() => fs.writeFileSync(target, 'forged'), error => error.code === 'EPERM' || error.code === 'EACCES');
+  }
+  fs.writeFileSync(home + '/profiles/web/cordis.yml', '# runtime composition\n');
+}
+"""#
+    let baseArguments = ["--input-type=module", "-e", bootScript, boot.path, anchor.path, fixture.home.path]
+    let bootEnvironment = ["PATH": "/usr/bin:/bin", "HOME": fixture.home.path, "DSH_HOME": fixture.home.path]
+    #expect(try SandboxBoundaryProbeProcess.run(
+        executable: node,
+        arguments: baseArguments + ["no"],
+        currentDirectory: fixture.workspace,
+        environment: bootEnvironment,
+        deadline: 15
+    ) == 0)
+    let manifestBefore = try Data(contentsOf: fixture.profileManifest)
+    let protectedBoot = try boundary.wrappedLaunch(executable: node, arguments: baseArguments + ["yes"])
+    for _ in 0..<2 {
+        #expect(try SandboxBoundaryProbeProcess.run(
+            executable: protectedBoot.executable,
+            arguments: protectedBoot.arguments,
+            currentDirectory: fixture.workspace,
+            environment: bootEnvironment,
+            deadline: 15
+        ) == 0)
+        #expect(try Data(contentsOf: fixture.profileManifest) == manifestBefore)
+    }
 }
 
 @Test func harnessRuntimeOuterSandboxRejectsPermissiveLinkedOrUnrelatedRoots() throws {

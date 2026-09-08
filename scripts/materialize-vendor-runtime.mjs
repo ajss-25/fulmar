@@ -99,6 +99,38 @@ function patchDSHManifest(bytes) {
   return Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
+function patchDSHProfileReadOnlyBoot(bytes) {
+  let text = bytes.toString("utf8");
+  const ensureDirectory = `// Fulmar prepares installation-owned composition before applying the runtime
+// write boundary. A subsequent boot must not issue even an idempotent mkdir
+// against those protected directories, and must not follow a substituted link.
+function ensureRealProfileDirectory(path) {
+\tlet metadata;
+\ttry {
+\t\tmetadata = lstatSync(path);
+\t} catch (error) {
+\t\tif (error?.code !== "ENOENT") throw error;
+\t\tmkdirSync(path, { recursive: true });
+\t\tmetadata = lstatSync(path);
+\t}
+\tif (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error("dsh: profile directory is not a real directory");
+}
+`;
+  text = replaceExactlyOnce(text,
+    'function initProfile(dir, bundles) {\n\tmkdirSync(dir, { recursive: true });',
+    `${ensureDirectory}function initProfile(dir, bundles) {\n\tensureRealProfileDirectory(dir);`,
+    "DSH profile initialization directory");
+  text = replaceExactlyOnce(text,
+    '\tconst modulesDir = join(join(home, PROFILES_DIR), "node_modules");\n\tmkdirSync(modulesDir, { recursive: true });',
+    '\tconst modulesDir = join(join(home, PROFILES_DIR), "node_modules");\n\tensureRealProfileDirectory(modulesDir);',
+    "DSH installation fallback root");
+  text = replaceExactlyOnce(text,
+    '\t\tconst link = join(modulesDir, packageName);\n\t\tmkdirSync(dirname(link), { recursive: true });',
+    '\t\tconst link = join(modulesDir, packageName);\n\t\tensureRealProfileDirectory(dirname(link));',
+    "DSH installation fallback scope");
+  return Buffer.from(text, "utf8");
+}
+
 const DEEPSEEK_README_UPSTREAM = "DeepSeek request identity is separate from app attribution. After credential resolution, every provider request carries `x-deepseek-harness-user-id` with the stable anonymous id from [`@deepseek-ai/dsh-anonymous-user-id`](../../identity/anonymous-user-id/README.md); a request carrying `GenerateOptions.sessionId` also sends that exact value as `x-deepseek-harness-session-id`, while a direct call without a session omits the session header. Both headers go to the resolved `baseURL`, including a configured gateway, and remain outside the request body and model-visible content.";
 const DEEPSEEK_README_PATCHED = "**Fulmar privacy patch (revision 1):** this bundled distribution intentionally\nomits upstream's stable `x-deepseek-harness-user-id` and internal\n`x-deepseek-harness-session-id`. It neither imports nor calls\n`@deepseek-ai/dsh-anonymous-user-id`; only the shared product/version `User-Agent`\nand protocol-required headers remain. Fulmar's guarded Fetch boundary strips\nboth identifier names again if a future adapter update accidentally reintroduces them.\nSee Fulmar's vendored-patch register and qualification evidence before upgrading\nthis package.";
 const DEEPSEEK_README_ZH_UPSTREAM = "DeepSeek 请求身份独立于应用归因。凭据解析成功后，每个提供方请求都会通过 `x-deepseek-harness-user-id` 携带来自 [`@deepseek-ai/dsh-anonymous-user-id`](../../identity/anonymous-user-id/README.zh.md) 的稳定匿名 id；携带 `GenerateOptions.sessionId` 的请求还会通过 `x-deepseek-harness-session-id` 发送该确切值，缺少会话的直接调用则省略会话标头。两个标头都会发送至解析后的 `baseURL`（包括已配置的 gateway），且不会进入请求正文或模型可见内容。";
@@ -404,6 +436,7 @@ function patchPiAIReadmeChinese(bytes) {
 
 const PATCHERS = Object.freeze({
   "dsh-local-plugin-bootstrap": patchDSHManifest,
+  "dsh-profile-read-only-boot": patchDSHProfileReadOnlyBoot,
   "deepseek-provider-privacy-readme-en": (bytes) => Buffer.from(
     replaceExactlyOnce(bytes.toString("utf8"), DEEPSEEK_README_UPSTREAM, DEEPSEEK_README_PATCHED, "English privacy documentation"),
     "utf8"
@@ -429,7 +462,7 @@ async function validateReviewManifest(projectRoot, vendorRoot) {
   const manifest = parseJSON((await readRegular(manifestPath)).bytes, "runtime patch manifest");
   if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.patches)
       || manifest.patches.length !== Object.keys(PATCHERS).length
-      || !Array.isArray(manifest.upstreamTarballs) || manifest.upstreamTarballs.length !== 2) {
+      || !Array.isArray(manifest.upstreamTarballs) || manifest.upstreamTarballs.length !== 3) {
     fail("unsupported runtime patch manifest schema");
   }
 
@@ -451,7 +484,7 @@ async function validateReviewManifest(projectRoot, vendorRoot) {
   }
 
   const expectedTarballs = new Map(manifest.upstreamTarballs.map((entry) => [entry.package, entry]));
-  for (const packageName of ["@deepseek-ai/dsh", "@deepseek-ai/dsh-llm-deepseek"]) {
+  for (const packageName of ["@deepseek-ai/dsh", "@deepseek-ai/dsh-llm-deepseek", "@deepseek-ai/dsh-app-boot"]) {
     const expected = expectedTarballs.get(packageName);
     const actual = lock.packages?.[`node_modules/${packageName}`];
     if (!expected || actual?.version !== expected.version || actual.resolved !== expected.resolved
@@ -636,7 +669,7 @@ async function main() {
     await patchInstalledTree(stagedModules, review);
     await verifyPatchedTree(stagedModules, review);
     await rename(stagedModules, target);
-    process.stdout.write("Materialized the pinned dependency tree and applied thirteen checksum-bound Fulmar patches.\n");
+    process.stdout.write("Materialized the pinned dependency tree and applied fourteen checksum-bound Fulmar patches.\n");
   } finally {
     await rm(stage, { recursive: true, force: true });
   }
@@ -647,6 +680,7 @@ if (process.argv[1] !== void 0 && resolve(process.argv[1]) === fileURLToPath(imp
 }
 
 export {
+  patchDSHProfileReadOnlyBoot,
   patchDeepSeekRuntime,
   patchPiAIAdapterRuntime,
   patchPiAIConfigTypes,

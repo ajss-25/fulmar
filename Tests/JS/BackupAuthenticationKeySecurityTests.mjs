@@ -13,6 +13,20 @@ test("every unattended backup-key path has both per-query and process-wide no-UI
   assert.match(helper, /setKeychainInteraction\(0\)[\s\S]*?command == "backup-load-or-create"[\s\S]*?runBackupAuthenticationKeyLoadOrCreate/u);
   assert.match(helper, /added == errSecDuplicateItem[\s\S]*?lookupBackupAuthenticationKey\(nonInteractive: true\)/u);
 
+  // The foreground authorization and every cold-start backup read must use
+  // the same helper identity. Dispatching the latter through the XPC service
+  // selects a different Keychain reader even when the helper was approved.
+  // This is deterministic native-only routing, never a fallback after denial.
+  const entrypoint = helper.slice(helper.indexOf("let arguments = CommandLine.arguments"));
+  const backupAdmission = entrypoint.slice(0, entrypoint.indexOf('if command == "backup-authorize-existing"'))
+    .replace(/^\s*\/\/[^\n]*$/gmu, "");
+  assert.match(backupAdmission, /let nativeBackupCommand = command == "backup-load-or-create"\s*\|\| command == "backup-read-existing"/u);
+  assert.match(backupAdmission, /if nativeBackupCommand \{\s*guard arguments\.count == 2 else \{ fail\("native backup-key commands take no subject"\) \}\s*guard exactPackagedApplicationIsImmediateParent\(\) else \{\s*fail\("native backup-key access is unavailable"\)\s*\}\s*\} else \{\s*dispatchCredentialBrokerCommandIfNeeded\(command: command, arguments: arguments\)\s*\}/u);
+  assert.doesNotMatch(backupAdmission, /runBackupAuthenticationKey|lookupBackupAuthenticationKey|SecItem|setKeychainInteraction/u);
+  assert.equal((entrypoint.match(/dispatchCredentialBrokerCommandIfNeeded\(/gu) ?? []).length, 1,
+    "a denied native backup reader must not be retried through another identity");
+  assert.match(entrypoint, /setKeychainInteraction\(0\)[\s\S]*?if command == "backup-read-existing"[\s\S]*?runBackupAuthenticationKeyReadExisting\(\)/u);
+
   const loadOrCreateStart = helper.indexOf("private func runBackupAuthenticationKeyLoadOrCreate()");
   const foregroundStart = helper.indexOf("private func runBackupAuthenticationKeyForegroundAuthorization()");
   assert.ok(loadOrCreateStart >= 0 && foregroundStart > loadOrCreateStart);
@@ -78,7 +92,7 @@ test("the unattended-access probe is a read-existing command that can never crea
   assert.match(readExistingBody, /lookupBackupAuthenticationKey\(nonInteractive: true\)/u);
   assert.match(readExistingBody, /existing\.status == errSecItemNotFound \{ exit\(3\) \}/u);
   assert.doesNotMatch(readExistingBody, /SecItemAdd|SecItemUpdate|SecItemDelete/u);
-  assert.ok(helper.indexOf("setKeychainInteraction(0)") < helper.indexOf('command == "backup-read-existing"'));
+  assert.ok(helper.indexOf("setKeychainInteraction(0)") < helper.indexOf('if command == "backup-read-existing"'));
 
   // Broker: the read-existing operation is a plain read that returns nothing
   // when the item is absent, with no create, replace or delete path.
@@ -159,15 +173,27 @@ test("pre-controller credential paths pin the exact bundle components around exe
   assert.match(migration, /guard Bundle\.main\.bundleURL\.pathExtension != "app"/u);
 });
 
-test("the real-Keychain signer-change canary preserves the exact production backup key", async () => {
+test("the signer-change canary rejects unauthorized packaged backup access without probing the production key", async () => {
   const canary = await readFile(join(root, "Scripts", "verify-keychain-no-ui-transition.mjs"), "utf8");
   assert.match(canary, /const historicalHelper = process\.argv\[3\]/u);
   assert.match(canary, /assert\.notEqual\(historicalHelper, helper/u);
   assert.match(canary, /copyFile\(historicalHelper, legacy\)/u);
   assert.doesNotMatch(canary, /copyFile\(helper, legacy\)/u);
-  assert.match(canary, /helper, \["backup-load-or-create"\]/u);
-  assert.match(canary, /legacy, \["backup-load-or-create"\]/u);
-  assert.match(canary, /changed-signature backup read waited for authorization UI/u);
-  assert.match(canary, /changed-signature probing mutated the backup key/u);
+  assert.ok(canary.includes('const packagedHelper = /\\/[^/]+\\.app\\/Contents\\/MacOS\\/LocalHarnessCredentialHelper$/u.test(helper);'));
+  assert.match(canary, /if \(packagedHelper\) \{\s*for \(const command of \["backup-load-or-create", "backup-read-existing"\]\) \{\s*const deniedBackupAccess = await run\(helper, \[command\]\)/u);
+  assert.match(canary, /assert\.equal\(deniedBackupAccess\.signal, null\)/u);
+  assert.match(canary, /deniedBackupAccess\.elapsedMilliseconds < 2_500/u);
+  assert.match(canary, /assert\.equal\(deniedBackupAccess\.status, 2,/u);
+  assert.match(canary, /assert\.equal\(deniedBackupAccess\.stdout\.length, 0,/u);
+  assert.ok(canary.includes('assert.equal(deniedBackupAccess.stderr.toString("utf8"), "Credential helper: native backup-key access is unavailable\\n");'));
+  assert.doesNotMatch(canary, /run\((?:helper|legacy), \["backup-/u);
+  assert.doesNotMatch(canary, /currentBackupKey|changedSignatureBackupRead|retainedBackupKey/u);
+  assert.match(canary, /unauthorized-access test, not live backup-key qualification/u);
+  assert.match(canary, /Packaged backup parent rejection was not exercised by this standalone helper fixture/u);
+  assert.match(canary, /app-owned backup reads and relaunch require separate live qualification/u);
+  assert.match(canary, /run\(legacy, \["set", reference\], secret\)/u);
+  assert.match(canary, /run\(helper, \["set", reference\], replacement\)/u);
+  assert.match(canary, /a denied replacement mutated the existing credential/u);
+  assert.match(canary, /the metadata-less credential was not atomically adopted and replaced/u);
   assert.doesNotMatch(canary, /backup-(?:unset|delete)/u);
 });

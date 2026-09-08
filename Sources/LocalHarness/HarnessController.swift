@@ -36,6 +36,66 @@ enum SandboxBoundaryProbeProcess {
     }
 }
 
+enum HarnessProfilePreparationError: Error, LocalizedError {
+    case unavailable
+    case failed
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return "Fulmar's bundled web-profile preparer is unavailable."
+        case .failed:
+            return "Fulmar could not prepare its built-in web profile before starting the protected runtime."
+        }
+    }
+}
+
+/// Seeds only the installation-owned profile before the agent's write boundary
+/// is applied. The preparer imports the pinned boot library, not user plugins;
+/// the subsequent runtime keeps its existing module/manifest write denials.
+enum HarnessProfilePreparation {
+    static func run(
+        node: URL,
+        resources: URL,
+        home: URL,
+        workspace: URL,
+        temporaryDirectory: URL,
+        budget: RuntimeStartupPrerequisiteBudget
+    ) throws {
+        try budget.checkpoint()
+        let script = resources.appendingPathComponent("PrepareHarnessProfile.mjs")
+        let identities = try [
+            RuntimeLaunchPathIdentity.capture(node, kind: .regular),
+            RuntimeLaunchPathIdentity.capture(script, kind: .regular)
+        ]
+        let homeCapability = try RetainedPrivateDirectoryCapability(directoryURL: home, createIfMissing: false)
+        let deadline = try budget.remainingTimeInterval(maximum: 15)
+        guard deadline >= 0.05 else { throw RuntimeStartupPrerequisiteError.timedOut }
+        let result = try homeCapability.withValidatedDescriptor { _ in
+            try BoundedProcessGroupRunner.run(
+            executable: node,
+            arguments: [script.path, home.path],
+            environment: ChildProcessEnvironment.make(
+                nodeBin: node.deletingLastPathComponent().path,
+                homeDirectory: home,
+                temporaryDirectory: temporaryDirectory
+            ),
+            maximumStderrBytes: 16 * 1_024,
+            deadline: deadline,
+            currentDirectory: workspace,
+            standardInputDescriptor: FileHandle.nullDevice.fileDescriptor,
+            discardStandardOutput: true
+            )
+        }
+        for identity in identities { try identity.revalidate() }
+        try budget.checkpoint()
+        guard result.exitStatus == 0, result.terminationSignal == nil,
+              result.limit == nil, !result.stderrWasTruncated else {
+            throw HarnessProfilePreparationError.failed
+        }
+    }
+}
+
 /// Resolves the executable runtime without consulting ambient package-manager
 /// state in a production application bundle.  This keeps a hostile or stalled
 /// `~/.nvm` tree off the synchronous launch path and makes the pinned runtime
@@ -2883,6 +2943,20 @@ final class HarnessController {
         try fileManager.createDirectory(at: privateTemp, withIntermediateDirectories: true)
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: privateTemp.path)
         try budget.checkpoint()
+        // HarnessHomeManager has admitted the composition and removed stale
+        // installation fallback links. Seed their reviewed replacements here,
+        // before the runtime loses permission to mutate plugin-loading paths.
+        guard runtime.bundled, let resources = Bundle.main.resourceURL else {
+            throw HarnessProfilePreparationError.unavailable
+        }
+        try HarnessProfilePreparation.run(
+            node: runtime.node,
+            resources: resources,
+            home: harnessHome,
+            workspace: workingDirectory,
+            temporaryDirectory: privateTemp,
+            budget: budget
+        )
         let canonicalWorkspace = workingDirectory.resolvingSymlinksInPath().standardizedFileURL
         let workspaceRootsData = try JSONEncoder().encode([canonicalWorkspace.path])
         guard let workspaceRootsJSON = String(data: workspaceRootsData, encoding: .utf8) else {
