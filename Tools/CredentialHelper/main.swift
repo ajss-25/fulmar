@@ -67,6 +67,21 @@ private func exactPackagedApplicationIsImmediateParent() -> Bool {
         return false
     }
 
+    // An unrelated parent can never gain native credential authority. Reject
+    // it before the potentially expensive whole-bundle seal/nested-code scan,
+    // so cold signature validation cannot consume the no-UI rejection deadline.
+    // This is only a rejection check: matching parents still undergo all the
+    // original late path, static/running-code and identity checks below.
+    let candidateParent = getppid()
+    guard candidateParent > 1 else { return false }
+    var candidatePathBuffer = [CChar](repeating: 0, count: 4_096)
+    let candidatePathLength = proc_pidpath(candidateParent, &candidatePathBuffer, UInt32(candidatePathBuffer.count))
+    guard candidatePathLength > 0,
+          URL(fileURLWithPath: String(cString: candidatePathBuffer), isDirectory: false)
+            .resolvingSymlinksInPath().standardizedFileURL == applicationExecutable else {
+        return false
+    }
+
     var executableBefore = stat()
     guard lstat(applicationExecutable.path, &executableBefore) == 0,
           executableBefore.st_mode & S_IFMT == S_IFREG,
@@ -108,7 +123,7 @@ private func exactPackagedApplicationIsImmediateParent() -> Bool {
           let exactRequirement else { return false }
 
     let parent = getppid()
-    guard parent > 1 else { return false }
+    guard parent > 1, parent == candidateParent else { return false }
     var pathBuffer = [CChar](repeating: 0, count: 4_096)
     let pathLength = proc_pidpath(parent, &pathBuffer, UInt32(pathBuffer.count))
     guard pathLength > 0,

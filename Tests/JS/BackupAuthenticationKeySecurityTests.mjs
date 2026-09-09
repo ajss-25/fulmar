@@ -13,6 +13,27 @@ test("every unattended backup-key path has both per-query and process-wide no-UI
   assert.match(helper, /setKeychainInteraction\(0\)[\s\S]*?command == "backup-load-or-create"[\s\S]*?runBackupAuthenticationKeyLoadOrCreate/u);
   assert.match(helper, /added == errSecDuplicateItem[\s\S]*?lookupBackupAuthenticationKey\(nonInteractive: true\)/u);
 
+  // Reject an unrelated immediate parent before walking the entire signed
+  // bundle. Cold nested-code validation can exhaust the no-UI deadline even
+  // though that caller can never be authorized. Accepted parents still take
+  // the complete static/running-code checks and the final parent recheck.
+  const parentAdmissionStart = helper.indexOf("private func exactPackagedApplicationIsImmediateParent()");
+  const parentAdmissionEnd = helper.indexOf("private func matches(", parentAdmissionStart);
+  assert.ok(parentAdmissionStart >= 0 && parentAdmissionEnd > parentAdmissionStart);
+  const parentAdmission = helper.slice(parentAdmissionStart, parentAdmissionEnd);
+  const parentPathCheck = parentAdmission.indexOf("proc_pidpath(candidateParent");
+  const staticCodeCreation = parentAdmission.indexOf("SecStaticCodeCreateWithPath(");
+  assert.ok(parentPathCheck >= 0 && staticCodeCreation > parentPathCheck,
+    "an unrelated parent must be rejected before expensive whole-bundle signature validation");
+  assert.match(parentAdmission, /proc_pidpath\(candidateParent[\s\S]*?\.resolvingSymlinksInPath\(\)\.standardizedFileURL == applicationExecutable else \{\s*return false\s*\}/u);
+  assert.ok(parentAdmission.indexOf("proc_pidpath(parent") > staticCodeCreation,
+    "the original late parent-path recheck must remain after static validation");
+  assert.match(parentAdmission, /guard parent > 1, parent == candidateParent else \{ return false \}/u);
+  assert.match(parentAdmission, /proc_pidpath\(parent[\s\S]*?\.resolvingSymlinksInPath\(\)\.standardizedFileURL == applicationExecutable else \{\s*return false\s*\}/u);
+  assert.match(parentAdmission, /kSecCSCheckAllArchitectures \| kSecCSStrictValidate \| kSecCSCheckNestedCode/u);
+  assert.match(parentAdmission, /SecCodeCheckValidity\([\s\S]*?exactRequirement[\s\S]*?getppid\(\) == parent/u);
+  assert.match(parentAdmission, /SecStaticCodeCheckValidity\(staticCode, staticFlags, exactRequirement\) == errSecSuccess/u);
+
   // The foreground authorization and every cold-start backup read must use
   // the same helper identity. Dispatching the latter through the XPC service
   // selects a different Keychain reader even when the helper was approved.
