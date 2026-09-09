@@ -80,7 +80,7 @@ test("tracked DSH promotion record binds the exact release pin, lock, cohort, np
     version: "0.1.1-rc.1",
     cohortPackageCount: 188,
     cohortSHA256: "88ab9ba14bf22e172f1d330ad1aa7064fa855b37c803838da3a646d8d12e40e5",
-    lockSHA256: "408c97b76eb20998fc7fbf7b86d6ff901cab59061e5a72114ee429cdc4b8d6be",
+    lockSHA256: "0b56cc122f6f83fd9f849d559a455e2ead50c53b6654f5abceca859bc6827efb",
     githubTag: "dsh-v0.1.1-rc.1",
     githubCommitSHA: "528c682e061696f5a160f363f236ecbf53cbd006",
     releaseNotesSHA256: "48e4c1b31b2265d86ae0f168a1eb77c53dd587ef18bc2716b2cc99c54c17e0ff"

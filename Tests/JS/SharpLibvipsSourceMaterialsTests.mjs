@@ -16,7 +16,7 @@ const SHA256 = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
 const readJSON = async (relative) => JSON.parse(await readFile(join(project, relative), "utf8"));
 
-test("source materials manifest pins every component of the exact 1.3.2 build by URL, size and digest", async () => {
+test("source materials manifest pins every component of the exact 1.3.3 build by URL, size and digest", async () => {
   const manifest = await readJSON("Config/SharpLibvipsSourceMaterials.json");
   const provenance = (await readJSON("Config/ThirdPartyBinaryProvenance.json")).components[0];
   assert.equal(manifest.schemaVersion, 1);
@@ -29,7 +29,7 @@ test("source materials manifest pins every component of the exact 1.3.2 build by
   const dylib = provenance.shippedFiles.find(({ path }) => path.endsWith(".dylib"));
   assert.equal(manifest.binary.shippedBinary, dylib.path);
   assert.equal(manifest.binary.shippedBinarySHA256, dylib.sha256);
-  assert.equal(manifest.outputDirectoryName, "sharp-libvips-1.3.2-corresponding-source-materials");
+  assert.equal(manifest.outputDirectoryName, "sharp-libvips-1.3.3-corresponding-source-materials");
 
   const ids = manifest.items.map(({ id }) => id);
   assert.deepEqual(ids, [...new Set(ids)], "item ids are unique");

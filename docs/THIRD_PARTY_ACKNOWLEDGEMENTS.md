@@ -1,7 +1,7 @@
 # Third-party acknowledgements required in accompanying documentation
 
 Some licences bound for the redistributed `@img/sharp-libvips-darwin-arm64`
-1.3.2 combined binary (`lib/libvips-cpp.8.18.3.dylib`) require a statement in
+1.3.3 combined binary (`lib/libvips-cpp.8.18.6.dylib`) require a statement in
 the documentation that accompanies the executable, over and above the licence
 text itself. This file holds the exact wording so that it can be placed
 verbatim. The statements are bound in `Config/ThirdPartyBinaryProvenance.json`
@@ -15,9 +15,11 @@ delivery staging set. **Placing the wording in the installation guide or about
 text remains Codex integration work and an owner decision**; neither this file
 nor its rendering into the notices is legal clearance.
 
-Every statement below is derived from a licence text tracked under
+Every required statement below is derived from a licence text tracked under
 `Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/` and digest-bound in
-`Config/ThirdPartyBinaryProvenance.json`.
+`Config/ThirdPartyBinaryProvenance.json`. These FreeType, mozjpeg and cairo
+versions and exact archive notice bytes are unchanged in 1.3.3, so their
+existing material paths are deliberately retained.
 
 ## FreeType (FTL) — required credit
 
@@ -62,14 +64,14 @@ is an owner decision (see `docs/LIBVIPS_CORRESPONDING_SOURCE.md`).
   respectively. Their combined licence files are tracked and embedded.
 - Rust crates statically linked through librsvg: see
   `Config/SharpLibvipsRustProvenance.json` and the generated
-  `RUST_CRATE_NOTICES.md`. 157 of the 159 crates were observed compiling in the
+  `RUST_CRATE_NOTICES.md`. 159 of the 161 crates were observed compiling in the
   retained historical build log (two remain approximation-only); which crate
   code the shipped dylib incorporates is unverified. They include MPL-2.0 and
   Unicode-3.0 crates whose terms carry their own notice and source-availability
   requirements. Six crates carry no licence text in their archive:
   `Config/SharpLibvipsRustNoticeMaterials.json` holds exact external material
   for `mutants 0.0.4` (MIT, "Copyright (c) 2021 Martin Pool") and
-  `selectors 0.38.0` (MPL-2.0, per-file headers plus the SPDX text), and
+  `selectors 0.40.0` (MPL-2.0, per-file headers plus the SPDX text), and
   precise unresolved records for `block 0.1.6`, `malloc_buf 0.0.6`,
   `objc-foundation 0.1.1` and `objc_id 0.1.1`, whose upstream published no
   licence text or copyright line for those versions. When

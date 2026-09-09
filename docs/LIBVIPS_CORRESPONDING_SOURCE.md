@@ -1,8 +1,8 @@
 # libvips combined binary — exact notices and corresponding-source materials
 
 This document records what the repository now binds for the redistributed
-`@img/sharp-libvips-darwin-arm64` 1.3.2 combined binary
-(`lib/libvips-cpp.8.18.3.dylib`), how that material is verified, and what it
+`@img/sharp-libvips-darwin-arm64` 1.3.3 combined binary
+(`lib/libvips-cpp.8.18.6.dylib`), how that material is verified, and what it
 does **not** establish. It is a material record, not legal advice, not a
 corresponding-source offer, and not evidence that any beta candidate passed the
 `thirdPartyBinaryLicenseMaterials` gate in `docs/PUBLIC_BETA_RELEASE_CONTRACT.md`.
@@ -13,8 +13,8 @@ nothing here describes the third-party binary as MIT.
 
 The npm tarball (integrity and per-file digests in
 `Config/ThirdPartyBinaryProvenance.json`) was produced by the
-`lovell/sharp-libvips` repository at tag `v1.3.2`, commit
-`4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6` (the npm `gitHead`), by running
+`lovell/sharp-libvips` repository at tag `v1.3.3`, commit
+`6e5971d333377743163edc3ad9e5d0b897abcbc9` (the npm `gitHead`), by running
 `build.sh darwin-arm64v8`, which sources `versions.properties` and
 `build/posix.sh`. That recipe downloads 28 upstream source archives, applies
 four patches and a number of inline `sed` edits, builds every dependency as a
@@ -22,11 +22,18 @@ static library, links libvips itself statically into `libvips-cpp`, and packs
 the single dylib plus `versions.json` and a licence table into the tarball.
 The shipped `README.md` is that licence table under a package heading.
 
+The 09/09/2026 security refresh from sharp 0.35.3 to 0.35.4 changes this native
+bundle from 1.3.2 to 1.3.3; it is not only an addon change. Thirteen component
+versions change, including libheif 1.23.2 and libvips 8.18.6. The replacement
+npm tarball's registry integrity and all six file digests were verified before
+binding them. This refresh does not qualify a public binary or close any legal
+obligation.
+
 The README names 29 libraries; `versions.json` pins 28 versions. The difference
 is `libnsgif`: it is not downloaded or versioned by the recipe because libvips
 vendors it at `libvips/foreign/libnsgif` (copied from
 `git://git.netsurf-browser.org/libnsgif.git` by `update.sh`, "Last updated
-22 Jan 2023"). Its source is the libvips 8.18.3 archive. Neither the libvips
+22 Jan 2023"). Its source is the libvips 8.18.6 archive. Neither the libvips
 tree nor the recipe records an upstream libnsgif release or commit, so **no
 libnsgif version is asserted anywhere in this repository**.
 
@@ -37,15 +44,21 @@ holds one record per README library (29), each naming the exact pinned
 version (or `null` for libnsgif, with the resolution above), the upstream
 repository, the full 40-hex revision the version resolves to and how that
 resolution was obtained, and one or more notice materials. Every material is a
-file under `Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/` (libvips reuses
-the already-tracked `Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE`),
+file under `Resources/ThirdPartyLicenses/`: changed component versions use
+`sharp-libvips-1.3.3/`, unchanged versions retain their verified `1.3.2/` paths,
+and libvips uses `libvips-8.18.6-LICENSE`. Each is
 stored as the exact upstream bytes plus one terminal LF
 (`append-terminal-lf-v1`), with the raw upstream SHA-256, the tracked SHA-256,
-the immutable upstream origin (commit-pinned forge URL, or the release archive
-where no forge raw URL exists, as for libaom), and the archive member and
-archive SHA-256 the bytes were verified against. On 05/09/2026 every tracked
-text was compared byte-for-byte against both the pinned release archive member
-and the file at the resolved upstream revision; all 35 matched.
+the upstream origin (commit-pinned forge URL or exact digest-pinned release
+archive), and the archive member and archive SHA-256 the bytes were verified
+against. On 09/09/2026 all 35 texts for the replacement were compared against
+the exact 28 source archives; all matched their bindings. Fifteen version-bound
+files were added and historical files preserved. Only libffi's licence text
+changed (its copyright year advanced from 2025 to 2026); the shipped README
+table was independently verified byte-identical. The 05/09/2026 comparison
+against both archive members and upstream revision files belongs to the older
+1.3.2 materials, not to a claim that the replacement repeated that second check
+for every component.
 
 `scripts/generate-third-party-notices.mjs` follows the
 `componentNotices: { manifest, component }` reference in the sharp-libvips
@@ -62,7 +75,7 @@ notice-materials manifest for the six crates without archive licence text, and
 the accompanying-documentation statements (`docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md`,
 each tied to the bound FTL/IJG material). Because the record declares them,
 the generator **requires** an explicit operand
-`--rust-crate-materials <verified sharp-libvips-1.3.2-rust-crate-materials directory>`
+`--rust-crate-materials <verified sharp-libvips-1.3.3-rust-crate-materials directory>`
 — the private acquisition produced by `prepare-libvips-source-materials.mjs`
 with `--notice-materials` (Part B) — and fails closed, naming that operand,
 when it is absent; nothing is inferred from the environment, a directory is
@@ -70,10 +83,11 @@ never trusted by its file names alone (every archive is re-hashed and re-framed
 and the standalone notices are re-rendered and compared), and the operand is
 refused when no component declares a binding. With the operand the generated
 notices gain three deterministic sections: "Rust crate notices for redistributed
-binaries" (the 159-crate table, the six-crate section with the two exact
+binaries" (the 161-crate table, the six-crate section with the two exact
 external texts and the four unresolved records, and every archive-carried
-licence text embedded once per distinct digest, 90 distinct texts for 266
-members), "Acknowledgements required in accompanying documentation" (the exact
+licence text embedded once per distinct digest: 92 distinct texts across 271
+members), "Acknowledgements required in
+accompanying documentation" (the exact
 FTL and IJG statements and the cairo retained-text clarification, verified
 verbatim against the documentation file) and "Delivery material inventory"
 (every consumed input and rendered output by SHA-256). The 29-component section
@@ -107,13 +121,13 @@ returned for owner/legal review rather than resolved here:
   npm package manifest and populate-npm-workspace.sh);
 - the 4 patches the recipe applies (two revision-pinned gists, one
   GitHub-generated commit patch, one **mutable** pull-request patch — its
-  digest is what was observed on 05/09/2026);
+  digest was re-verified on 09/09/2026);
 - the 28 upstream source archives named by the recipe, each with the full
   upstream revision the version resolves to and how that was established
-  (tag peeled with `git ls-remote`; GitHub codeload redirect target or GitLab
-  commits API for the three short hashes `0826579`, `d01a94b`, `1acdbed`).
-  Four GNOME tarballs were additionally checked against the published
-  `.sha256sum` files.
+  (the 13 changed versions were resolved with `git ls-remote`; unchanged
+  revision evidence is retained, including the short mozjpeg hash `0826579`).
+  The existing HTTPS acquisition tool fetched and verified all 41 replacement
+  inputs (161,964,360 bytes); this does not assert a reproducible rebuild.
 
 Every inline `sed`/`cargo`/`meson` modification the recipe performs is listed
 in `buildTimeModifications` with its `build/posix.sh` line number.
@@ -125,7 +139,7 @@ a counter and SHA-256, aborts as soon as the size can no longer match, assembles
 everything in a private staging directory and renames it into place only after
 every item and the inventory (`INVENTORY.json`, `SHA256SUMS`) are written. A
 partial failure removes the staging directory and leaves no destination. The
-destination must be named `sharp-libvips-1.3.2-corresponding-source-materials`
+destination must be named `sharp-libvips-1.3.3-corresponding-source-materials`
 and must not already exist. `verify <manifest> <destination>` re-hashes an
 existing destination and fails on any drift, extra file, or inventory
 inconsistency. Archives are kept opaque: nothing is extracted, configured,
@@ -136,6 +150,30 @@ Recommended location: `build/libvips-corresponding-source/` inside the ignored
 build directory. Nothing under `build/` is tracked.
 
 ### Rust crates linked through librsvg (observed compilation bound; incorporation unverified)
+
+The current 1.3.3 record binds librsvg 2.62.91 and 161 registry crate
+archives (12,447,806 bytes). Cargo.lock contains 359 packages (SHA-256
+`fcca33feb66f75fb02199902cee0a5072cb491020d655463dfeffffc9d626941`),
+of which 340 are reachable without target/feature filtering. Its replacement
+build log records 159 registry crates plus two
+workspace packages compiling; `rustc_version` and `semver` remain retained
+approximation-only inputs. The exact Cargo.lock, graph counts, per-crate
+observations, build run and job, and tool-version observations are bound in
+`Config/SharpLibvipsRustProvenance.json`. The conservative set is those observed
+events plus the two retained lock-reachable inputs, not a rerun of Cargo feature
+unification or target selection. The npm attestation binds the tarball to
+[run 32944387969, job 98102057009](https://github.com/lovell/sharp-libvips/actions/runs/32944387969/job/98102057009)
+of 26/08/2026; the raw log retained on 09/09/2026 is 1,298,996 bytes / 13,212
+lines, SHA-256 `ab557d76a232c122ad995e62ee189bf387ae629a64c457d7031a410223a74aea`.
+None proves incorporation into the shipped 8.18.6 dylib. The current cache and
+commands below use 1.3.3.
+
+#### Historical 1.3.2 evidence — reviewed 05–06/09/2026
+
+The following retained account describes the superseded 1.3.2 snapshot only.
+References in this historical account to the lockfile and manifest mean their
+1.3.2 versions, not the current files. Its run, hashes, graph counts and tool
+versions are not carried forward as proof for the replacement 1.3.3 binary.
 
 librsvg 2.62.90 is Rust. Its tarball carries `Cargo.lock` (357 package entries,
 sha256 `e91fcc90…`) but no vendored crates; the recipe edits the workspace
@@ -196,8 +234,10 @@ nothing in it shows which crate code survived fat LTO and dead-stripping into
 `libvips-cpp.8.18.3.dylib`. `incorporatedIntoShippedBinary` therefore stays
 `unverified`, and the tool refuses a manifest that promotes it.
 
+#### Current 1.3.3 acquisition and notices
+
 `scripts/prepare-libvips-source-materials.mjs acquire Config/SharpLibvipsRustProvenance.json
-<parent>/sharp-libvips-1.3.2-rust-crate-materials` acquires the 159 `.crate`
+<parent>/sharp-libvips-1.3.3-rust-crate-materials` acquires the 161 `.crate`
 files (≈12 MB, HTTPS to `static.crates.io` only, no redirects), verifies each
 against its checksum, reads only the manifest-named licence members through a
 bounded tar reader, and renders a deterministic `RUST_CRATE_NOTICES.md` (table
@@ -214,12 +254,9 @@ bound to the sealed diagnostic fixtures.) `verify` re-validates the archives
 before trusting any inventory metadata. The inventory carries
 `historicalBuildProvenance` verbatim from the manifest.
 
-Licence expressions present: MIT OR Apache-2.0 (70), MIT (36), Unicode-3.0
-(18), Apache-2.0 OR MIT (6), MPL-2.0 (5), Apache-2.0 (4), MIT/Apache-2.0 (4),
-Zlib/MIT/Apache combinations (7), Unlicense OR MIT (3), BSD-3-Clause OR
-Apache-2.0 (2), 0BSD OR MIT OR Apache-2.0 (1), (Apache-2.0 OR MIT) AND
-BSD-3-Clause (1), Apache-2.0 WITH LLVM-exception (1), (MIT OR Apache-2.0) AND
-Unicode-3.0 (1). MPL-2.0 crates carry a source-availability obligation for
+The exact current licence-expression counts are recorded in
+`Config/SharpLibvipsRustProvenance.json` (`licenseExpressionSummary`).
+MPL-2.0 crates carry a source-availability obligation for
 their own files (the pinned `.crate` archives are that source) and Unicode-3.0
 crates carry notice requirements; both are owner/legal items.
 
@@ -229,13 +266,13 @@ Six crates — all observed compiling — carry no licence member in their `.cra
 `Config/SharpLibvipsRustNoticeMaterials.json` records, for each, the exact
 upstream revision the archive was packaged from, the evidence tying the archive
 to it, and either exact external material under
-`Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/` (labelled external —
+`Resources/ThirdPartyLicenses/sharp-libvips-1.3.3/rust/` (labelled external —
 never an archive member) or one precise unresolved record:
 
 | Crate | Connection to the packaged revision | Material |
 | --- | --- | --- |
 | `mutants 0.0.4` (MIT) | `.cargo_vcs_info.json` → `sourcefrog/cargo-mutants` @ `14011d08…`, `mutants_attrs`; `src/lib.rs` byte-identical | **established, external:** repository `LICENSE` at that commit ("Copyright (c) 2021 Martin Pool") |
-| `selectors 0.38.0` (MPL-2.0) | `.cargo_vcs_info.json` → `servo/stylo` @ `572ecba2…`, `selectors`; `lib.rs` and `matching.rs` byte-identical | **established:** archive-contained per-file MPL-2.0 header (every `.rs` member; no copyright line exists upstream) plus **external** MPL-2.0 text from SPDX 3.28.0 (commit `c4a7237e…`); the stylo README at that commit states "Stylo is licensed under MPL 2.0" |
+| `selectors 0.40.0` (MPL-2.0) | `.cargo_vcs_info.json` → `servo/stylo` @ `67faaab3…`, `selectors`; `Cargo.toml.orig`, `lib.rs` and `matching.rs` byte-identical to their upstream counterparts | **established:** archive-contained per-file MPL-2.0 header (all 16 `.rs` members; no package-specific copyright statement inferred) plus **external** MPL-2.0 text from SPDX 3.28.0 (commit `c4a7237e…`); the stylo README at that commit states "Stylo is licensed under MPL 2.0" |
 | `block 0.1.6` (MIT) | tag `0.1.6` = `SSheldon/rust-block` @ `47178790…`; README byte-identical | **unresolved:** no licence text, copyright line or licence statement in the archive or the tagged tree; only `license = "MIT"` and `authors = ["Steven Sheldon"]` |
 | `malloc_buf 0.0.6` (MIT) | tag `0.0.6` = `SSheldon/malloc_buf` @ `a7811e5f…` | **unresolved** (as above) |
 | `objc-foundation 0.1.1` (MIT) | tag `0.1.1` = `SSheldon/rust-objc-foundation` @ `0c157a59…` | **unresolved** (as above) |
@@ -267,13 +304,13 @@ relabelled as complete.
 ### Delivery staging (private; not a source offer)
 
 `scripts/stage-libvips-delivery-materials.mjs stage Config/ThirdPartyBinaryProvenance.json
-<verified sharp-libvips-1.3.2-corresponding-source-materials> <verified
-sharp-libvips-1.3.2-rust-crate-materials> <private parent>/sharp-libvips-1.3.2-delivery-materials`
+<verified sharp-libvips-1.3.3-corresponding-source-materials> <verified
+sharp-libvips-1.3.3-rust-crate-materials> <private parent>/sharp-libvips-1.3.3-delivery-materials`
 assembles one deterministic delivery-material directory from inputs that pass
 their own current manifest-bound verification (the upstream directory against
 the corresponding-source manifest, the crate directory against the crate
 manifest **with** the notice-materials manifest): the 41 upstream items and the
-159 `.crate` archives with their `INVENTORY.json`/`SHA256SUMS` verbatim, the
+161 `.crate` archives with their `INVENTORY.json`/`SHA256SUMS` verbatim, the
 complete `RUST_CRATE_NOTICES.md`, the two external notice texts under
 `notices/rust-external/` with the notice-materials manifest as their
 provenance, the four tracked manifests under `manifests/`,
@@ -298,7 +335,7 @@ created; the nine-asset public contract is unchanged.
 Recorded in the manifests' `unretained` arrays; summarised:
 
 1. **Compile-log coverage** — the retained log gives observed compile events
-   (157 registry crates + 2 workspace packages); it is not the resolved feature
+   (159 registry crates + 2 workspace packages); it is not the resolved feature
    graph, and the absence of truncation/cache markers is not proof that silent
    reuse was impossible. The resolver approximation was cross-checked against
    it (every observed crate is in the set; two set members were not observed).
@@ -315,7 +352,7 @@ Recorded in the manifests' `unretained` arrays; summarised:
    identical to the pinned commit's table, but the build-time origin itself is
    not reproducible.
 8. **No rebuild attempted.** Nothing proves that re-running the recipe
-   reproduces `libvips-cpp.8.18.3.dylib`, or that a relinked library can be
+   reproduces `libvips-cpp.8.18.6.dylib`, or that a relinked library can be
    substituted under the app's Developer ID signature and hardened runtime.
 9. **Binary incorporation.** Fat LTO and dead-stripping mean the crates whose
    code survives in the dylib are a subset of the compiled set; no binary
@@ -333,7 +370,7 @@ work:
 
 - **Notice generation (wired).** The verified crate materials are an internal
   build input cached at the literal checkout-local path
-  `build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials`
+  `build/third-party-notice-materials/sharp-libvips-1.3.3-rust-crate-materials`
   (the crate manifest's `outputDirectoryName`, bound by
   `scripts/prepare-third-party-notice-materials.mjs`). Only the clean source
   bootstrap (`scripts/bootstrap-source-checkout.sh`, after the complete runtime
@@ -361,7 +398,7 @@ work:
   snapshot, the app runtime, the runtime inventory or a public asset, and its
   presence is not a corresponding-source offer.
 - **Delivery set.** `scripts/stage-libvips-delivery-materials.mjs` produces the
-  verified `sharp-libvips-1.3.2-delivery-materials/` directory described above;
+  verified `sharp-libvips-1.3.3-delivery-materials/` directory described above;
   deterministic archive packaging (a single ZIP/TAR of that directory) is one
   bounded further step once the owner chooses a distribution mechanism.
 
@@ -369,11 +406,10 @@ Two options for distribution, either of which is a Codex-integrated delta, not
 something this record enables on its own:
 
 - **Option A — separate persistent artefact.** Publish the verified
-  `sharp-libvips-1.3.2-delivery-materials/` set (215 files, 175,873,353
-  bytes at the current manifests: the
-  `sharp-libvips-1.3.2-corresponding-source-materials/` upstream archives plus
+  `sharp-libvips-1.3.3-delivery-materials/` set (the
+  `sharp-libvips-1.3.3-corresponding-source-materials/` upstream archives plus
   recipe, patches, `INVENTORY.json`, `SHA256SUMS`; the
-  `sharp-libvips-1.3.2-rust-crate-materials/` `.crate` files plus the complete
+  `sharp-libvips-1.3.3-rust-crate-materials/` `.crate` files plus the complete
   `RUST_CRATE_NOTICES.md`, `INVENTORY.json`, `SHA256SUMS` with the
   observed-compilation status carried in the inventory; the external notice
   materials with their provenance manifest; the tracked manifests;
@@ -383,13 +419,17 @@ something this record enables on its own:
   with the `DELIVERY_INVENTORY.json` SHA-256. This keeps the app package
   unchanged and makes the material available for as long as the location is
   maintained. Delta: one new asset outside the nine, one documented URL/digest
-  pair, one owner commitment to keep it available.
+  pair, one owner commitment to keep it available. Exact output counts and
+  bytes must come from a fresh staging against the current manifests; the
+  historical 1.3.2 staging had 215 files and 175,873,353 bytes and does not
+  qualify this replacement set.
 - **Option B — ship the inventory, host the archives.** Include only
-  `DELIVERY_INVENTORY.json`/`SHA256SUMS` (≈131 kB and ≈31 kB) inside the
+  `DELIVERY_INVENTORY.json`/`SHA256SUMS` inside the
   app's notices bundle and host the set as in Option A. Delta: one additional
   file in the notices resource, plus Option A's hosting commitment.
 
-In both options the Rust crate set is the observed compile set bound above;
+In both options the Rust crate set includes the observed compilation set plus
+the two retained approximation-only inputs;
 which crate code the shipped dylib actually incorporates remains unverified
 unless the owner chooses a controlled, pinned replacement build in a
 separately approved lane. Neither is performed here.
@@ -397,7 +437,7 @@ separately approved lane. Neither is performed here.
 ## Questions for owner/legal review
 
 1. Does the owner intend to rely on LGPL-3.0 §4(d)(1) (shared-library
-   mechanism with a user-replaceable library) for `libvips-cpp.8.18.3.dylib`
+   mechanism with a user-replaceable library) for `libvips-cpp.8.18.6.dylib`
    under Developer ID signing with hardened runtime? If a user replaces the
    dylib the signature breaks; whether §4(e) Installation Information or GPL-3.0
    §6 applies to this distribution, and whether the answer differs for a
@@ -409,7 +449,7 @@ separately approved lane. Neither is performed here.
    installation guide / about text, and where?
 4. Is the upstream README's cairo "MPL 2.0" entry to be reported to
    `lovell/sharp-libvips` (the README invites error reports)?
-5. Is observed compilation (157 + 2 crates from the retained log) plus the
+5. Is observed compilation (159 + 2 crates from the retained log) plus the
    two approximation-only crates an acceptable notice basis for a beta, given
    that incorporation into the dylib is unverified, or is a controlled pinned
    replacement build (separately approved; changes runtime bytes) preferred?

@@ -145,7 +145,7 @@ for (const expected of [
   if (!noticeMaterialsGlue.includes(expected)) fail(`notice-material cache preparation is missing ${expected}`);
 }
 const noticeMaterialsOperand = '--rust-crate-materials "$RUST_CRATE_MATERIALS"';
-const noticeMaterialsLiteral = 'RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"';
+const noticeMaterialsLiteral = 'RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.3-rust-crate-materials"';
 for (const releaseScript of ["scripts/build-app.sh", "scripts/verify-release.sh", "scripts/prepare-public-release-assets.sh", "scripts/verify-public-distribution.sh"]) {
   const source = read(releaseScript);
   if (!source.includes(noticeMaterialsLiteral)) fail(`${releaseScript} does not bind the literal checkout-local notice-material cache`);

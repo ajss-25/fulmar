@@ -38,17 +38,17 @@
     },
     {
       "packagePath": "node_modules/@img/sharp-libvips-darwin-arm64",
-      "reason": "The 1.3.2 binary tarball (sharp-libvips gitHead 4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6) omits standalone licence texts; bind its shipped component licence manifest and exact component versions, the libvips 8.18.3 LGPL-2.1 terms whose any-later-version clause is exercised, and the SPDX 3.28.0 LGPL-3.0/GPL-3.0 text. Corresponding-source and relinking obligations remain recorded in Config/ThirdPartyBinaryProvenance.json as an open legal gate.",
+      "reason": "The 1.3.3 binary tarball (sharp-libvips gitHead 6e5971d333377743163edc3ad9e5d0b897abcbc9) omits standalone licence texts; bind its shipped component licence manifest and exact component versions, the libvips 8.18.6 LGPL-2.1 terms whose any-later-version clause is exercised, and the SPDX 3.28.0 LGPL-3.0/GPL-3.0 text. Corresponding-source and relinking obligations remain recorded in Config/ThirdPartyBinaryProvenance.json as an open legal gate.",
       "componentNotices": {
         "manifest": "Config/ThirdPartyBinaryProvenance.json",
         "component": "sharp-libvips-darwin-arm64"
       },
       "materials": [
         { "path": "dsh/node_modules/@img/sharp-libvips-darwin-arm64/README.md", "sha256": "47083f1ae7e990f74a56f576bcb8434051cb84ed1982fa57932720869e5147fe" },
-        { "path": "dsh/node_modules/@img/sharp-libvips-darwin-arm64/versions.json", "sha256": "71e22ad5154a3891e09291e2f316b3d9b0d0f405459144a94897a203580df055" },
+        { "path": "dsh/node_modules/@img/sharp-libvips-darwin-arm64/versions.json", "sha256": "adddf5e76ac1cc03b503a17c488b8591dd9eb5ec3faf689a3852d02d1b5fbb10" },
         {
-          "sourcePath": "Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE",
-          "origin": "https://github.com/libvips/libvips/blob/3664cfc5dc2c5661288f5bf5a85ccc51c64c1626/LICENSE",
+          "sourcePath": "Resources/ThirdPartyLicenses/libvips-8.18.6-LICENSE",
+          "origin": "https://github.com/libvips/libvips/blob/426af3f44246fce9cfa8dd51a353aa4dfd48c553/LICENSE",
           "upstreamSHA256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
           "normalization": "append-terminal-lf-v1",
           "sha256": "7c6699c75f87b52bdc542db26d6b1b92892577cda46e20eceb79e2790a1c291b"

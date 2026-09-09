@@ -63,7 +63,7 @@ INVENTORY_TOOL="$PROJECT_DIR/scripts/runtime-inventory.mjs"
 INVENTORY_NODE="$VENDOR_ROOT/node-v22.23.1-darwin-arm64/bin/node"
 # The private checkout-local notice-material cache prepared by
 # scripts/bootstrap-source-checkout.sh; verified here, never acquired.
-RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.3-rust-crate-materials"
 NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 PRODUCT_DISPLAY_NAME="$(plutil -extract productDisplayName raw -o - "$RELEASE_IDENTITY")"
 PRODUCT_BUNDLE_ID="$(plutil -extract bundleIdentifier raw -o - "$RELEASE_IDENTITY")"

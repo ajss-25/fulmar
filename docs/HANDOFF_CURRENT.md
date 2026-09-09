@@ -6,8 +6,15 @@ Updated: 2026-09-09 (Europe/London)
 
 - Source identity: Fulmar `1.2.36` build `156`, Apple silicon, macOS `15.0` minimum.
 - Runtime pin: Node `22.23.1`; DeepSeek Harness and MCP client `0.1.1-rc.1`.
-- Current reconstruction: fourteen hash-bound runtime patches; 38,501 VendorRuntime
-  entries / 394,622,662 file bytes, plus the verified Rust notice-material cache.
+- Current reconstruction: fourteen hash-bound runtime patches; 38,504 VendorRuntime
+  entries / 395,128,248 file bytes, plus the verified Rust notice-material cache.
+- The 2026-09-09 source security refresh moves Hono to `4.13.5`, js-yaml to
+  `4.3.2`, and sharp to `0.35.4` with sharp-libvips `1.3.3` (libvips `8.18.6`,
+  libheif `1.23.2`). All DSH package descriptors and the fourteen patch bytes are
+  unchanged. Reviewed lock SHA-256 is
+  `0b56cc122f6f83fd9f849d559a455e2ead50c53b6654f5abceca859bc6827efb`;
+  the fresh dependency audit reports zero findings across 495 package names.
+  Hosted qualification of this replacement remains required before merging.
 - Intended release lane: MIT-licensed **source beta**, explicitly not a generally
   supported binary download.
 - Installed `/Applications/Fulmar.app` is Fulmar `1.2.36` build `156`, built from

@@ -23,7 +23,7 @@ const project = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const script = join(project, "scripts", "materialize-vendor-runtime.mjs");
 const nodeBootstrap = join(project, "scripts", "fetch-node-runtime.sh");
 const noticeMaterialsGlue = join(project, "scripts", "prepare-third-party-notice-materials.mjs");
-const noticeMaterialsRelative = ["build", "third-party-notice-materials", "sharp-libvips-1.3.2-rust-crate-materials"];
+const noticeMaterialsRelative = ["build", "third-party-notice-materials", "sharp-libvips-1.3.3-rust-crate-materials"];
 const projectNoticeMaterials = join(project, ...noticeMaterialsRelative);
 const npmCLI = join(
   project,
@@ -510,7 +510,7 @@ test("public bootstrap strips NODE_OPTIONS before any pinned Node process", asyn
     // stay offline: the cache prepared by the real bootstrap beforehand is
     // re-verified as a hit, never acquired again, and only HTTPS-acquired,
     // authoritative output is accepted.
-    assert.match(result.stderr, new RegExp(`^verified notice-material cache ${projectNoticeMaterials.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")}: transport https \\(authoritative\\); 159 items \\(12047290 bytes\\); inventory sha256:[0-9a-f]{64}; checksum list sha256:[0-9a-f]{64}; RUST_CRATE_NOTICES\\.md sha256:[0-9a-f]{64}; external notice material Config/SharpLibvipsRustNoticeMaterials\\.json \\(sha256:[0-9a-f]{64}; established 2, unresolved 4\\)$`, "mu"));
+    assert.match(result.stderr, new RegExp(`^verified notice-material cache ${projectNoticeMaterials.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")}: transport https \\(authoritative\\); 161 items \\(12447806 bytes\\); inventory sha256:[0-9a-f]{64}; checksum list sha256:[0-9a-f]{64}; RUST_CRATE_NOTICES\\.md sha256:[0-9a-f]{64}; external notice material Config/SharpLibvipsRustNoticeMaterials\\.json \\(sha256:[0-9a-f]{64}; established 2, unresolved 4\\)$`, "mu"));
     assert.doesNotMatch(result.stderr, /acquiring|published .* via .* transport|\(NOT authoritative\)/u, "the test run must not acquire the cache");
     assert.match(result.stdout, /third-party notice materials are reconstructed and verified/u);
     const cache = await stat(projectNoticeMaterials);
@@ -533,13 +533,13 @@ async function noticeMaterialsFixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), "fulmar-notice-materials.")));
   await mkdir(join(root, "scripts"), { mode: 0o700 });
   await mkdir(join(root, "Config"), { mode: 0o700 });
-  await mkdir(join(root, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.2", "rust"), { recursive: true, mode: 0o700 });
+  await mkdir(join(root, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.3", "rust"), { recursive: true, mode: 0o700 });
   for (const name of ["SharpLibvipsRustProvenance.json", "SharpLibvipsRustNoticeMaterials.json", "ThirdPartyBinaryProvenance.json"]) {
     await copyFile(join(project, "Config", name), join(root, "Config", name));
   }
-  for (const name of ["mutants-0.0.4-external-cargo-mutants-LICENSE", "selectors-0.38.0-external-spdx-3.28.0-MPL-2.0.txt"]) {
-    await copyFile(join(project, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.2", "rust", name),
-      join(root, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.2", "rust", name));
+  for (const name of ["mutants-0.0.4-external-cargo-mutants-LICENSE", "selectors-0.40.0-external-spdx-3.28.0-MPL-2.0.txt"]) {
+    await copyFile(join(project, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.3", "rust", name),
+      join(root, "Resources", "ThirdPartyLicenses", "sharp-libvips-1.3.3", "rust", name));
   }
   const observed = join(root, "observed-acquisition.json");
   await writeFile(join(root, "scripts", "prepare-libvips-source-materials.mjs"), [
@@ -575,7 +575,7 @@ test("notice-material cache preparation admits only a private canonical cache, r
     };
     const absent = runNoticeMaterials(["prepare", root], poisoned);
     assert.notEqual(absent.status, 0);
-    assert.match(absent.stderr, /notice-material cache absent: .*; acquiring 159 crate materials \(12047290 bytes\) over HTTPS/u);
+    assert.match(absent.stderr, /notice-material cache absent: .*; acquiring 161 crate materials \(12447806 bytes\) over HTTPS/u);
     assert.match(absent.stderr, /fake acquisition tool refused/u);
     assert.match(absent.stderr, /HTTPS acquisition failed \(status 3\); cache publication state is unverified at/u);
     assert.doesNotMatch(absent.stderr, /no cache was published/u);
@@ -663,7 +663,7 @@ test("notice-material cache preparation admits only a private canonical cache, r
     await cp(projectNoticeMaterials, cache, { recursive: true, errorOnExist: false, force: true });
     const verifyHTTPSCopy = runNoticeMaterials(["verify", root, cache]);
     assert.equal(verifyHTTPSCopy.status, 0, verifyHTTPSCopy.stderr);
-    assert.match(verifyHTTPSCopy.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 159 items/mu);
+    assert.match(verifyHTTPSCopy.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 161 items/mu);
 
     // A child can fail after publishing a complete cache. Failure must remain
     // fatal without claiming absence, removing the cache, retrying acquisition,
@@ -707,7 +707,7 @@ test("notice-material cache preparation admits only a private canonical cache, r
       }
       const verifyPublished = runNoticeMaterials(["verify", root, cache]);
       assert.equal(verifyPublished.status, 0, verifyPublished.stderr);
-      assert.match(verifyPublished.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 159 items/mu);
+      assert.match(verifyPublished.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 161 items/mu);
       assert.equal(await readObservation(), expectedObservation, "independent verification must not acquire");
     } finally {
       await observation.close();

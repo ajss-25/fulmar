@@ -217,7 +217,7 @@ test("the production build exposes one bounded pre-sign mode and the gate proves
   // as independent byte-preserving copies at the identical relative path, each
   // verified by that clone's own pinned Node against its tracked manifests
   // before either offline build; the gate and both builds never acquire.
-  const relative = "build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials";
+  const relative = "build/third-party-notice-materials/sharp-libvips-1.3.3-rust-crate-materials";
   assert.match(gate, new RegExp(`^NOTICE_MATERIALS_RELATIVE="${relative}"$`, "mu"));
   assert.match(gate, /^RUST_CRATE_MATERIALS="\$PROJECT_DIR\/\$NOTICE_MATERIALS_RELATIVE"$/mu);
   const sourceVerification = gate.indexOf('"$NODE" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"');
@@ -231,7 +231,7 @@ test("the production build exposes one bounded pre-sign mode and the gate proves
     "each clone copy is verified, then the committed tree is rechecked, before any build");
   assert.equal((gate.match(/prepare-third-party-notice-materials\.mjs/gu) ?? []).length, 2, "the source tool binding plus one per-clone verification through the clone's own script");
   assert.doesNotMatch(gate, /prepare-third-party-notice-materials\.mjs" prepare|prepare-libvips-source-materials\.mjs|--transport|--notice-materials|curl/u, "the gate never acquires");
-  assert.match(build, /^RUST_CRATE_MATERIALS="\$PROJECT_DIR\/build\/third-party-notice-materials\/sharp-libvips-1\.3\.2-rust-crate-materials"$/mu);
+  assert.match(build, /^RUST_CRATE_MATERIALS="\$PROJECT_DIR\/build\/third-party-notice-materials\/sharp-libvips-1\.3\.3-rust-crate-materials"$/mu);
   const buildVerification = build.indexOf('"$NODE_BIN" "$NOTICE_MATERIALS_TOOL" verify "$PROJECT_DIR" "$RUST_CRATE_MATERIALS"');
   assert.ok(buildVerification >= 0 && buildVerification < build.indexOf("swift_release_command=("), "the build verifies the cache before compiling");
   assert.ok(buildVerification > build.indexOf('ACTUAL_NODE_SHA256="$(/usr/bin/shasum -a 256 "$NODE_BIN"'), "the build verifies the cache only with the authenticated Node");

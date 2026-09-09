@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "runtimePackageSHA256": "41abcc8de1146bc0ca3eabc746b5814e232ada064f3aa0ed778ff1b465ba9c0c",
-  "reviewedLockSHA256": "408c97b76eb20998fc7fbf7b86d6ff901cab59061e5a72114ee429cdc4b8d6be",
-  "installLockSHA256": "db499d7c7398de70d339f5b4f628af648912c29e41c0fd17d044f9f7901e1f65",
+  "reviewedLockSHA256": "0b56cc122f6f83fd9f849d559a455e2ead50c53b6654f5abceca859bc6827efb",
+  "installLockSHA256": "412945532f0eebb74a45d02f1590acbdf8801505bf1d4909b640f40e3df1badc",
   "removedInstallOnlyDependency": {
     "package": "@deepseek-ai/dsh",
     "dependency": "@local-harness/dsh-credentials-keychain",

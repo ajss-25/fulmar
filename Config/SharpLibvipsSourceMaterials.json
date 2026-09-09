@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "purpose": "Exact, digest-pinned identification of the upstream source archives, patches and build recipe that produced the redistributed @img/sharp-libvips-darwin-arm64 1.3.2 combined binary, for acquisition into an ignored build directory by scripts/prepare-libvips-source-materials.mjs. It identifies and verifies material; it does not constitute a corresponding-source offer, does not prove that the binary can be rebuilt, and is not legal clearance.",
+  "purpose": "Exact, digest-pinned identification of the upstream source archives, patches and build recipe that produced the redistributed @img/sharp-libvips-darwin-arm64 1.3.3 combined binary, for acquisition into an ignored build directory by scripts/prepare-libvips-source-materials.mjs. It identifies and verifies material; it does not constitute a corresponding-source offer, does not prove that the binary can be rebuilt, and is not legal clearance.",
   "binary": {
     "packageName": "@img/sharp-libvips-darwin-arm64",
-    "version": "1.3.2",
+    "version": "1.3.3",
     "buildRepository": "https://github.com/lovell/sharp-libvips",
-    "buildTag": "v1.3.2",
-    "buildCommit": "4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6",
+    "buildTag": "v1.3.3",
+    "buildCommit": "6e5971d333377743163edc3ad9e5d0b897abcbc9",
     "buildPlatform": "darwin-arm64v8",
-    "shippedBinary": "node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.3.dylib",
-    "shippedBinarySHA256": "50090a3a7c8f455de3c6cf2b274d231ddcc92901f4b1957c3b3391b6b9877989",
+    "shippedBinary": "node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.6.dylib",
+    "shippedBinarySHA256": "bba7a98f1c4b10f4c31f92e12264e5d41a7ab484b864feae535ac8919c548d01",
     "provenanceRecord": "Config/ThirdPartyBinaryProvenance.json"
   },
-  "outputDirectoryName": "sharp-libvips-1.3.2-corresponding-source-materials",
+  "outputDirectoryName": "sharp-libvips-1.3.3-corresponding-source-materials",
   "limits": {
     "maximumFileBytes": 67108864,
     "maximumTotalBytes": 268435456,
@@ -23,8 +23,8 @@
     {
       "id": "recipe-build-sh",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-build.sh",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/build.sh",
+      "fileName": "sharp-libvips-6e5971d33337-build.sh",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/build.sh",
       "size": 2804,
       "sha256": "f32e344b1355b6bcf3836e7f25e2c2de7f25eefeb8c96d02711ad3fcea487488",
       "allowedRedirectHosts": [],
@@ -34,10 +34,10 @@
     {
       "id": "recipe-build-posix-sh",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-build-posix.sh",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/build/posix.sh",
-      "size": 23553,
-      "sha256": "0f8c3f3c6b1144ce1ceae185440ae1e04209df5031bc97ccae9954c3ecfaee02",
+      "fileName": "sharp-libvips-6e5971d33337-build-posix.sh",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/build/posix.sh",
+      "size": 23597,
+      "sha256": "230a0b344ba78116c8dd230383141b1d3498fceeb8f5320c0b573ebf67a61267",
       "allowedRedirectHosts": [],
       "immutability": "commit-pinned-raw-file",
       "role": "The complete download/configure/build/link/pack recipe for every bundled component, including inline sed modifications"
@@ -45,10 +45,10 @@
     {
       "id": "recipe-versions-properties",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-versions.properties",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/versions.properties",
-      "size": 599,
-      "sha256": "cebb421de9568ae3ce8cfd66be62c3da53c2d549232c2e4327d9a9f97276c237",
+      "fileName": "sharp-libvips-6e5971d33337-versions.properties",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/versions.properties",
+      "size": 595,
+      "sha256": "02253a2d39a6b1cfd2c1deacb0947f7d2a3398a522236f7efc4d57e82cbfe980",
       "allowedRedirectHosts": [],
       "immutability": "commit-pinned-raw-file",
       "role": "Exact component versions; byte-equivalent to the shipped versions.json"
@@ -56,8 +56,8 @@
     {
       "id": "recipe-platforms-darwin-arm64v8-toolchain-cmake",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-platforms-darwin-arm64v8-Toolchain.cmake",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/platforms/darwin-arm64v8/Toolchain.cmake",
+      "fileName": "sharp-libvips-6e5971d33337-platforms-darwin-arm64v8-Toolchain.cmake",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/platforms/darwin-arm64v8/Toolchain.cmake",
       "size": 390,
       "sha256": "752c37ab0b1b9401ec9cad4ef0d6588511b6a1011fe8789acba4066f65cccf99",
       "allowedRedirectHosts": [],
@@ -67,8 +67,8 @@
     {
       "id": "recipe-platforms-darwin-arm64v8-meson-ini",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-platforms-darwin-arm64v8-meson.ini",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/platforms/darwin-arm64v8/meson.ini",
+      "fileName": "sharp-libvips-6e5971d33337-platforms-darwin-arm64v8-meson.ini",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/platforms/darwin-arm64v8/meson.ini",
       "size": 210,
       "sha256": "d9143811fe878743bc874d92de848a87a2c9a334b0d39e34d49b56c0a025a5ee",
       "allowedRedirectHosts": [],
@@ -78,8 +78,8 @@
     {
       "id": "recipe-third-party-notices-md",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-THIRD-PARTY-NOTICES.md",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/THIRD-PARTY-NOTICES.md",
+      "fileName": "sharp-libvips-6e5971d33337-THIRD-PARTY-NOTICES.md",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/THIRD-PARTY-NOTICES.md",
       "size": 4230,
       "sha256": "25ffcfa69e28b1913ced27ec778b90f24911a1bb3021253577e8b0af55db0d49",
       "allowedRedirectHosts": [],
@@ -89,8 +89,8 @@
     {
       "id": "recipe-license",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-LICENSE",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/LICENSE",
+      "fileName": "sharp-libvips-6e5971d33337-LICENSE",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/LICENSE",
       "size": 11357,
       "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
       "allowedRedirectHosts": [],
@@ -100,10 +100,10 @@
     {
       "id": "recipe-npm-darwin-arm64-package-json",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-npm-darwin-arm64-package.json",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/npm/darwin-arm64/package.json",
+      "fileName": "sharp-libvips-6e5971d33337-npm-darwin-arm64-package.json",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/npm/darwin-arm64/package.json",
       "size": 826,
-      "sha256": "de2d1cd6b1691ff9f84b44989e058a01c3fafda1d8d77db83527884873adee5a",
+      "sha256": "631dcab984f25e3b2ab96c3c7533531cec7344c4f1f76c78573e9fa4e6c77d2c",
       "allowedRedirectHosts": [],
       "immutability": "commit-pinned-raw-file",
       "role": "Package manifest before populate-npm-workspace.sh adds the ./binary export"
@@ -111,8 +111,8 @@
     {
       "id": "recipe-populate-npm-workspace-sh",
       "kind": "build-recipe",
-      "fileName": "sharp-libvips-4da6d14c0d59-populate-npm-workspace.sh",
-      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/populate-npm-workspace.sh",
+      "fileName": "sharp-libvips-6e5971d33337-populate-npm-workspace.sh",
+      "url": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/populate-npm-workspace.sh",
       "size": 2628,
       "sha256": "a960e41223db945832cd63f92ed38e9c297f58a5f72c6f4adea80f805fc12589",
       "allowedRedirectHosts": [],
@@ -131,7 +131,7 @@
       ],
       "immutability": "revision-pinned-gist-raw",
       "component": "glib",
-      "role": "Applied to GLib 2.89.1 with patch -p1 before meson setup (posix.sh line 147)"
+      "role": "Applied to GLib 2.89.4 with patch -p1 before meson setup (posix.sh line 147)"
     },
     {
       "id": "patch-mozjpeg-f90668e0",
@@ -155,7 +155,7 @@
       "allowedRedirectHosts": [],
       "immutability": "mutable-pull-request-patch",
       "component": "uhdr",
-      "role": "Applied to libultrahdr 1acdbed with patch -p1 (posix.sh line 360); a pull-request patch URL is not an immutable revision, so the digest recorded here is what was observed on 05/09/2026 and may legitimately drift"
+      "role": "Applied to libultrahdr 2.0.2 with patch -p1 (posix.sh line 360); a pull-request patch URL is not an immutable revision, so the digest recorded here is what was observed on 09/09/2026 and may legitimately drift"
     },
     {
       "id": "patch-libvips-cpp-soversion",
@@ -167,23 +167,23 @@
       "allowedRedirectHosts": [],
       "immutability": "revision-pinned-gist-raw",
       "component": "vips",
-      "role": "Applied to libvips 8.18.3 with patch -p1 (posix.sh line 372); gives libvips-cpp the 8.18.3 SONAME/install name"
+      "role": "Applied to libvips 8.18.6 with patch -p1 (posix.sh line 372); gives libvips-cpp the 8.18.6 SONAME/install name"
     },
     {
       "id": "source-aom",
       "kind": "source-archive",
       "component": "aom",
       "versionKey": "aom",
-      "version": "3.14.1",
-      "fileName": "libaom-3.14.1.tar.gz",
-      "url": "https://storage.googleapis.com/aom-releases/libaom-3.14.1.tar.gz",
-      "size": 6368868,
-      "sha256": "44bf90dbd23e734d50e70a8c41c285193922938bd0d3bc2ee56764d181d55ef5",
+      "version": "3.15.0",
+      "fileName": "libaom-3.15.0.tar.gz",
+      "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.0.tar.gz",
+      "size": 6622801,
+      "sha256": "ea08c38ecc078bc85bb1b691020e52b06250f1a81fe7ca5b624629225081af96",
       "allowedRedirectHosts": [],
       "immutability": "vendor-cdn-release-tarball",
       "upstreamRepository": "https://aomedia.googlesource.com/aom",
-      "upstreamRevision": "03087864cf4bea6abb0d28f95cf7843511413d8f",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "de4c1d1edc49723a78954d30a83690aa1937422f",
+      "revisionEvidence": "Upstream tag v3.15.0 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_AOM)"
     },
     {
@@ -227,19 +227,19 @@
       "kind": "source-archive",
       "component": "expat",
       "versionKey": "expat",
-      "version": "2.8.2",
-      "fileName": "expat-2.8.2.tar.xz",
-      "url": "https://github.com/libexpat/libexpat/releases/download/R_2_8_2/expat-2.8.2.tar.xz",
-      "size": 515504,
-      "sha256": "3ad89b8588e6644bd4e49981480d48b21289eebbcd4f0a1a4afb1c29f99b6ab4",
+      "version": "2.8.3",
+      "fileName": "expat-2.8.3.tar.xz",
+      "url": "https://github.com/libexpat/libexpat/releases/download/R_2_8_3/expat-2.8.3.tar.xz",
+      "size": 517264,
+      "sha256": "f6256df90c906773d344da084402b7d3e4f22ed41b1a59c989098a83d3ea0c85",
       "allowedRedirectHosts": [
         "release-assets.githubusercontent.com",
         "objects.githubusercontent.com"
       ],
       "immutability": "github-release-asset",
       "upstreamRepository": "https://github.com/libexpat/libexpat",
-      "upstreamRevision": "c61098da494eea1cbd091118118dcee417faacea",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "92810461043fce37e70079b37ab1f04490a8f039",
+      "revisionEvidence": "Upstream tag R_2_8_3 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_EXPAT)"
     },
     {
@@ -247,16 +247,16 @@
       "kind": "source-archive",
       "component": "fontconfig",
       "versionKey": "fontconfig",
-      "version": "2.18.1",
-      "fileName": "fontconfig-2.18.1.tar.gz",
-      "url": "https://gitlab.freedesktop.org/fontconfig/fontconfig/-/archive/2.18.1/fontconfig-2.18.1.tar.gz",
-      "size": 670761,
-      "sha256": "e9309564717b6301230112b173f36c288489479d381d2f0add1210ca5b16ba7e",
+      "version": "2.18.3",
+      "fileName": "fontconfig-2.18.3.tar.gz",
+      "url": "https://gitlab.freedesktop.org/fontconfig/fontconfig/-/archive/2.18.3/fontconfig-2.18.3.tar.gz",
+      "size": 666753,
+      "sha256": "9ae01e1d53acdef56010c5451cd34aa41d325b2faccd8606448d8fa01b2496b3",
       "allowedRedirectHosts": [],
       "immutability": "forge-generated-archive",
       "upstreamRepository": "https://gitlab.freedesktop.org/fontconfig/fontconfig",
-      "upstreamRevision": "d87ec67db56518e9e9c36ff38f151dfc9b728b2e",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "0f236723a3c26bd9745e32ba2b3ee21e5f809295",
+      "revisionEvidence": "Upstream tag 2.18.3 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_FONTCONFIG)"
     },
     {
@@ -303,16 +303,16 @@
       "kind": "source-archive",
       "component": "glib",
       "versionKey": "glib",
-      "version": "2.89.1",
-      "fileName": "glib-2.89.1.tar.xz",
-      "url": "https://download.gnome.org/sources/glib/2.89/glib-2.89.1.tar.xz",
-      "size": 5796348,
-      "sha256": "74447129c31afe141810f995626e8b99ab677413dae76ee3cf5a9cc6e75a486e",
+      "version": "2.89.4",
+      "fileName": "glib-2.89.4.tar.xz",
+      "url": "https://download.gnome.org/sources/glib/2.89/glib-2.89.4.tar.xz",
+      "size": 5830980,
+      "sha256": "1cdbb799f558832e6f14b8337b5fd599c6918ab144977b55e05e00a5e2e84a2c",
       "allowedRedirectHosts": [],
       "immutability": "gnome-release-tarball",
       "upstreamRepository": "https://gitlab.gnome.org/GNOME/glib",
-      "upstreamRevision": "fc5e493ba42d81d51fca58ca3ce5fdfe318cc2e7",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "fa41d356ee4936264c45cf11fa6c2640a89fbdda",
+      "revisionEvidence": "Upstream tag 2.89.4 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_GLIB)"
     },
     {
@@ -320,18 +320,18 @@
       "kind": "source-archive",
       "component": "harfbuzz",
       "versionKey": "harfbuzz",
-      "version": "14.2.1",
-      "fileName": "harfbuzz-14.2.1.tar.gz",
-      "url": "https://github.com/harfbuzz/harfbuzz/archive/14.2.1.tar.gz",
-      "size": 37415150,
-      "sha256": "3c2a9006a7e1bf58737e557014d7882c554c628fb379a9f00008f5ea53dbbdfb",
+      "version": "14.3.1",
+      "fileName": "harfbuzz-14.3.1.tar.gz",
+      "url": "https://github.com/harfbuzz/harfbuzz/archive/14.3.1.tar.gz",
+      "size": 37889473,
+      "sha256": "05e602daf0846d7497d842807766ea32ca270f3e2c9284ce03811a2a1ed669c9",
       "allowedRedirectHosts": [
         "codeload.github.com"
       ],
       "immutability": "forge-generated-archive",
       "upstreamRepository": "https://github.com/harfbuzz/harfbuzz",
-      "upstreamRevision": "56feae4035bdd48f62ba2b8d8c16232d4d89b3a4",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "ab5ecbb83985034a76214ac0b2b833dcd590d774",
+      "revisionEvidence": "Upstream tag 14.3.1 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_HARFBUZZ)"
     },
     {
@@ -378,19 +378,19 @@
       "kind": "source-archive",
       "component": "libarchive",
       "versionKey": "archive",
-      "version": "3.8.8",
-      "fileName": "libarchive-3.8.8.tar.xz",
-      "url": "https://github.com/libarchive/libarchive/releases/download/v3.8.8/libarchive-3.8.8.tar.xz",
-      "size": 6559080,
-      "sha256": "3873a88801da067d0528a989af06877710529d50ee8fe6f3970cbb4302efb918",
+      "version": "3.8.9",
+      "fileName": "libarchive-3.8.9.tar.xz",
+      "url": "https://github.com/libarchive/libarchive/releases/download/v3.8.9/libarchive-3.8.9.tar.xz",
+      "size": 6617696,
+      "sha256": "888c934f9d95648ecb9163dc8e23ab80a476ecb81a8f1154704a227b5b676dde",
       "allowedRedirectHosts": [
         "release-assets.githubusercontent.com",
         "objects.githubusercontent.com"
       ],
       "immutability": "github-release-asset",
       "upstreamRepository": "https://github.com/libarchive/libarchive",
-      "upstreamRevision": "7219b0134d771dc4b51bf86b4d01761b87398b1b",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "27cbc7827172698143e440801fc0ba39ccb4f1f5",
+      "revisionEvidence": "Upstream tag v3.8.9 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_ARCHIVE)"
     },
     {
@@ -418,19 +418,19 @@
       "kind": "source-archive",
       "component": "libffi",
       "versionKey": "ffi",
-      "version": "3.6.0",
-      "fileName": "libffi-3.6.0.tar.gz",
-      "url": "https://github.com/libffi/libffi/releases/download/v3.6.0/libffi-3.6.0.tar.gz",
-      "size": 1475449,
-      "sha256": "31ff1fe32deaebfbb388727f32677bb254bf2a41382c51464c0b1837c9ee9828",
+      "version": "3.8.0",
+      "fileName": "libffi-3.8.0.tar.gz",
+      "url": "https://github.com/libffi/libffi/releases/download/v3.8.0/libffi-3.8.0.tar.gz",
+      "size": 1581626,
+      "sha256": "7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4",
       "allowedRedirectHosts": [
         "release-assets.githubusercontent.com",
         "objects.githubusercontent.com"
       ],
       "immutability": "github-release-asset",
       "upstreamRepository": "https://github.com/libffi/libffi",
-      "upstreamRevision": "f6303b8b0dd6353c6a5bb4de2e855a13b86f22cf",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "12ffd1f9dc56fcea79d2f742f424301ae668d663",
+      "revisionEvidence": "Upstream tag v3.8.0 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_FFI)"
     },
     {
@@ -438,19 +438,19 @@
       "kind": "source-archive",
       "component": "libheif",
       "versionKey": "heif",
-      "version": "1.23.1",
-      "fileName": "libheif-1.23.1.tar.gz",
-      "url": "https://github.com/strukturag/libheif/releases/download/v1.23.1/libheif-1.23.1.tar.gz",
-      "size": 2071186,
-      "sha256": "0de0327f60fcd47de90d5654c6fe152232738d60d84fe084ec3e0f35e03b166a",
+      "version": "1.23.2",
+      "fileName": "libheif-1.23.2.tar.gz",
+      "url": "https://github.com/strukturag/libheif/releases/download/v1.23.2/libheif-1.23.2.tar.gz",
+      "size": 2111195,
+      "sha256": "8bd5d41d19dc84536d118b04774709f244df6104ef66d623dad5fa4650143405",
       "allowedRedirectHosts": [
         "release-assets.githubusercontent.com",
         "objects.githubusercontent.com"
       ],
       "immutability": "github-release-asset",
       "upstreamRepository": "https://github.com/strukturag/libheif",
-      "upstreamRevision": "2c4bbb54c2738d4a5efbbe3e5fa1d5d76bb88eb0",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "ac1cb05c39008f01525c991ff8b88f84ddf70fd2",
+      "revisionEvidence": "Upstream tag v1.23.2 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_HEIF)"
     },
     {
@@ -496,16 +496,16 @@
       "kind": "source-archive",
       "component": "librsvg",
       "versionKey": "rsvg",
-      "version": "2.62.90",
-      "fileName": "librsvg-2.62.90.tar.xz",
-      "url": "https://download.gnome.org/sources/librsvg/2.62/librsvg-2.62.90.tar.xz",
-      "size": 6766080,
-      "sha256": "5d108758255c225590d862d94f2591ee1f8cc976dc7b25b06eaba74f21850f08",
+      "version": "2.62.91",
+      "fileName": "librsvg-2.62.91.tar.xz",
+      "url": "https://download.gnome.org/sources/librsvg/2.62/librsvg-2.62.91.tar.xz",
+      "size": 6766696,
+      "sha256": "6caeae129d40dd88f8ec49436fd89bfe4ada716a125187a7fa0def8fcaa0b250",
       "allowedRedirectHosts": [],
       "immutability": "gnome-release-tarball",
       "upstreamRepository": "https://gitlab.gnome.org/GNOME/librsvg",
-      "upstreamRevision": "1a830b1e34bab5c69aec7c5cf86812376b4e53e2",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "2c012729091a25805eab3b9398104a82d838604d",
+      "revisionEvidence": "Upstream tag 2.62.91 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_RSVG)"
     },
     {
@@ -513,16 +513,16 @@
       "kind": "source-archive",
       "component": "libtiff",
       "versionKey": "tiff",
-      "version": "d01a94b",
-      "fileName": "libtiff-d01a94b.tar.gz",
-      "url": "https://gitlab.com/libtiff/libtiff/-/archive/d01a94b/libtiff-d01a94b.tar.gz",
-      "size": 2616815,
-      "sha256": "17f0a34707ebf05f884c980907abd1defbf6530285d585594cecdc3b19b43e6e",
+      "version": "4.7.2",
+      "fileName": "libtiff-4.7.2.tar.gz",
+      "url": "https://gitlab.com/libtiff/libtiff/-/archive/v4.7.2/libtiff-v4.7.2.tar.gz",
+      "size": 2616788,
+      "sha256": "62b15f44c10106065211efa22a2dc77937bd97ee1f6e3afd2c9659010de112eb",
       "allowedRedirectHosts": [],
       "immutability": "forge-generated-archive",
       "upstreamRepository": "https://gitlab.com/libtiff/libtiff",
       "upstreamRevision": "d01a94be176f5f6a87f7ee1c0b32e65416aa2b4d",
-      "revisionEvidence": "GitLab commits API resolution of the short ref named by versions.properties, observed on 05/09/2026",
+      "revisionEvidence": "Upstream tag v4.7.2 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_TIFF)"
     },
     {
@@ -530,18 +530,18 @@
       "kind": "source-archive",
       "component": "libultrahdr",
       "versionKey": "uhdr",
-      "version": "1acdbed",
-      "fileName": "libultrahdr-1acdbed.tar.gz",
-      "url": "https://github.com/google/libultrahdr/archive/1acdbed.tar.gz",
-      "size": 1475466,
-      "sha256": "c5bdb5afc7cb8bc88cf8ba66f33f5cbfb540baaa22519d2e805fd998bb89af9c",
+      "version": "2.0.2",
+      "fileName": "libultrahdr-2.0.2.tar.gz",
+      "url": "https://github.com/google/libultrahdr/archive/v2.0.2.tar.gz",
+      "size": 1518872,
+      "sha256": "aa8d193bb887c348c419780511dd03b374f4e07af8812b6d3f80c8537cf1ef2c",
       "allowedRedirectHosts": [
         "codeload.github.com"
       ],
       "immutability": "forge-generated-archive",
       "upstreamRepository": "https://github.com/google/libultrahdr",
-      "upstreamRevision": "1acdbed8c712e6923ebf9de4e7c8d8dda06509e9",
-      "revisionEvidence": "GitHub codeload redirect target for the short ref named by versions.properties, observed on 05/09/2026",
+      "upstreamRevision": "e5f5a022fe96fc4dc2ee35c19f733a50df807abe",
+      "revisionEvidence": "Upstream tag v2.0.2 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_UHDR)"
     },
     {
@@ -549,19 +549,19 @@
       "kind": "source-archive",
       "component": "libvips",
       "versionKey": "vips",
-      "version": "8.18.3",
-      "fileName": "vips-8.18.3.tar.xz",
-      "url": "https://github.com/libvips/libvips/releases/download/v8.18.3/vips-8.18.3.tar.xz",
-      "size": 25422084,
-      "sha256": "f41285b61bfb495605494f074ca341f7791a1d406e2f157dcea606ef1ae1b146",
+      "version": "8.18.6",
+      "fileName": "vips-8.18.6.tar.xz",
+      "url": "https://github.com/libvips/libvips/releases/download/v8.18.6/vips-8.18.6.tar.xz",
+      "size": 25431000,
+      "sha256": "3c41e1d5458081bfa4a5bc54e116c46259c75c6760a18027764555632b9dda3e",
       "allowedRedirectHosts": [
         "release-assets.githubusercontent.com",
         "objects.githubusercontent.com"
       ],
       "immutability": "github-release-asset",
       "upstreamRepository": "https://github.com/libvips/libvips",
-      "upstreamRevision": "3664cfc5dc2c5661288f5bf5a85ccc51c64c1626",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "426af3f44246fce9cfa8dd51a353aa4dfd48c553",
+      "revisionEvidence": "Upstream tag v8.18.6 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_VIPS)"
     },
     {
@@ -622,16 +622,16 @@
       "kind": "source-archive",
       "component": "pango",
       "versionKey": "pango",
-      "version": "1.58.0",
-      "fileName": "pango-1.58.0.tar.xz",
-      "url": "https://download.gnome.org/sources/pango/1.58/pango-1.58.0.tar.xz",
-      "size": 2590672,
-      "sha256": "bc5bad6213ad4886a47d1e80292fd850b64159b50db67917a43d9ea80ee2298a",
+      "version": "1.58.2",
+      "fileName": "pango-1.58.2.tar.xz",
+      "url": "https://download.gnome.org/sources/pango/1.58/pango-1.58.2.tar.xz",
+      "size": 1918112,
+      "sha256": "342385b6ca3b7c73455d7c80a13b7dbe4489e00bc3bd4c5bd6ed4dce421e374a",
       "allowedRedirectHosts": [],
       "immutability": "gnome-release-tarball",
       "upstreamRepository": "https://gitlab.gnome.org/GNOME/pango",
-      "upstreamRevision": "f25cbfe376ce2550d89fb7b4eb989b6a6218efc6",
-      "revisionEvidence": "annotated or lightweight tag resolved to its commit with git ls-remote against the upstream repository on 05/09/2026",
+      "upstreamRevision": "d360f14004e4a4824f2352f6e2722016f9a51dd6",
+      "revisionEvidence": "Upstream tag 1.58.2 resolved to its peeled commit using git ls-remote on 2026-09-09; exact source archive independently measured and notice members checked.",
       "recipeReference": "build/posix.sh (VERSION_PANGO)"
     },
     {
@@ -791,17 +791,17 @@
     {
       "id": "rust-crates",
       "component": "librsvg",
-      "detail": "librsvg 2.62.90 is implemented in Rust. Its release tarball carries Cargo.lock (357 package entries) but no vendored crates; the recipe runs cargo update --workspace and Cargo fetches crate sources from crates.io at build time. Config/SharpLibvipsRustProvenance.json pins, by crates.io checksum, the 159 registry crates a simplified resolver identifies for librsvg-c on aarch64-apple-darwin, together with the licence texts each .crate carries; the retained historical job log (raw sha256 b7b3362b\u2026) shows 157 of them compiling in the librsvg phase (the other two stay resolved-approximation). Observed compilation is not a linkage map: which crate code survived fat LTO and dead-stripping into libvips-cpp remains unverified."
+      "detail": "librsvg 2.62.91 is implemented in Rust. Its release carries Cargo.lock but not vendored crates; the recipe runs cargo update --workspace before compiling. Exact Rust manifest, notice and observed-compilation scope are recorded separately in Config/SharpLibvipsRustProvenance.json. Compilation is not a linkage map: incorporation into the shipped dylib remains unverified."
     },
     {
       "id": "rust-toolchain",
       "component": "librsvg",
-      "detail": "The recipe installs a rustup 'nightly' toolchain and 'cargo install cargo-c --locked' at build time (posix.sh lines 113-116), neither pinned by the recipe. The retained job log observed rustc 1.98.0-nightly (096694416 2026-06-29), cargo 1.98.0 and cargo-c 0.10.23+cargo-0.97.1; those are version strings as reported, not compiler or tool binary digests, and the full rustc commit is not expanded from the short revision."
+      "detail": "The recipe installs a rustup nightly toolchain and cargo install cargo-c --locked at build time (posix.sh lines 113-116), neither pinned by the recipe. Current historical-build observations, if retained, are recorded in Config/SharpLibvipsRustProvenance.json; older 1.3.2 observations do not qualify this replacement. Compiler/tool binary digests and the full build closure remain unrecorded."
     },
     {
       "id": "apple-toolchain",
       "component": "all",
-      "detail": "The darwin-arm64v8 build uses the Xcode clang, Apple SDK, Homebrew pkg-config and system frameworks (Quartz for cairo, CoreText for harfbuzz) of the GitHub Actions macos-15 runner that ran the release workflow. The retained job log observed Apple clang 17.0.0 (clang-1700.0.13.5), ld64 1167.5, pkg-config 2.5.1 and Meson 1.11.1; the SDK version and the full toolchain closure remain unrecorded."
+      "detail": "The darwin-arm64v8 build uses Xcode clang, an Apple SDK, Homebrew pkg-config and system frameworks from the GitHub Actions runner that ran this release. Current historical-build observations, if retained, are recorded in Config/SharpLibvipsRustProvenance.json. The full toolchain closure remains unrecorded; older 1.3.2 observations are not carried forward as replacement-build evidence."
     },
     {
       "id": "libnsgif-upstream-revision",
@@ -811,12 +811,12 @@
     {
       "id": "pull-request-patch-mutability",
       "component": "libultrahdr",
-      "detail": "https://patch-diff.githubusercontent.com/raw/google/libultrahdr/pull/383.patch is a mutable rendering; the digest pinned here is the bytes observed on 05/09/2026 and a later drift would be reported as a verification failure rather than resolved automatically."
+      "detail": "https://patch-diff.githubusercontent.com/raw/google/libultrahdr/pull/383.patch is a mutable rendering; the digest pinned here is the bytes observed on 09/09/2026 and a later drift would be reported as a verification failure rather than resolved automatically."
     },
     {
       "id": "forge-generated-archive-stability",
       "component": "all",
-      "detail": "Items marked forge-generated-archive are tarballs GitHub/GitLab generate from a commit on request; the digests pinned here are the bytes observed on 05/09/2026 and are not guaranteed stable by those forges."
+      "detail": "Items marked forge-generated-archive are tarballs GitHub/GitLab generate from a commit on request; the digests pinned here are the bytes observed on 09/09/2026 and are not guaranteed stable by those forges."
     },
     {
       "id": "third-party-notices-from-main",
@@ -826,7 +826,7 @@
     {
       "id": "rebuild-not-attempted",
       "component": "all",
-      "detail": "No configure, build, link or relink was executed. This manifest identifies inputs; it does not prove that re-running the recipe reproduces libvips-cpp.8.18.3.dylib or that a relinked library can be substituted under the app's code signature."
+      "detail": "No configure, build, link or relink was executed. This manifest identifies inputs; it does not prove that re-running the recipe reproduces libvips-cpp.8.18.6.dylib or that a relinked library can be substituted under the app's code signature."
     }
   ]
 }

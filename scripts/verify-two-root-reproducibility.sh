@@ -37,7 +37,7 @@ REPORT="$PROJECT_DIR/build/two-root-reproducibility-summary.json"
 # scripts/bootstrap-source-checkout.sh. Each clean clone receives its own
 # independent byte-identical copy at the identical relative path, verified
 # against that clone's tracked manifests before either offline build starts.
-NOTICE_MATERIALS_RELATIVE="build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+NOTICE_MATERIALS_RELATIVE="build/third-party-notice-materials/sharp-libvips-1.3.3-rust-crate-materials"
 RUST_CRATE_MATERIALS="$PROJECT_DIR/$NOTICE_MATERIALS_RELATIVE"
 NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 

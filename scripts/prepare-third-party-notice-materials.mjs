@@ -35,7 +35,7 @@ import { loadManifest, verifyMaterials } from "./prepare-libvips-source-material
 const USAGE = "usage: prepare-third-party-notice-materials.mjs prepare <project-root> | verify <project-root> <materials-directory>";
 const BUILD_DIRECTORY_NAME = "build";
 const CACHE_DIRECTORY_NAME = "third-party-notice-materials";
-const MATERIALS_DIRECTORY_NAME = "sharp-libvips-1.3.2-rust-crate-materials";
+const MATERIALS_DIRECTORY_NAME = "sharp-libvips-1.3.3-rust-crate-materials";
 const CRATE_MANIFEST = "Config/SharpLibvipsRustProvenance.json";
 const NOTICE_MANIFEST = "Config/SharpLibvipsRustNoticeMaterials.json";
 const ACQUISITION_TOOL = "scripts/prepare-libvips-source-materials.mjs";

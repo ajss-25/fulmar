@@ -551,13 +551,13 @@ test("sharp-libvips override binds the exact component manifest, versions and LG
   const config = JSON.parse(await readFile(join(project, "Config", "ThirdPartyLicenseOverrides.json"), "utf8"));
   const entry = config.overrides.find(({ packagePath }) => packagePath === "node_modules/@img/sharp-libvips-darwin-arm64");
   assert.ok(entry, "sharp-libvips override must exist");
-  assert.match(entry.reason, /1\.3\.2/u);
+  assert.match(entry.reason, /1\.3\.3/u);
   assert.match(entry.reason, /remain recorded in Config\/ThirdPartyBinaryProvenance\.json as an open legal gate/u);
   assert.doesNotMatch(entry.reason, /cleared|satisfied|compliant/iu);
   assert.deepEqual(entry.materials.map((material) => material.path ?? `source:${material.sourcePath}`), [
     "dsh/node_modules/@img/sharp-libvips-darwin-arm64/README.md",
     "dsh/node_modules/@img/sharp-libvips-darwin-arm64/versions.json",
-    "source:Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE",
+    "source:Resources/ThirdPartyLicenses/libvips-8.18.6-LICENSE",
     "source:Resources/ThirdPartyLicenses/sharp-libvips-1.3.2-LGPL-3.0-only-spdx-3.28.0"
   ]);
   assert.deepEqual(entry.componentNotices, { manifest: "Config/ThirdPartyBinaryProvenance.json", component: "sharp-libvips-darwin-arm64" },
@@ -601,13 +601,13 @@ test("sharp-libvips per-component notices bind end to end from the tracked prove
     const versions = Buffer.from("{}\n");
     await writeFile(join(packageDirectory, "README.md"), readme);
     await writeFile(join(packageDirectory, "versions.json"), versions);
-    await writeFile(join(packageDirectory, "package.json"), JSON.stringify({ name: "@img/sharp-libvips-darwin-arm64", version: "1.3.2", license: "LGPL-3.0-or-later" }));
+    await writeFile(join(packageDirectory, "package.json"), JSON.stringify({ name: "@img/sharp-libvips-darwin-arm64", version: "1.3.3", license: "LGPL-3.0-or-later" }));
     await writeFile(join(runtime, "NODE_LICENSE"), "Node licence fixture\n");
     await writeFile(join(runtime, "package-lock.json"), JSON.stringify({
       name: "fixture-runtime", version: "1.0.0", lockfileVersion: 3,
       packages: {
         "": { name: "fixture-runtime", version: "1.0.0" },
-        "node_modules/@img/sharp-libvips-darwin-arm64": { version: "1.3.2", license: "LGPL-3.0-or-later", optional: true }
+        "node_modules/@img/sharp-libvips-darwin-arm64": { version: "1.3.3", license: "LGPL-3.0-or-later", optional: true }
       }
     }));
     const config = JSON.parse(await readFile(join(project, "Config", "ThirdPartyLicenseOverrides.json"), "utf8"));
@@ -623,7 +623,7 @@ test("sharp-libvips per-component notices bind end to end from the tracked prove
     // required explicit input: the old invocation fails closed and names the seam.
     const withoutMaterials = spawnSync(process.execPath, [generator, template, runtime, overrides, output], { cwd: project, encoding: "utf8", timeout: 60_000 });
     assert.notEqual(withoutMaterials.status, 0, "the production record must not generate without the verified Rust crate materials");
-    assert.match(withoutMaterials.stderr, /component sharp-libvips-darwin-arm64 \(node_modules\/@img\/sharp-libvips-darwin-arm64\) declares Rust crate delivery materials; pass --rust-crate-materials <verified sharp-libvips-1\.3\.2-rust-crate-materials directory> \(acquired and verified by scripts\/prepare-libvips-source-materials\.mjs with --notice-materials Config\/SharpLibvipsRustNoticeMaterials\.json\)/u);
+    assert.match(withoutMaterials.stderr, /component sharp-libvips-darwin-arm64 \(node_modules\/@img\/sharp-libvips-darwin-arm64\) declares Rust crate delivery materials; pass --rust-crate-materials <verified sharp-libvips-1\.3\.3-rust-crate-materials directory> \(acquired and verified by scripts\/prepare-libvips-source-materials\.mjs with --notice-materials Config\/SharpLibvipsRustNoticeMaterials\.json\)/u);
     await assert.rejects(() => readFile(output), /ENOENT/u, "no partial notices file is written");
     // The component-notice path over the real record without the delivery declaration.
     const componentOnly = structuredClone(realProvenance);
@@ -646,7 +646,7 @@ test("sharp-libvips per-component notices bind end to end from the tracked prove
     }
     assert.match(notices, /Copyright \(C\) 2004 Richard Wilson/u, "libnsgif notice text is embedded");
     assert.match(notices, /Alliance for Open Media Patent License 1\.0/u);
-    assert.match(notices, /Text identical to `Resources\/ThirdPartyLicenses\/libvips-8\.18\.3-LICENSE` embedded above; not repeated\./u);
+    assert.match(notices, /Text identical to `Resources\/ThirdPartyLicenses\/libvips-8\.18\.6-LICENSE` embedded above; not repeated\./u);
     assert.doesNotMatch(notices, /legal clearance is granted|licence[- ]cleared/iu);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -659,7 +659,7 @@ test("release call sites bind the runtime root and authoritative override config
   // generator and never acquires or falls back to unbound notices.
   const crateManifest = JSON.parse(await readFile(join(project, "Config", "SharpLibvipsRustProvenance.json"), "utf8"));
   const literal = `RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/${crateManifest.outputDirectoryName}"`;
-  assert.equal(crateManifest.outputDirectoryName, "sharp-libvips-1.3.2-rust-crate-materials");
+  assert.equal(crateManifest.outputDirectoryName, "sharp-libvips-1.3.3-rust-crate-materials");
   const verification = /"\$(?:NODE_BIN|INVENTORY_NODE|NODE)" "\$NOTICE_MATERIALS_TOOL" verify "\$PROJECT_DIR" "\$RUST_CRATE_MATERIALS"\n/u;
   const generation = /generate-third-party-notices\.mjs" \\\n(?:  [^\n]*\\\n)*  --rust-crate-materials "\$RUST_CRATE_MATERIALS"\n/u;
   for (const path of [

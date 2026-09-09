@@ -143,11 +143,12 @@ exact frozen candidate closes it.
   affiliation, or a formal legal opinion.
 - A built app additionally redistributes `@img/sharp-libvips-darwin-arm64`/libvips
   binary material. The notice inventory now binds the upstream component manifest,
-  exact component versions, the libvips 8.18.3 LGPL-2.1 text and the SPDX
+  exact component versions, the libvips 8.18.6 LGPL-2.1 text and the SPDX
   LGPL-3.0/GPL-3.0 text, with exact provenance in
-  `Config/ThirdPartyBinaryProvenance.json`. Per-component copyright/permissive notice
-  texts, corresponding source, relinking/installation-information under code signing,
-  and legal clearance remain explicitly open. That binary gate, plus privacy-manifest,
+  `Config/ThirdPartyBinaryProvenance.json`. The 1.3.3 security refresh binds exact
+  per-component texts for all 29 named libraries, but four Rust crate notices remain
+  unresolved. Corresponding source, relinking/installation-information under code
+  signing, and legal clearance remain explicitly open. That binary gate, plus privacy-manifest,
   encryption/export and formal mark review, remains open. A source preview must not be
   presented as a qualified or notarized binary release.
 - An explicit manual-install `beta` public-release profile exists in source

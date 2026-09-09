@@ -16,7 +16,7 @@ const project = process.cwd();
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const SHA256 = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
-const RUST_PREFIX = "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/";
+const RUST_PREFIX = "Resources/ThirdPartyLicenses/sharp-libvips-1.3.3/rust/";
 const MATERIAL_KINDS = new Set(["external-upstream-file", "external-spdx-licence-text"]);
 
 async function validate(root) {
@@ -111,14 +111,14 @@ async function validate(root) {
 test("rust notice materials manifest binds version-bound external material or a precise unresolved record for every crate without archive licence text", async () => {
   const manifest = await validate(project);
   assert.deepEqual(manifest.summary, {
-    established: ["mutants 0.0.4", "selectors 0.38.0"],
+    established: ["mutants 0.0.4", "selectors 0.40.0"],
     unresolved: ["block 0.1.6", "malloc_buf 0.0.6", "objc-foundation 0.1.1", "objc_id 0.1.1"]
   });
   const mutants = manifest.records.find(({ crateName }) => crateName === "mutants");
   assert.equal(mutants.connection.revision, "14011d08c42a7cd368698fe28f77eb4cd0b65bf0");
   assert.match(await readFile(join(project, mutants.materials[0].sourcePath), "utf8"), /^MIT License\n\nCopyright \(c\) 2021 Martin Pool\n/u);
   const selectors = manifest.records.find(({ crateName }) => crateName === "selectors");
-  assert.equal(selectors.connection.revision, "572ecba2d1600e7c3d490586692a209faf703baa");
+  assert.equal(selectors.connection.revision, "67faaab3ff7aa66780ec1d0f51ca47e177b812d3");
   assert.match(await readFile(join(project, selectors.materials[0].sourcePath), "utf8"), /^Mozilla Public License Version 2\.0\n/u);
   for (const name of ["block", "malloc_buf", "objc-foundation", "objc_id"]) {
     const record = manifest.records.find(({ crateName }) => crateName === name);
@@ -154,7 +154,7 @@ const cases = [
     },
     {
       name: "tracked material missing",
-      mutate: async ({ root }) => rm(join(root, RUST_PREFIX, "selectors-0.38.0-external-spdx-3.28.0-MPL-2.0.txt")),
+      mutate: async ({ root }) => rm(join(root, RUST_PREFIX, "selectors-0.40.0-external-spdx-3.28.0-MPL-2.0.txt")),
       message: /ENOENT|no such file/u
     },
     {
@@ -281,16 +281,16 @@ test("the materials tool's notice-material verifier accepts the real tree and re
   assert.equal(loaded.relativePath, "Config/SharpLibvipsRustNoticeMaterials.json");
   assert.equal(loaded.sha256, digest(await readFile(join(project, "Config", "SharpLibvipsRustNoticeMaterials.json"))));
   assert.deepEqual(loaded.summary, {
-    established: ["mutants 0.0.4", "selectors 0.38.0"],
+    established: ["mutants 0.0.4", "selectors 0.40.0"],
     unresolved: ["block 0.1.6", "malloc_buf 0.0.6", "objc-foundation 0.1.1", "objc_id 0.1.1"]
   });
   assert.deepEqual(loaded.records.map(({ identity, status }) => `${identity}:${status}`),
-    ["block 0.1.6:unresolved", "malloc_buf 0.0.6:unresolved", "mutants 0.0.4:established", "objc-foundation 0.1.1:unresolved", "objc_id 0.1.1:unresolved", "selectors 0.38.0:established"]);
+    ["block 0.1.6:unresolved", "malloc_buf 0.0.6:unresolved", "mutants 0.0.4:established", "objc-foundation 0.1.1:unresolved", "objc_id 0.1.1:unresolved", "selectors 0.40.0:established"]);
   const mutants = loaded.records.find(({ crateName }) => crateName === "mutants");
   assert.equal(mutants.materials[0].kind, "external-upstream-file");
   assert.match(mutants.materials[0].text, /^MIT License\n\nCopyright \(c\) 2021 Martin Pool\n/u);
   const selectors = loaded.records.find(({ crateName }) => crateName === "selectors");
-  assert.equal(selectors.archiveNotice.member, "selectors-0.38.0/lib.rs");
+  assert.equal(selectors.archiveNotice.member, "selectors-0.40.0/lib.rs");
   assert.equal(selectors.materials[0].kind, "external-spdx-licence-text");
   assert.match(selectors.materials[0].text, /^Mozilla Public License Version 2\.0\n/u);
   for (const record of loaded.records.filter(({ status }) => status === "unresolved")) {

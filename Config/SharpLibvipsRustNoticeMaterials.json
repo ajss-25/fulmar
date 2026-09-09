@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "purpose": "Version-bound notice material for the crates in Config/SharpLibvipsRustProvenance.json whose .crate archives carry no licence text: for each crate, the exact upstream revision the archive was packaged from, the evidence connecting the archive to that revision, and either the exact external notice material retained under Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/ or one precise unresolved record. External material is labelled as such and was never a member of the original archive. This is material identification, not legal clearance and not a corresponding-source offer.",
+  "purpose": "Version-bound notice material for the crates in Config/SharpLibvipsRustProvenance.json whose .crate archives carry no licence text: for each crate, the exact upstream revision the archive was packaged from, the evidence connecting the archive to that revision, and either the exact external notice material retained under Resources/ThirdPartyLicenses/sharp-libvips-1.3.3/rust/ or one precise unresolved record. External material is labelled as such and was never a member of the original archive. This is material identification, not legal clearance and not a corresponding-source offer.",
   "crateManifest": "Config/SharpLibvipsRustProvenance.json",
-  "researchedOn": "2026-09-06",
+  "researchedOn": "2026-09-09",
   "summary": {
     "established": [
       "mutants 0.0.4",
-      "selectors 0.38.0"
+      "selectors 0.40.0"
     ],
     "unresolved": [
       "block 0.1.6",
@@ -116,7 +116,7 @@
       "materials": [
         {
           "kind": "external-upstream-file",
-          "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/mutants-0.0.4-external-cargo-mutants-LICENSE",
+          "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.3/rust/mutants-0.0.4-external-cargo-mutants-LICENSE",
           "describes": "MIT licence with the copyright statement 'Copyright (c) 2021 Martin Pool', the repository-level LICENSE of sourcefrog/cargo-mutants at the exact commit the crate was packaged from; the mutants_attrs package directory carries no separate licence file and the .crate archive carries none (external to the archive)",
           "origin": "https://github.com/sourcefrog/cargo-mutants/blob/14011d08c42a7cd368698fe28f77eb4cd0b65bf0/LICENSE",
           "upstreamSHA256": "479cbeb2506157776cf80abe31df18065d0fe50b5816ff77bfd75d5deb04ab5c",
@@ -214,28 +214,28 @@
     },
     {
       "crateName": "selectors",
-      "crateVersion": "0.38.0",
-      "crateSHA256": "8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d",
+      "crateVersion": "0.40.0",
+      "crateSHA256": "eeee001a77567bb05e71652718d3ff76d8697c151ac523e68e9513194eb2b75a",
       "licenseExpression": "MPL-2.0",
       "status": "established",
       "connection": {
         "kind": "cargo-vcs-info",
         "repository": "https://github.com/servo/stylo",
-        "revision": "572ecba2d1600e7c3d490586692a209faf703baa",
+        "revision": "67faaab3ff7aa66780ec1d0f51ca47e177b812d3",
         "pathInVcs": "selectors",
-        "revisionEvidence": "the crate archive member selectors-0.38.0/.cargo_vcs_info.json (sha256 1ddc4845786a1b1ebc7fb2f940878d9b923c4385d7d66841f25c765d1312fe74) records git sha1 572ecba2d1600e7c3d490586692a209faf703baa and path_in_vcs selectors; selectors/Cargo.toml at that commit declares version = \"0.38.0\", license = \"MPL-2.0\", authors = [\"The Servo Project Developers\"]; the crate members lib.rs (sha256 d54c6e13e9e952dac17d209171df8657e3cae93beaddace4906150cdec8d02e9) and matching.rs (sha256 90fb23dfb0dc9b9fa51e711ec4feb2b5a61d8f6bb8b284069d69f80ba82500fa) are byte-identical to selectors/lib.rs and selectors/matching.rs at that commit"
+        "revisionEvidence": "the crate archive member selectors-0.40.0/.cargo_vcs_info.json (sha256 22be7410f4d55a02279a2c57ef7022a47a008172005e008da1db51cace59d7e5) records git sha1 67faaab3ff7aa66780ec1d0f51ca47e177b812d3 and path_in_vcs selectors; selectors/Cargo.toml at that commit declares version = \"0.40.0\", license = \"MPL-2.0\", authors = [\"The Servo Project Developers\"]; the crate members Cargo.toml.orig (sha256 db73828f4113fa8204f173e5b42b505e2bb1d800e88e83734944796590fbcb1f), lib.rs (sha256 d54c6e13e9e952dac17d209171df8657e3cae93beaddace4906150cdec8d02e9) and matching.rs (sha256 3a12424ee5d63fa81d6b5348d1b7d2688c393ac2be300b4e3f54170a0aa1826c) are byte-identical to selectors/Cargo.toml, selectors/lib.rs and selectors/matching.rs at that commit"
       },
       "archiveNotice": {
-        "member": "selectors-0.38.0/lib.rs",
+        "member": "selectors-0.40.0/lib.rs",
         "memberSHA256": "d54c6e13e9e952dac17d209171df8657e3cae93beaddace4906150cdec8d02e9",
         "text": "/* This Source Code Form is subject to the terms of the Mozilla Public\n * License, v. 2.0. If a copy of the MPL was not distributed with this\n * file, You can obtain one at https://mozilla.org/MPL/2.0/. */",
-        "note": "Per-file MPL-2.0 notice carried by every .rs member of the crate archive (archive-contained). The upstream files carry no copyright line; the repository README at the same commit (sha256 59b1db611079186865d636abe5311c434d748955a97ea6f1ba1ec55ebaf9a84a) states 'Stylo is licensed under MPL 2.0'. No LICENSE file exists in the servo/stylo tree at that commit."
+        "note": "Per-file MPL-2.0 notice verified in all 16 .rs members of the crate archive (archive-contained). The repository README at the same commit (sha256 59b1db611079186865d636abe5311c434d748955a97ea6f1ba1ec55ebaf9a84a) states Stylo is licensed under MPL 2.0. The complete tree at that commit has no root or selectors licence file; licence files elsewhere belong to other components. No package-specific copyright statement is inferred."
       },
       "materials": [
         {
           "kind": "external-spdx-licence-text",
-          "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2/rust/selectors-0.38.0-external-spdx-3.28.0-MPL-2.0.txt",
-          "describes": "Mozilla Public License Version 2.0 text as published in SPDX License List 3.28.0, the licence the crate's per-file notices designate (external to the archive; the MPL text itself carries no package-specific copyright line and the upstream publishes none)",
+          "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.3/rust/selectors-0.40.0-external-spdx-3.28.0-MPL-2.0.txt",
+          "describes": "Mozilla Public License Version 2.0 text as published in SPDX License List 3.28.0, the licence the new crate per-file notices designate (external to the archive; the MPL text itself carries no package-specific copyright line)",
           "origin": "https://github.com/spdx/license-list-data/blob/c4a7237ec8f4654e867546f9f409749300f1bf4c/text/MPL-2.0.txt",
           "upstreamSHA256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
           "upstreamSize": 16727,

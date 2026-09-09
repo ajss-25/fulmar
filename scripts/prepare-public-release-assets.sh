@@ -35,7 +35,7 @@ NODE="$PROJECT_DIR/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node"
 FIRST_PARTY_LICENSE_POLICY="$PROJECT_DIR/scripts/first-party-license-policy.mjs"
 # The private checkout-local notice-material cache prepared by
 # scripts/bootstrap-source-checkout.sh; verified here, never acquired.
-RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.3-rust-crate-materials"
 NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 SOURCE_INPUT_INVENTORY="$PROJECT_DIR/build/source-build-inputs.json"
 SOURCE_INPUT_TOOL="$PROJECT_DIR/scripts/source-build-input-inventory.mjs"

@@ -110,7 +110,7 @@ FIRST_PARTY_LICENSE_POLICY="$PROJECT_DIR/scripts/first-party-license-policy.mjs"
 # The private checkout-local notice-material cache prepared by
 # scripts/bootstrap-source-checkout.sh; verified here, never acquired. A
 # missing cache means the bootstrap is required, never a comparison bypass.
-RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.3-rust-crate-materials"
 NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 PINNED_NODE_SHA256="$(/usr/bin/plutil -extract runtime.nodeSHA256 raw -o - "$RELEASE_IDENTITY")"
 MINIMUM_MACOS="$(/usr/bin/plutil -extract minimumMacOS raw -o - "$RELEASE_IDENTITY")"

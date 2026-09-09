@@ -33,9 +33,9 @@ test("binary provenance manifest is strict, bounded and names its open obligatio
   ]);
   assert.equal(component.id, "sharp-libvips-darwin-arm64");
   assert.equal(component.packageName, "@img/sharp-libvips-darwin-arm64");
-  assert.equal(component.version, "1.3.2");
+  assert.equal(component.version, "1.3.3");
   assert.equal(component.declaredLicense, "LGPL-3.0-or-later");
-  assert.match(component.resolved, /^https:\/\/registry\.npmjs\.org\/@img\/sharp-libvips-darwin-arm64\/-\/sharp-libvips-darwin-arm64-1\.3\.2\.tgz$/u);
+  assert.match(component.resolved, /^https:\/\/registry\.npmjs\.org\/@img\/sharp-libvips-darwin-arm64\/-\/sharp-libvips-darwin-arm64-1\.3\.3\.tgz$/u);
   assert.match(component.integrity, /^sha512-[A-Za-z0-9+/]{86}==$/u);
   assert.match(component.registryMetadata.gitHead, COMMIT);
   assert.equal(component.upstream.buildCommit, component.registryMetadata.gitHead,
@@ -49,7 +49,8 @@ test("binary provenance manifest is strict, bounded and names its open obligatio
   }
   assert.ok(component.upstream.buildScriptsLicenseURL.includes(component.upstream.buildCommit));
   assert.ok(component.upstream.libvipsLicenseURL.includes(component.upstream.libvipsCommit));
-  assert.equal(component.componentVersions.vips, "8.18.3");
+  assert.equal(component.componentVersions.vips, "8.18.6");
+  assert.equal(component.componentVersions.heif, "1.23.2", "the replacement bundle includes the patched libheif");
   assert.equal(component.upstream.libvipsTag, `v${component.componentVersions.vips}`);
   assert.ok(component.shippedFiles.some(({ path }) => path.endsWith(`libvips-cpp.${component.componentVersions.vips}.dylib`)));
   for (const lgpl of component.lgplComponents) {
@@ -82,13 +83,13 @@ test("binary provenance manifest is strict, bounded and names its open obligatio
   const notices = component.obligations.find(({ id }) => id === "per-component-copyright-and-permissive-notice-texts");
   assert.equal(notices.status, "material-bound");
   assert.match(notices.detail, /29 libraries/u);
-  assert.match(notices.detail, /Rust crates .* 157 observed compiling in the retained build log/u, "the notice obligation states the observed coverage");
+  assert.match(notices.detail, /Rust crates .* 159 observed compiling in the retained build log/u, "the notice obligation states the observed coverage");
   assert.match(notices.detail, /incorporation into the shipped dylib is not verified/u, "and names what it does not establish");
   const source = component.obligations.find(({ id }) => id === "corresponding-source");
   assert.match(source.detail, /Config\/SharpLibvipsSourceMaterials\.json/u);
   assert.match(source.detail, /no corresponding-source offer exists yet/u);
   assert.match(source.detail, /Config\/SharpLibvipsRustProvenance\.json/u);
-  assert.match(source.detail, /157 observed compiling/u);
+  assert.match(source.detail, /159 observed compiling/u);
   assert.match(source.detail, /incorporation into the dylib is unverified/u);
 });
 
@@ -152,7 +153,7 @@ test("per-component notices cover every upstream manifest library exactly once w
       assert.ok(/copyright|licen[cs]e|permission|patent/iu.test(bytes.toString("utf8")), `${material.sourcePath} reads as a notice`);
     }
   }
-  const trackedDirectory = "Resources/ThirdPartyLicenses/sharp-libvips-1.3.2";
+  const trackedDirectory = "Resources/ThirdPartyLicenses/sharp-libvips-1.3.3";
   const { readdir } = await import("node:fs/promises");
   const tracked = (await readdir(join(project, trackedDirectory), { withFileTypes: true }))
     .filter((entry) => entry.isFile())
@@ -160,9 +161,9 @@ test("per-component notices cover every upstream manifest library exactly once w
   const subdirectories = (await readdir(join(project, trackedDirectory), { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   assert.deepEqual(subdirectories, ["rust"], "only the Rust notice-material subdirectory (bound by Config/SharpLibvipsRustNoticeMaterials.json) may exist beside the component notices");
   const bound = [...seenPaths].filter((path) => path.startsWith(`${trackedDirectory}/`)).sort();
-  assert.deepEqual(tracked, bound, "every tracked component notice file is bound and nothing untracked is present");
+  assert.deepEqual(tracked, bound, "every new-version component notice file is bound; unchanged components retain verified historical paths");
   const libvips = component.componentNotices.find(({ component: name }) => name === "libvips");
-  assert.equal(libvips.materials[0].sourcePath, "Resources/ThirdPartyLicenses/libvips-8.18.3-LICENSE", "libvips reuses the package-level tracked text");
+  assert.equal(libvips.materials[0].sourcePath, "Resources/ThirdPartyLicenses/libvips-8.18.6-LICENSE", "libvips reuses the package-level tracked text");
   assert.equal(libvips.materials[0].origin, component.upstream.libvipsLicenseURL);
 });
 
@@ -177,7 +178,7 @@ test("delivery material bindings name tracked manifests, bound materials and the
   assert.match(delivery.purpose, /not legal clearance/u);
   assert.match(delivery.purpose, /do not constitute a corresponding-source offer/u);
   assert.doesNotMatch(JSON.stringify(delivery), /cleared|compliant|legally (?:sufficient|satisfied)/iu);
-  assert.equal(delivery.outputDirectoryName, "sharp-libvips-1.3.2-delivery-materials");
+  assert.equal(delivery.outputDirectoryName, "sharp-libvips-1.3.3-delivery-materials");
   assert.equal(delivery.sourceMaterials, "Config/SharpLibvipsSourceMaterials.json");
   assert.equal(delivery.rustCrateMaterials, "Config/SharpLibvipsRustProvenance.json");
   assert.equal(delivery.rustNoticeMaterials, "Config/SharpLibvipsRustNoticeMaterials.json");
@@ -191,7 +192,7 @@ test("delivery material bindings name tracked manifests, bound materials and the
   assert.equal(crates.binary.provenanceRecord, "Config/ThirdPartyBinaryProvenance.json", "the crate manifest points back at this record");
   assert.equal(notices.crateManifest, delivery.rustCrateMaterials, "the notice-materials manifest binds the same crate manifest");
   assert.equal(source.items.length, 41);
-  assert.equal(crates.items.length, 159);
+  assert.equal(crates.items.length, 161);
   assert.deepEqual(notices.summary.unresolved, ["block 0.1.6", "malloc_buf 0.0.6", "objc-foundation 0.1.1", "objc_id 0.1.1"], "the four unresolved notices stay unresolved");
 
   const documentation = delivery.accompanyingDocumentation;
@@ -268,7 +269,7 @@ test("binary provenance licence texts match the override config and tracked byte
   const overrides = await readJSON("Config/ThirdPartyLicenseOverrides.json");
   const override = overrides.overrides.find(({ packagePath }) => packagePath === component.lockfilePath);
   assert.ok(override, "the package keeps a reviewed licence override");
-  assert.match(override.reason, /4da6d14c0d59866adfb9d8cf52bcaa53846dc4f6/u);
+  assert.match(override.reason, /6e5971d333377743163edc3ad9e5d0b897abcbc9/u);
   assert.match(override.reason, /Config\/ThirdPartyBinaryProvenance\.json/u);
   assert.match(override.reason, /open legal gate/u);
 
@@ -303,7 +304,7 @@ test("binary provenance licence texts match the override config and tracked byte
     assert.equal(digest(bytes.subarray(0, bytes.byteLength - 1)), bound.upstreamSHA256, bound.sourcePath);
     assert.ok(!bytes.includes(0x0d) && !bytes.includes(0x00), bound.sourcePath);
   }
-  const libvips = component.boundLicenseTexts.find(({ sourcePath }) => sourcePath.endsWith("libvips-8.18.3-LICENSE"));
+  const libvips = component.boundLicenseTexts.find(({ sourcePath }) => sourcePath.endsWith("libvips-8.18.6-LICENSE"));
   assert.equal(libvips.origin, component.upstream.libvipsLicenseURL);
   assert.equal(libvips.upstreamSHA256, component.upstream.libvipsLicenseSHA256);
   const libvipsText = (await readFile(join(project, libvips.sourcePath), "utf8"));

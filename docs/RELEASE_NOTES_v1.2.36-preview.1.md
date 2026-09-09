@@ -45,7 +45,7 @@ unrun result.
 | Gate | Result |
 | --- | --- |
 | Tracked-index policy on the proposed public commit | must pass against the exact committed index |
-| Clean-checkout bootstrap (`zsh scripts/bootstrap-source-checkout.sh`) | must reconstruct pinned Node, DSH 0.1.1-rc.1, qs 6.16.0, fast-uri 3.1.6, 14 patches, the exact 38,501-entry / 394,622,662-byte VendorRuntime inventory and the verified Rust notice-material cache |
+| Clean-checkout bootstrap (`zsh scripts/bootstrap-source-checkout.sh`) | must reconstruct pinned Node, DSH 0.1.1-rc.1, qs 6.16.0, fast-uri 3.1.6, Hono 4.13.5, js-yaml 4.3.2, sharp 0.35.4, 14 patches, the exact 38,504-entry / 395,128,248-byte VendorRuntime inventory and the verified Rust notice-material cache |
 | DSH promotion provenance, source product contract, DeepSeek runtime contract | must pass |
 | Production dependency audit (pinned npm 10.9.8 virtual tree; credential-free bounded Bulk Advisory primary; whole-graph OSV QueryBatch secondary authority only after a narrowly retryable batch outage; no Quick Audit route) | must report zero findings and identify one complete authority |
 | Static security scan | must report zero unreviewed findings using the content-pinned Semgrep 1.135.0 closure and pinned rules |

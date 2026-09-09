@@ -4,6 +4,20 @@ All notable Fulmar changes will be recorded here. Dates identify source candidat
 they do not imply that a downloadable binary is signed, notarized, or publicly
 qualified. See `docs/QUALIFICATION_EVIDENCE.md` for exact test evidence.
 
+## Source-preview security refresh — 2026-09-09
+
+- Updates transitive Hono `4.13.3` → `4.13.5`, js-yaml `4.3.1` → `4.3.2`,
+  and sharp `0.35.3` → `0.35.4` with its exact optional cohort. The replacement
+  sharp-libvips `1.3.3` carries libvips `8.18.6` and patched libheif `1.23.2`.
+  These address the five dependency advisories exposed by the first hosted
+  qualification attempt. No direct dependency, DSH version, override, audit
+  waiver or end-user feature changes.
+- Reconstructs the runtime through the existing materializer, rebinds exact
+  native and Rust notice/source materials, and preserves the open binary
+  source-offer, relinking and legal-review obligations. The new inventory has
+  38,504 entries / 395,128,248 file bytes; the dependency audit reports zero
+  findings across 495 package names. This is not a public-binary qualification.
+
 ## 1.2.36 (build 156) — 2026-09-02 — public source preview candidate (v1.2.36-preview.1)
 
 Same Fulmar product version/build and runtime pin as the candidate below, with

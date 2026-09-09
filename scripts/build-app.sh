@@ -173,7 +173,7 @@ FIRST_PARTY_LICENSE_POLICY="$PROJECT_DIR/scripts/first-party-license-policy.mjs"
 # scripts/bootstrap-source-checkout.sh prepared over HTTPS. It is bound into the
 # generated notices, verified before compilation, and is neither acquired here
 # nor copied into the source snapshot, the app runtime or any release asset.
-RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.2-rust-crate-materials"
+RUST_CRATE_MATERIALS="$PROJECT_DIR/build/third-party-notice-materials/sharp-libvips-1.3.3-rust-crate-materials"
 NOTICE_MATERIALS_TOOL="$PROJECT_DIR/scripts/prepare-third-party-notice-materials.mjs"
 TOOLCHAIN_INVENTORY="$BUILD_OUTPUT_DIR/toolchain-inventory.json"
 TOOLCHAIN_TOOL="$PROJECT_DIR/scripts/toolchain-inventory.mjs"

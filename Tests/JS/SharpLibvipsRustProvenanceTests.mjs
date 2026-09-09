@@ -27,7 +27,7 @@ test("rust provenance manifest is an explicitly partial, digest-pinned approxima
   assert.match(manifest.purpose, /approximation/u);
   assert.doesNotMatch(manifest.purpose, /cleared|satisfied|compliant|complete corresponding source/iu);
   assert.deepEqual(manifest.binary, sourceMaterials.binary, "same binary record as the source materials manifest");
-  assert.equal(manifest.outputDirectoryName, "sharp-libvips-1.3.2-rust-crate-materials");
+  assert.equal(manifest.outputDirectoryName, "sharp-libvips-1.3.3-rust-crate-materials");
 
   // Historical-build evidence: the npm attestation subject must be the exact tarball the lockfile pins.
   const lock = await readJSON(provenance.lockfile);
@@ -45,15 +45,15 @@ test("rust provenance manifest is an explicitly partial, digest-pinned approxima
   assert.equal(job.name, "build-darwin-arm64v8");
   assert.match(job.logStatus, /^retrieved-and-retained/u, "the compile log was retrieved and retained, and the manifest says so");
   const log = manifest.historicalBuildEvidence.jobLog;
-  assert.equal(log.rawSHA256, "b7b3362b69a9dacebb3588502529cfa8f6b130854040213b928ad1011010158b", "raw log digest as recorded by the sealed review evidence");
-  assert.equal(log.rawBytes, 944166);
-  assert.equal(log.lines, 10027);
-  assert.match(log.endpoint, /jobs\/84249528353\/logs$/u);
-  assert.match(log.retention, /74c16427f8f9a5fd56b90855142b4f79c28ca9352fa31ecbdb9270603c9a1fb4/u, "the sealed evidence manifest digest is recorded");
+  assert.equal(log.rawSHA256, "ab557d76a232c122ad995e62ee189bf387ae629a64c457d7031a410223a74aea", "raw log digest as recorded by the sealed review evidence");
+  assert.equal(log.rawBytes, 1298996);
+  assert.equal(log.lines, 13212);
+  assert.match(log.endpoint, /jobs\/98102057009\/logs$/u);
+  assert.match(log.retention, /ea43546d45adcb311510a2c957f83159ef332f10a30bacfa83dd219f419e4c4c/u, "the sealed evidence manifest digest is recorded");
   assert.doesNotMatch(JSON.stringify(log), /\/Users\//u, "no local private path is committed");
   const toolchain = manifest.historicalBuildEvidence.toolchainObserved;
-  assert.equal(toolchain.rustc, "1.98.0-nightly (096694416 2026-06-29)");
-  assert.match(toolchain.cargoC, /^0\.10\.23\+cargo-0\.97\.1/u);
+  assert.equal(toolchain.rustc, "1.100.0-nightly (787af2b8c 2026-08-25)");
+  assert.match(toolchain.cargoC, /^0\.10\.25\+cargo-0\.99\.0/u);
   assert.match(toolchain.rustcRevisionNote, /not expanded into a full commit/u);
   assert.match(toolchain.note, /none is a compiler or tool binary digest/u);
   const lockfile = manifest.historicalBuildEvidence.lockfile;
@@ -77,19 +77,19 @@ test("rust provenance manifest is an explicitly partial, digest-pinned approxima
   assert.equal(categories.resolvedForTargetApproximation.count, manifest.items.length + categories.resolvedForTargetApproximation.workspaceMembers.length);
   assert.ok(categories.resolvedForTargetApproximation.count <= categories.reachableFromBuiltMember.count);
   assert.equal(categories.compiledInHistoricalBuild.status, "observed", "compilation is observed from the retained log, which is distinct from verified incorporation");
-  assert.equal(categories.compiledInHistoricalBuild.registryCrates, 157);
-  assert.equal(categories.compiledInHistoricalBuild.count, 159);
+  assert.equal(categories.compiledInHistoricalBuild.registryCrates, 159);
+  assert.equal(categories.compiledInHistoricalBuild.count, 161);
   assert.equal(categories.incorporatedIntoShippedBinary.status, "unverified", "the log is not a linkage map");
   assert.match(categories.incorporatedIntoShippedBinary.detail, /not a linkage map/u);
-  assert.match(categories.resolvedForTargetApproximation.workspaceMembers[1], /^librsvg 2\.63\.0-beta\.0 /u, "workspace package version corrected from the retained rsvg/Cargo.toml and the observed compile line");
-  assert.match(categories.resolvedForTargetApproximation.workspaceMembers[0], /^librsvg-c 2\.62\.90 /u);
+  assert.match(categories.resolvedForTargetApproximation.workspaceMembers[1], /^librsvg 2\.63\.0-beta\.1 /u, "workspace package version corrected from the retained rsvg/Cargo.toml and the observed compile line");
+  assert.match(categories.resolvedForTargetApproximation.workspaceMembers[0], /^librsvg-c 2\.62\.91 /u);
   const observed = manifest.historicalBuildEvidence.observedCompilation;
-  assert.equal(observed.registryCrateCount, 157);
-  assert.deepEqual(observed.workspaceCrates.map(({ name, version }) => `${name} ${version}`), ["librsvg 2.63.0-beta.0", "librsvg-c 2.62.90"]);
+  assert.equal(observed.registryCrateCount, 159);
+  assert.deepEqual(observed.workspaceCrates.map(({ name, version }) => `${name} ${version}`), ["librsvg 2.63.0-beta.1", "librsvg-c 2.62.91"]);
   assert.deepEqual(observed.approximationNotObserved.map(({ name, version }) => `${name} ${version}`), ["rustc_version 0.4.1", "semver 1.0.28"]);
   assert.deepEqual(observed.observedNotInApproximation, []);
-  assert.equal(observed.cargoInvocationLogLine, 8985);
-  assert.deepEqual(observed.workspaceUpdateObserved.removed, ["color_quant 1.1.0", "gif 0.14.2", "image-webp 0.2.4"]);
+  assert.equal(observed.cargoInvocationLogLine, 8794);
+  assert.deepEqual(observed.workspaceUpdateObserved.removed, ["color_quant 1.1.0", "gif 0.14.2", "image-webp 0.2.4", "weezl 0.1.12"]);
   assert.match(observed.statement, /not a linkage map/u);
   const roles = {};
   for (const item of manifest.items) roles[item.role] = (roles[item.role] ?? 0) + 1;
@@ -113,9 +113,9 @@ test("rust provenance manifest is an explicitly partial, digest-pinned approxima
     assert.match(item.sha256, SHA256, item.id);
     assert.ok(Number.isSafeInteger(item.size) && item.size > 0 && item.size <= manifest.limits.maximumFileBytes, item.id);
     if (item.provenanceStatus === "compiled-per-build-log") {
-      assert.ok(Number.isSafeInteger(item.observedCompilation.logLine) && item.observedCompilation.logLine >= 8721 && item.observedCompilation.logLine <= 8985,
+      assert.ok(Number.isSafeInteger(item.observedCompilation.logLine) && item.observedCompilation.logLine >= 8520 && item.observedCompilation.logLine <= 8794,
         `${item.id} observed inside the librsvg phase of the retained log`);
-      assert.match(item.observedCompilation.timestamp, /^2026-06-30T09:1[45]:/u, item.id);
+      assert.match(item.observedCompilation.timestamp, /^2026-08-26T08:0[56]:/u, item.id);
       compiledCount += 1;
     } else {
       assert.equal(item.provenanceStatus, "resolved-approximation", item.id);
@@ -131,7 +131,7 @@ test("rust provenance manifest is an explicitly partial, digest-pinned approxima
     summary[item.licenseExpression] = (summary[item.licenseExpression] ?? 0) + 1;
   }
   assert.deepEqual(manifest.licenseExpressionSummary, summary);
-  assert.equal(compiledCount, 157, "157 registry crates were observed compiling");
+  assert.equal(compiledCount, 159, "159 registry crates were observed compiling");
   assert.deepEqual(approximatedOnly.sort(), ["rustc_version 0.4.1", "semver 1.0.28"], "exactly the two unobserved crates stay approximation-only and are retained");
   assert.ok(manifest.items.some(({ noticeStatus }) => noticeStatus === "no-licence-text-in-crate"), "the known gap of crates without licence text is recorded, not hidden");
   const unretained = manifest.unretained.map(({ id }) => id);

@@ -26,11 +26,11 @@ forces the public HTTPS registry URLs already pinned in the lock, and disables
 lifecycle scripts in both configuration and command-line policy.
 
 After npm verifies every lock-bound package integrity, the materializer rejects
-special files and escaping links, requires the exact upstream SHA-256 for all thirteen
+special files and escaping links, requires the exact upstream SHA-256 for all fourteen
 reviewed patch inputs, applies deterministic anchored transformations, and requires
 the exact reviewed output SHA-256. The temporary dependency tree is moved into place
-only after those checks. `VendorRuntime.inventory.json` then authenticates all 38,501
-paths and 394,622,078 file bytes, not just the patched packages. The generated hidden
+only after those checks. `VendorRuntime.inventory.json` then authenticates all 38,504
+paths and 395,128,248 file bytes, not just the patched packages. The generated hidden
 npm lock metadata now correctly identifies the source runtime package as `1.1.0`;
 the previous `1.0.0` value was stale, and no dependency content changed in that
 correction.
