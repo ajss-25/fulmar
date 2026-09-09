@@ -21,6 +21,7 @@ private final class WorkspaceRecoveryOperationProbe: @unchecked Sendable {
     private var deletedIDsValue: [UUID] = []
     private var previewIDsValue: [UUID] = []
     private var restoreRequestsValue: [(UUID, WorkspaceRestorePreview, WorkspaceRestoreOptions)] = []
+    private var previewGate: DispatchSemaphore?
     var listGate: DispatchSemaphore?
 
     func enqueueLists(_ values: [Result<[WorkspaceCheckpointSummary], Error>]) {
@@ -37,6 +38,10 @@ private final class WorkspaceRecoveryOperationProbe: @unchecked Sendable {
 
     func enqueuePreviews(_ values: [Result<WorkspaceRestorePreview, Error>]) {
         lock.withLock { previewResults.append(contentsOf: values) }
+    }
+
+    func setPreviewGate(_ gate: DispatchSemaphore?) {
+        lock.withLock { previewGate = gate }
     }
 
     func enqueueRestores(_ values: [Result<WorkspaceRestoreReport, Error>]) {
@@ -95,8 +100,12 @@ private final class WorkspaceRecoveryOperationProbe: @unchecked Sendable {
     }
 
     private func preview(_ id: UUID) throws -> WorkspaceRestorePreview {
-        try lock.withLock {
+        let gate: DispatchSemaphore? = lock.withLock {
             previewIDsValue.append(id)
+            return previewGate
+        }
+        gate?.wait()
+        return try lock.withLock {
             guard !previewResults.isEmpty else { throw HostileWorkspaceRecoveryError() }
             return try previewResults.removeFirst().get()
         }
@@ -255,15 +264,26 @@ private struct WorkspaceRecoveryBehaviorFixtures {
     try await workspaceRecoveryEventually { operations.counts().list == 1 && refresh.isEnabled }
     #expect(status.stringValue == "No local recovery checkpoints.")
 
+    let previewGate = DispatchSemaphore(value: 0)
+    operations.setPreviewGate(previewGate)
+    defer { previewGate.signal() }
     alerts.decisions = [false]
     capture.performClick(nil)
     #expect(operations.counts().capture == 0)
     alerts.decisions = [true]
     alerts.checkpointLabels = ["  reviewed baseline  "]
     capture.performClick(nil)
-    try await workspaceRecoveryEventually { operations.counts().list == 2 && checkpoints.numberOfRows == 1 }
+    try await workspaceRecoveryEventually {
+        operations.counts().list == 2 && checkpoints.numberOfRows == 1 && operations.counts().preview == 1
+    }
     #expect(operations.captureLabels() == ["  reviewed baseline  "])
     #expect(checkpoints.selectedRow == 0)
+    // Reloading and selecting the row starts a separate asynchronous preview;
+    // a visible row alone does not make Delete ready to accept either consent.
+    #expect(!delete.isEnabled)
+    #expect(operations.counts().delete == 0)
+    previewGate.signal()
+    try await workspaceRecoveryEventually { operations.counts().preview == 1 && delete.isEnabled }
 
     alerts.decisions = [false]
     delete.performClick(nil)
