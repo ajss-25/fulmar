@@ -15,16 +15,13 @@ backups and rollback continue to resolve. See
 [Brand and release identity](docs/BRAND_AND_RELEASE_IDENTITY.md). Fulmar does not
 promise feature parity with proprietary desktop applications or freedom from defects.
 
-> **Public-release status — source preview, not a supported download.** The proposed
-> first public tag is `v1.2.36-preview.1`. It is an MIT-licensed **source preview**:
-> reviewers and developers can build and run it from source. There is no Developer ID
-> signed or Apple-notarised binary. A usable local build needs a persistent
-> self-signed identity; this does not remove Gatekeeper checks (see
-> [Preview binary and Gatekeeper](docs/PREVIEW_BINARY_GATEKEEPER.md)). Clean-Mac install
-> testing, the manual permission/accessibility matrix, live paid-provider tests, icon and
-> trademark clearance, and hosted CI are open gates listed in
-> [public-release readiness](docs/PUBLIC_RELEASE_READINESS.md) and
-> [known limitations](docs/KNOWN_LIMITATIONS.md).
+> **MIT-licensed source preview.** The proposed first public tag is
+> `v1.2.36-preview.1`. Build and run locally using the [source instructions](#build-from-source).
+> There is no supported DMG or app download, Developer ID signature, or Apple
+> notarisation. A usable local build uses a persistent self-signed identity; see
+> [Preview binary and Gatekeeper](docs/PREVIEW_BINARY_GATEKEEPER.md).
+> Exact-source hosted checks and the separate binary-release requirements are tracked
+> in [public-release readiness](docs/PUBLIC_RELEASE_READINESS.md).
 
 > **Upstream safety boundary:** [DeepSeek describes Harness](https://github.com/deepseek-ai/deepseek-harness/blob/main/SAFETY.md) as experimental
 > developer-preview software that has not undergone a security audit. Fulmar's
@@ -100,10 +97,10 @@ locations and deletion: [Public installation and removal → Uninstall and retai
 | Mac | Apple silicon (arm64) | Intel Macs are not supported and the build refuses x86_64 |
 | macOS | 15.0 or later (declared minimum) | Every bundled executable is verified against 15.0. All physical testing so far ran on macOS 26.6.2; macOS 15 itself has not been physically tested |
 | Disk | About 410 MB for the built app, plus your Ollama models (`qwen3.8:27b-mlx` is about 17 GiB) and a source build tree of several GB | Models live in Ollama's shared `~/.ollama/models`, which Fulmar never modifies |
-| Memory (on-device route) | **48 GB** of physical memory for the only release-qualified local model, `qwen3.8:27b-mlx` | Fulmar refuses that route below 48 GB. Any other Ollama model is admitted only in Compatibility mode when the Mac has at least **twice the model's installed size plus 4 GiB** free of the model itself (for example a 4 GB model needs ≥ 12 GB) — a conservative policy floor, not a performance promise |
+| Memory (on-device route) | Model-specific: **48 GiB** of physical memory for `qwen3.8:27b-mlx` | This is not an app-wide minimum. Other Ollama models are admitted only in Compatibility mode when physical memory is at least **twice the model's installed size plus 4 GiB** (for example a 4 GiB model needs ≥ 12 GiB) — a conservative policy floor, not a performance promise |
 | Memory (cloud routes) | No local model memory needed | Cloud routes ignore local RAM/thermal policy |
 | Ollama (on-device route only) | Official signed Ollama macOS app, stable **0.33.2 through 0.33.x** | Installed in `/Applications`, `~/Applications`, or a Homebrew shim location; 0.34+ fails closed until qualified |
-| Building from source | Xcode Command Line Tools (Swift 6.3 toolchain), Python 3 with Semgrep exactly `1.135.0`, network access for the one-time checksum-verified Node/npm reconstruction | See [Build from source](#build-from-source) |
+| Building from source | Xcode Command Line Tools (Swift 6.3 toolchain), the pinned Python/Semgrep installer, and network access for verified runtime, notice materials, rule-pack and dependency-audit requests | See [Build from source](#build-from-source) |
 
 ## Support matrix
 
@@ -112,7 +109,7 @@ for the full table and the evidence behind each row.
 
 | Tier | Meaning | In this preview |
 | --- | --- | --- |
-| 1 — Qualified | Exercised end to end on real hardware with retained evidence | Apple M5 Pro, 48 GB, macOS 26.6.2, official Ollama 0.33.x, `qwen3.8:27b-mlx` (the qualified route); the complete automated source gates for build 156 |
+| 1 — Qualified for the recorded cases | Exercised on real hardware or by complete automated gates with retained evidence | Build 156 at `d40a1ee`: startup, one actual Qwen MLX Write/Read task, quit and relaunch on the 48 GB M5 Pro; complete local Swift and candidate JavaScript gates. This is not full thermal, other-hardware or hosted qualification |
 | 2 — Protocol-simulated | Verified against credential-free fixtures of the wire protocol, never against a live paid account | DeepSeek API text/tools/stream/cancel/error shapes; OpenAI Chat Completions, OpenAI Responses and Anthropic Messages custom routes. DeepSeek's live *error* path was reached once with a no-credit key; a successful live DeepSeek chat is **not** qualified |
 | 3 — Expected compatible, not hardware-tested | Policy is implemented and unit-tested, but no physical run exists | Other Apple-silicon Macs and memory sizes (8–96 GiB thresholds are injected tests); macOS 15.0 minimum; other Ollama models via Compatibility mode (text and tools only, 8K/2K); other OpenAI-compatible servers |
 | 4 — Unsupported / unqualified | Refused, disabled, or outside the design | Intel Macs; Ollama 0.34+ or non-official builds; thinking-capable alternate Ollama models; remote HTTP/SSE MCP; arbitrary provider protocols, proxies, custom CAs, mTLS; App Store distribution; any "every model works" claim |
@@ -173,24 +170,34 @@ Step-by-step detail, including first-run symptoms, lives in
 
 ## Build from source
 
-Requirements: Apple-silicon Mac, macOS 15 or later, Xcode Command Line Tools, Python 3
-with `semgrep==1.135.0` on `PATH` (for example `pipx install semgrep==1.135.0`), and
-network access for the one-time, checksum-verified runtime reconstruction. The large
-Node and dependency trees are deliberately not stored in Git.
+Requirements: Apple-silicon Mac, macOS 15 or later, Xcode Command Line Tools, and
+network access. Bootstrap reconstructs the pinned runtime and third-party notice
+materials. The installer below supplies the content-pinned Python 3.12.3 and Semgrep
+1.135.0 closure used by the build. Generated Node, dependencies and build products
+are deliberately not stored in Git.
 
 ```sh
 umask 022
-git clone https://github.com/ajss-25/fulmar.git fulmar && cd fulmar
+git clone https://github.com/ajss-25/fulmar.git fulmar
+cd fulmar
+zsh scripts/bootstrap-source-checkout.sh   # pinned runtime, 14 verified patches, inventories and notice cache
+semgrep_parent="$(/usr/bin/mktemp -d /private/tmp/fulmar-semgrep.XXXXXX)"
+semgrep_root="$semgrep_parent/toolchain"
+semgrep_path_file="$semgrep_parent/path-command"
+/usr/bin/touch "$semgrep_path_file"
+/bin/bash -p scripts/install-pinned-semgrep.sh \
+  "$semgrep_root" "$semgrep_path_file" \
+  "$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node"
+export PATH="$semgrep_root/bin:$PATH"
 semgrep --version                     # must report 1.135.0
-zsh scripts/bootstrap-source-checkout.sh   # pinned Node 22.23.1, DSH 0.1.1-rc.1, 13 verified patches, inventory check
 make tracked-index-policy
 make source-contract-test
 make deepseek-contract-test
 make runtime-inventory-verify
 make dependency-audit                 # npm first; eligible outages use credential-free OSV
 make static-security-scan
-FULMAR_SWIFT_BUILD_JOBS=2 /usr/bin/caffeinate -dimsu zsh scripts/run-swift-tests.sh   # 1,445 isolated functions
-zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # 680 tests (633 pass, 47 reviewed skips)
+FULMAR_SWIFT_BUILD_JOBS=2 /usr/bin/caffeinate -dimsu zsh scripts/run-swift-tests.sh   # 1,455 functions + 12 attestation scenarios
+zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # source profile: 902 tests, 855 pass, 47 reviewed skips
 make private-release                # persistent local signing identity; no Developer ID or notarisation
 ./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
   --emergency-rss-bytes 17179869184 --label "Fulmar frozen-candidate check" -- /usr/bin/make frozen-candidate-check
@@ -211,7 +218,7 @@ build**: the packaged credential services deliberately reject its mismatched
 designated requirements. Do not disable those checks.
 
 Never run `npm ci` directly against `VendorRuntime/package-lock.json`: the bootstrap
-derives the install-only lock, applies the thirteen hash-bound runtime patches and
+derives the install-only lock, applies the fourteen hash-bound runtime patches and
 verifies the complete `VendorRuntime.inventory.json`. The Swift gate builds with
 warnings as errors and takes minutes on a warm cache and considerably longer cold; run
 it and the JavaScript gate sequentially, not concurrently. The full gate list, expected
@@ -221,7 +228,7 @@ counts and the distinction between local signing and public binary release targe
 
 ## Preview limitations
 
-- No signed or notarised binary; no in-app updater (the menu is hard-disabled); no
+- No Developer ID signed or notarised download; no in-app updater (the menu is hard-disabled); no
   App Store build. Install by building from source and copying the app yourself.
 - English-only UI and documentation; no first-run assistant.
 - Only `qwen3.8:27b-mlx` on a 48 GB Mac is a qualified local model; everything else is
@@ -675,8 +682,8 @@ the app optionally unloads its models and always terminates only the Ollama PID 
 
 ## Build and qualification
 
-Requirements are an Apple-silicon Mac, macOS 15 or later, Xcode command-line tools,
-and network access for the one-time, checksum-verified runtime reconstruction. The
+Complete the [source-build prerequisites](#build-from-source), including the pinned
+Python/Semgrep installation, before these additional qualification commands. The
 large Node and dependency trees are deliberately not stored in Git.
 
 ```sh

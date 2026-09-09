@@ -1,11 +1,13 @@
 # Getting started with Fulmar
 
 Fulmar 1.2.36 build 156 is a source-only developer-preview candidate, not a supported
-public app-binary download. The
-current build still lacks Developer ID signing, Apple notarization, clean-Mac release
-qualification, binary-specific libvips licence/source/relink compliance, and a post-install updater
-health/commit transaction proven across power loss and two notarized versions. Do not
-bypass Gatekeeper or download an unsigned copy from an unofficial mirror.
+public app-binary download. The current build still lacks Developer ID signing,
+Apple notarization, clean-Mac release qualification and binary-specific libvips
+licence/source/relink compliance. A future stable release also requires proven
+two-version update/rollback and power-loss recovery; the separate manual-install
+binary beta requires its own acceptance evidence with the updater disabled. See
+[public-release readiness](PUBLIC_RELEASE_READINESS.md). Do not bypass Gatekeeper
+or download an unsigned copy from an unofficial mirror.
 Original Fulmar source is available under the MIT License. Its source-preview
 third-party inventory has been reviewed, including exact MIT provenance for the
 modified `@earendil-works/pi-ai` dependency. A built app contains additional binary
@@ -38,7 +40,8 @@ but is not silently carried into the new route.
 - Apple-silicon Mac running macOS 15 or later. This floor is enforced against every
   bundled native executable and addon, not only the app's Info.plist.
 - Xcode command-line tools for a source build.
-- Network access during source bootstrap for checksum-bound Node and npm packages;
+- Network access during source bootstrap for checksum-bound Node, npm packages and
+  third-party Rust notice materials;
   during the content-pinned Python/Semgrep installation for hash-locked archives and
   wheels; during the exact Semgrep rule-pack fetch; and during the credential-free
   production dependency audit.
@@ -56,7 +59,8 @@ but is not silently carried into the new route.
   host: 0.33.2. A 0.34-or-newer series needs a later Fulmar qualification and
   fails closed in this release. The
   frozen candidate's physical generation/tool rerun remains separate release evidence.
-- At least 48 GB of physical memory for the release-qualified Qwen 27B route.
+- At least 48 GiB of physical memory for the qualified Qwen 27B route; this is a
+  model-specific floor, not a minimum for running Fulmar or using cloud routes.
   Fulmar enforces that floor before starting local inference. Smaller admitted
   Compatibility models and cloud providers remain available on lower-memory Macs.
 - A canonical, owner-safe macOS login home. Homes outside `/Users` are supported when
@@ -78,6 +82,12 @@ memory-pressure, and tool evidence comes from one 48 GB Apple M5 Pro. A smaller
 Compatibility model may be admitted on a lower-memory Apple-silicon Mac, but that is
 not physical performance qualification for that model or host class.
 
+On 2026-09-09, the locally signed build 156 from source `d40a1ee` passed native
+startup, one actual Qwen MLX task using Write and Read, and normal quit/relaunch
+without a repeated Keychain or recovery prompt on that M5 Pro. This small acceptance
+run does not establish sustained-load thermal, other-hardware, macOS 15 or live-cloud
+qualification. See [the support matrix](SUPPORT_MATRIX.md).
+
 The provider distinction is equally important:
 
 - DeepSeek, OpenAI, Anthropic, and the three reviewed compatible wire protocols have
@@ -96,10 +106,12 @@ The provider distinction is equally important:
 
 ## Review or build the source candidate
 
-From a fresh checkout at the repository root:
+Clone the source and run these commands from the repository root:
 
 ```sh
 umask 022
+git clone https://github.com/ajss-25/fulmar.git fulmar
+cd fulmar
 zsh scripts/bootstrap-source-checkout.sh
 semgrep_parent="$(/usr/bin/mktemp -d /private/tmp/fulmar-semgrep.XXXXXX)"
 semgrep_root="$semgrep_parent/toolchain"
@@ -110,6 +122,7 @@ semgrep_path_file="$semgrep_parent/path-command"
   "$PWD/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node"
 export PATH="$semgrep_root/bin:$PATH"
 semgrep --version # must report 1.135.0
+make tracked-index-policy
 make source-contract-test
 make deepseek-contract-test
 make runtime-inventory-verify
@@ -123,7 +136,8 @@ make private-release
 The assembled local candidate is
 `/private/tmp/LocalHarnessBuild/Fulmar.app`. Generated `.build`, `build`, Node, and
 `node_modules` trees are intentionally excluded from Git. Bootstrap must recreate
-them from the checked lock, patch manifest, and byte inventory. A clean bootstrap and
+them from the checked lock, patch manifest, and byte inventory. Bootstrap also prepares
+the verified third-party Rust notice-material cache consumed by the build. A clean bootstrap and
 test run is necessary evidence; it is not Developer ID signing or notarization.
 `make private-release` deliberately creates or reuses **Fulmar Local Signing** in
 your login Keychain, potentially with a first-use authorization prompt. This is a
@@ -144,7 +158,7 @@ root for a new installation rather than modifying a previously reviewed toolchai
 place.
 
 Do not run `npm ci` directly against the reviewed provenance lock. Use the bootstrap
-script so the exact install-only lock transformation and thirteen hash-bound runtime
+script so the exact install-only lock transformation and fourteen hash-bound runtime
 patches are applied and verified.
 
 ## Use an Ollama model on this Mac

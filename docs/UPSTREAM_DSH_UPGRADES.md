@@ -16,28 +16,31 @@ unacknowledged GitHub version, promoted tag target, or promoted release-note bod
 fails the observation job. The watcher never edits the runtime pin, opens a pull
 request, or publishes an app.
 
-As observed on 2026-09-04, Fulmar remains pinned to reviewed `0.1.1-rc.1`;
-npm `latest`/`next` advanced on 2026-09-03 to observed-but-not-promoted
-`0.1.2-rc.1`, the first 0.1.2 release candidate (official GitHub prerelease
-381777538, tag `dsh-v0.1.2-rc.1`, commit
-`a66e4702047846cdaa10c66c9d3df3951f5ea70d`), which cumulates the alpha-series
-changes since `0.1.1-rc.2` and has not been staged or assessed; npm `alpha`
-advanced on 2026-09-02 to observed-but-not-promoted `0.1.2-alpha.5`. Its official GitHub release was subsequently published on
-2026-09-02 at commit `db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5` and fixes an
-upgrade bug that could prevent startup or remove session titles from the list when
-upgrading from `0.1.1-rc.2` or `0.1.2-alpha.3`. Fulmar records that upstream fact but
-has not staged or assessed the exact alpha.5 cohort, and it makes no compatibility or
-promotion inference. The latest completed exact-cohort assessment remains the separate
-`0.1.2-alpha.3` cohort. A dist-tag or GitHub-release observation is deliberately not a
-compatibility claim. GitHub marks every current DSH release, including
-`0.1.3-alpha.1`, as a prerelease; npm's `latest` tag therefore identifies its default
-package channel, not a stable Fulmar dependency. GitHub-only prerelease 382677748,
-tag `dsh-v0.1.3-alpha.1` at commit
-`d347e703908d0406b7a7ef80e3a0e594d86b2215`, was published on 2026-09-04 while
-all three watched npm tags remained unchanged. Its stated breaking SessionHandle,
-session-lock and Session format v2 changes, along with its known performance
-regression, require a separate cumulative assessment; this acknowledgement is not
-that assessment.
+As observed on 2026-09-09, Fulmar remains pinned to reviewed `0.1.1-rc.1`,
+including guarded MCP. npm `latest`/`next` remain at observed-but-not-promoted
+`0.1.2-rc.1`; npm `alpha` now points to observed-but-not-promoted `0.1.5-alpha.1`.
+The new official GitHub prereleases are `0.1.3-alpha.2` (release 384129524,
+tag `dsh-v0.1.3-alpha.2`, commit
+`82a5fd61a7cf5c293cec4bdff68f455398d685e9`, published
+2026-09-07T13:59:29Z) and `0.1.5-alpha.1` (release 384887562,
+tag `dsh-v0.1.5-alpha.1`, commit
+`5dda764ed3aa172535a7967b06ff95d9cbfe536a`, published
+2026-09-08T16:16:04Z). The ledger records read-only npm metadata and official
+GitHub release/tag observations; neither new cohort has been staged, assessed,
+promoted or shipped. The latest completed exact-cohort assessment remains the
+separate `0.1.2-alpha.3` cohort, and the promotion record still identifies only
+`0.1.1-rc.1`. npm's `latest` tag identifies its default package channel; it does
+not establish stability or Fulmar compatibility.
+
+These observations retain the earlier `0.1.3-alpha.1` SessionHandle/session-lock
+and Session format v2 boundaries. Upstream `0.1.3-alpha.2` reports reconnect and
+long-session performance fixes; those statements do not establish compatibility
+with Fulmar. `0.1.5-alpha.1` adds Session format V3 and breaking Agent/Inbox API
+changes. V3 preserves the original logs when migrating supported history, but
+upgraded sessions cannot be read by an older runtime. Rollback therefore requires
+the retained pre-upgrade state snapshot and previous app; pointing the previous
+app at V3 state is not a supported rollback. All cumulative boundaries below
+remain prerequisites for a future exact-cohort assessment.
 
 Official upstream records:
 
@@ -48,6 +51,9 @@ Official upstream records:
 - [`dsh-v0.1.2-alpha.5`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.5)
 - [`dsh-v0.1.2-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-rc.1)
 - [`dsh-v0.1.3-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.1)
+- [`dsh-v0.1.3-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.2)
+- [`dsh-v0.1.5-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.1)
+- [npm DSH channel metadata](https://registry.npmjs.org/-/package/@deepseek-ai%2Fdsh/dist-tags)
 - [DeepSeek Harness safety notice](https://github.com/deepseek-ai/deepseek-harness/blob/main/SAFETY.md)
 
 The upstream safety notice describes Harness as experimental developer-preview
@@ -81,6 +87,13 @@ enough; every earlier alpha boundary remains in the promotion matrix:
 | `0.1.2-alpha.4` | `Session.events` is replaced by `seq`, `eventAt()`, and `snapshotEvents()`, with distinct sequence/offset types | Requalify pagination, live prepend/append, exports, compaction, recovery, sanitized history and cloned-state reads without offset confusion |
 | `0.1.2-alpha.4` | Profile tool defaults changed; custom-model discovery reuses Profile request headers; long-session UI/navigation changed | Requalify exact `web_fetch`/`workflow` exposure per Profile, prove discovery sends no credential or unrelated header to a different origin, and rerun Web/RPC/DOM, accessibility and long-history performance gates |
 | `0.1.2-alpha.5` | Upgrading from `0.1.1-rc.2` or `0.1.2-alpha.3` could prevent the app from starting or make session titles disappear from the list | Requalify both named source-version migrations with retained and empty state; prove startup, session-title preservation/recovery, list ordering, restart, interruption safety and rollback before treating the fix as compatible |
+| `0.1.3-alpha.1` | Lifecycle-owned SessionHandle/session-lock API, Session format v2 migration, arbitrary file uploads, proxy/model-discovery changes and a known performance regression | Requalify handle and lock ownership, retained-state migration, attachment confinement/retention, exact-origin credentials and proxy behavior, provider discovery and long-session performance |
+| `0.1.3-alpha.2` | Web reconnect and long-session performance fixes; continuable-subagent queue/Steer/Stop behavior and on-demand reads beyond a reference preview | Prove authenticated reconnect, bounded retries, ordering and single delivery, queue edit/send races, exact subagent cancellation, history authorization and measured long-session responsiveness/memory |
+| `0.1.3-alpha.2` | Feedback can submit without continuing chat and includes relevant conversation content; upstream says ordinary chat does not trigger this reporting | Prove explicit consent, exact submitted content and endpoint, redaction and retention; prove ordinary chat does not report feedback and recheck the earlier package-metadata disclosure and optional Session-log upload controls |
+| `0.1.3-alpha.2` | SDK/Headless/ACP default to read/write/edit; persona splits into prefix/suffix; ordinary subprocess handles lose pid | Requalify each shipped Profile's confined tools and guarded MCP, persona migration, lifecycle ownership and exact-child cleanup without relying on a removed handle field |
+| `0.1.5-alpha.1` | Session format V3 creates new logs while preserving originals, records system prompts in history, migrates legacy PTC/code references, and does not support downgrade reads | Exercise custom readers, sanitized history/export and prompt disclosure, supported source-state migrations and interruption recovery; rehearse rollback using the previous app with a retained pre-upgrade snapshot, never by reading V3 with the old runtime |
+| `0.1.5-alpha.1` | Agent must be passed explicitly after removal of ctx.agent; Inbox is a type-only interface accessed through agent.inbox, with hasPending/claim removed from public API; continuable-subagent ownership changes | Requalify every local plugin's Agent/Inbox calls, parent/child routing, pending-message ownership, queue/Steer/cancellation and root-only scheduling against the exact cohort |
+| `0.1.5-alpha.1` | Dynamic system prompts require declared model support; Sidebar replaces Detail; absolute-path image rendering, paused-goal resume, project-root discovery and native fs-ext dependency behavior change | Requalify provider capability gating, Web/RPC/DOM and accessibility, path confinement including out-of-workspace images, user-owned goal resume, instruction-root errors, and the complete native dependency inventory/build |
 
 These changes touch privacy, network egress, authentication, provider discovery,
 continuation and subagent behavior, history/security bridges, export and cloned-state
@@ -159,13 +172,18 @@ Promotion is a reviewed source change, not a package-manager update:
 8. Install only the signed/notarized whole-app candidate. Keep the previous app and
    pre-upgrade state snapshot until authenticated readiness and a rollback rehearsal.
 
-For `0.1.2-alpha.5`, the cumulative matrix must exercise paginated session reads and
+For `0.1.2-alpha.5` or later, the cumulative matrix must exercise paginated session reads and
 exports through `seq`/`eventAt()`/`snapshotEvents()`, parent/child `send_message`, queued
 user work and automatic continuation, every Profile's exact `web_fetch`/`workflow`
 exposure, exact-origin model-discovery headers, and retained-state upgrades from both
 `0.1.1-rc.2` and `0.1.2-alpha.3` with startup and session-title integrity. For
 `0.1.1-rc.2` or later, it must exercise actual Files API image upload/reuse rather
 than infer compatibility from chat.
+
+For `0.1.5-alpha.1`, also exercise the intervening SessionHandle/v2 boundaries,
+reconnect and long-session fixes, feedback and metadata privacy controls, explicit
+Agent/Inbox ownership, V3 readers and prompt history, and rollback from a preserved
+pre-upgrade snapshot. Release-note observations alone do not satisfy those gates.
 
 ## Release channels
 

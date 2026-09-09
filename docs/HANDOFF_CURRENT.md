@@ -1,19 +1,45 @@
 # Current qualification handoff
 
-Updated: 2026-09-03 (Europe/London)
+Updated: 2026-09-09 (Europe/London)
 
 ## Release decision and immutable identity
 
 - Source identity: Fulmar `1.2.36` build `156`, Apple silicon, macOS `15.0` minimum.
 - Runtime pin: Node `22.23.1`; DeepSeek Harness and MCP client `0.1.1-rc.1`.
+- Current reconstruction: fourteen hash-bound runtime patches; 38,501 VendorRuntime
+  entries / 394,622,662 file bytes, plus the verified Rust notice-material cache.
 - Intended release lane: MIT-licensed **source beta**, explicitly not a generally
   supported binary download.
-- Installed `/Applications/Fulmar.app` remains Fulmar `1.2.16` build `136`. It stayed
-  closed and was not replaced, modified, or used for this qualification.
-- No build-156 candidate, Developer ID signature, notarisation ticket, or public
-  binary archive existed when this source was frozen for the final gates.
+- Installed `/Applications/Fulmar.app` is Fulmar `1.2.36` build `156`, built from
+  `d40a1ee107743bdc29ff0b7ee04e16af6c5de59c` and signed with the existing stable local
+  identity. It passed the bounded acceptance below. There is no Developer ID
+  signature, notarisation ticket or qualified public binary download.
 
-## Release-triage corrections
+## Latest local acceptance
+
+The retained private record `build/native-profile-stdin-fix-2026-09-09/ACCEPTANCE-STATUS.md`
+binds these results to source `d40a1ee` (tree
+`d18466f6af522e8ede151a3f9caeb9446aad830e`), before the source-publication documentation
+updates:
+
+- Complete Swift gate: 1,455/1,455 functions plus 12 attestation scenarios,
+  warning-clean, deployment target 15.0.
+- Complete candidate JavaScript gate: 902 tests, 856 passed, 46 intentional skips,
+  zero failures. Static security scan: zero unreviewed findings.
+- Frozen candidate and installed-candidate checks, bundled native profile preparation,
+  runtime lease checks and the isolated DSH/RPC canary passed.
+- Physical acceptance on the 48 GB Apple M5 Pro: native startup reached Ready;
+  actual Qwen 3.8 27B MLX inference used Write and Read and returned the verified
+  marker; normal quit drained the app's processes; relaunch reached Ready without
+  a repeated Keychain or recovery prompt.
+
+This closes the reproduced native profile-preparation failure on that Mac. The
+single small task does not qualify sustained thermals, all tools, live cloud
+providers, other hardware, physical macOS 15 support or future Keychain persistence
+across rebuilds/locked states. The final public source commit needs its own clean
+checkout, history/index and hosted-CI evidence; these local results do not pre-claim it.
+
+## Earlier release-triage corrections
 
 - Bound provider consent to the exact authentication mode as well as provider,
   boundary, origin, and credential reference. Consent schemas 1 and 2 migrate by
@@ -40,7 +66,7 @@ Updated: 2026-09-03 (Europe/London)
 - Repaired clean runtime reconstruction. Thirteen exact before/after-hash-bound
   patches now include the pi-ai adapter, types, both READMEs, and all three protocol
   clients. After the later dependency remediations below, the regenerated
-  VendorRuntime inventory contains 38,501 entries and 394,622,078 file bytes; its
+  VendorRuntime inventory at that stage contained 38,501 entries and 394,622,078 file bytes; its
   JSON SHA-256 is
   `c7fadd8654139a93429e09dbbf99739ed6868b2d99e68b186c248a59bb46d019`.
 - Remediated the transitive `qs` advisories (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g)
@@ -100,20 +126,14 @@ Updated: 2026-09-03 (Europe/London)
   materialization reproduced the checked inventory exactly, and its 32,632-entry
   `node_modules` prefix (209,438,418 file bytes) was byte-identical to the tree in
   place.
-- The read-only DSH watcher passed on 2026-09-04 after acknowledging the new upstream
-  state: npm `latest`/`next` now point to observed-not-promoted `0.1.2-rc.1` (official
-  prerelease 381777538, tag `dsh-v0.1.2-rc.1`, commit
-  `a66e4702047846cdaa10c66c9d3df3951f5ea70d`, published 2026-09-03), `alpha` remains
-  `0.1.2-alpha.5`, and GitHub-only prerelease 382677748 (tag `dsh-v0.1.3-alpha.1`,
-  commit `d347e703908d0406b7a7ef80e3a0e594d86b2215`, published 2026-09-04) is
-  acknowledged as observed-not-promoted. Every observed official GitHub tag/release
-  plus the promoted `0.1.1-rc.1` provenance matched its acknowledgement. Fulmar stays
-  pinned to `0.1.1-rc.1`; no DSH upgrade is part of this release.
+- The DSH watcher records newer releases as observed, not promoted. Current
+  acknowledgements and watch results are maintained in `docs/UPSTREAM_DSH_UPGRADES.md`.
+  Fulmar stays pinned to `0.1.1-rc.1`; no DSH upgrade is part of this release.
 
 ## Frozen test topology
 
-- JavaScript: 899 exact lifecycle tests, 687 top-level tests; expected source result
-  852 passed plus 47 reviewed skips, and expected candidate result 853 passed plus
+- JavaScript: 902 exact lifecycle tests, 690 top-level tests; expected source result
+  855 passed plus 47 reviewed skips, and expected candidate result 856 passed plus
   46 reviewed skips.
 - Swift: 1,455 exact function specifiers; sorted-specifier SHA-256
   `4971265b754b0f5a9ccecea1b40aecbff53417ded0d7896fc90e2102d552a605`
@@ -127,10 +147,10 @@ Updated: 2026-09-03 (Europe/London)
   target is 12 scenarios, whose interaction-policy scenario substitutes both the
   policy primitives and the wrapped operation and makes no Keychain call.
 
-These are fail-closed ledgers, not passing results. The canonical full JavaScript and
-Swift gates must execute after this source freeze. Any subsequent source, test,
-dependency, build-policy, licence, or tracked-document change invalidates the freeze
-and requires new topology plus full gates.
+These are fail-closed ledger expectations. The local candidate results above passed
+on `d40a1ee`; a later source, dependency, policy or documentation revision has a new
+source identity and requires its own release evidence. Test additions or removals
+also require an explicitly reviewed topology update.
 
 The public release branch supplies the eventual commit/tree identity. Each release
 decision must separately retain its exact tracked-index proof, complete-history scans,
@@ -142,7 +162,8 @@ Fulmar never hot-wraps the newest DSH package. A watcher may discover a release,
 the upgrade assessor may stage it under ignored `build/`, but promotion requires an
 exact cohort review, reapplication or retirement of every patch, complete regression
 qualification, a new Fulmar version/build, and whole-app rollback evidence. The
-installed and vendored runtime remains `0.1.1-rc.1`; alpha.5 is observed, not promoted.
+installed and vendored runtime remains `0.1.1-rc.1`; newer observed releases and their
+acknowledgements are listed in `docs/UPSTREAM_DSH_UPGRADES.md`.
 
 Cloud provider routes do not inherit local RAM or thermal policy. The exact qualified
 `qwen3.8:27b-mlx` contract requires at least 48 GiB. Other safely named Ollama models
@@ -151,33 +172,21 @@ and the conservative `2 × installed model bytes + 4 GiB` host-memory admission.
 branches are deterministic policy coverage, not a claim that every model, endpoint,
 or hardware tier has been physically qualified.
 
-## Gates still open at source freeze
+## Gates still open for publication
 
-- Canonical full JavaScript and 1,445-function Swift suites against the final source.
-  The `darwin-fix` cycle (2026-09-02, logs under `build/release-triage/`) passed the
-  complete 615-test JavaScript gate and reached 1,299/1,445 Swift functions before
-  `stopBarrierPreservesTheLatestExactInferenceOrRecoveryLaunchMode` failed. That test
-  built its controller without an admitted private Application Support root, so under
-  the isolated qualification home the `/tmp` alias failed root admission and
-  `prepareAndStart` returned `.failed` before the stop generation could latch the
-  replacement mode; production behaviour was the intended fail-closed contract. The
-  test-only correction admits an exact private root like its sibling tests. Because a
-  tracked test byte changed, the `darwin-fix` inventory was superseded; the source-only
-  preview cycle authorised on 2026-09-02 re-froze the inventory and passed both
-  complete gates (615 JavaScript tests, 1,445 Swift functions; the
-  `source-preview-semgrep-final-*` logs). The subsequent `qs` `6.16.0` and `fast-uri`
-  `3.1.6` remediations changed tracked lock, configuration, test and inventory bytes
-  after those gates, so that freeze is superseded in turn; the `fast-uri` cycle
-  re-freezes the inventory and repeats both complete gates, retaining all evidence
-  under ignored `build/release-triage/` rather than in this document.
-- Frozen candidate assembly, deterministic release verification, static scan,
-  dependency audit, SBOM/notices, archive and source/candidate identity verification.
-- Candidate-bound local Qwen/full-hardware, UI/menu-bar, permission/accessibility,
-  install/rollback, and live-provider success testing.
-- A clean public Git index/history, independent secret scans, hosted CI, repository
-  controls, support contact, and third-party/legal/trademark review.
-- Developer ID signing, notarisation/stapling, minimum/current clean Macs, and the
-  two-version power-loss/update matrix required before any binary download.
+- Source preview: final clean-checkout reconstruction/build, complete source gates,
+  exact public index/history scans and hosted results on the public candidate.
+  Preserve all five protected-main checks (`static-analysis`, `codeql-javascript`,
+  `macos`, `minimum-macos-candidate`, `CodeQL`) and retain repository-control evidence.
+- Binary distribution: remaining candidate-bound hardware, UI/menu-bar,
+  permission/accessibility, clean-install and live-provider success matrices;
+  Developer ID signing, notarisation/stapling and minimum/current clean Macs.
+- The 29 libvips component notice entries and Rust notice cache are bound, while
+  corresponding-source delivery, relinking and legal clearance remain open. See
+  `docs/LIBVIPS_CORRESPONDING_SOURCE.md`.
+- The stable binary profile additionally requires the two-version power-loss/update
+  matrix. The separate manual-install beta profile requires its own recovery and
+  updater-disabled evidence (`docs/PUBLIC_BETA_RELEASE_CONTRACT.md`).
 
 No test suite proves zero defects. Claims must remain limited to retained evidence for
 the exact immutable source and candidate identities.

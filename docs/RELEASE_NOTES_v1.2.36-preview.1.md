@@ -11,7 +11,7 @@ Anthropic, Ollama, Alibaba or the Qwen project.
   (physically tested only on macOS 26.6.2).
 - Bundled runtime: DeepSeek Harness `0.1.1-rc.1` (+ DSH MCP client `0.1.1-rc.1`) on
   Node `22.23.1`, reconstructed at bootstrap from `VendorRuntime/package-lock.json`
-  with thirteen hash-bound Fulmar patches; nothing generated is stored in Git.
+  with fourteen hash-bound Fulmar patches; nothing generated is stored in Git.
 - Licence: original Fulmar source under the MIT License (`LICENSE`); bundled third-party
   components keep their own terms (see the generated SBOM and notices in a built app).
 
@@ -29,6 +29,11 @@ Anthropic, Ollama, Alibaba or the Qwen project.
 - Release-pipeline hardening: pin-bound hosted-Xcode admission, descriptor-attested
   readers, and vnode-anchored synchronous publication for retained security,
   toolchain and reproducibility evidence.
+- Startup corrections: explicit device-trust authorization, typed recovery states,
+  protected profile preparation and retained-descriptor runtime authentication.
+- Exact notices for the 29 libvips component entries, Rust notice-material binding
+  and verified bootstrap cache integration. Binary source-offer, relinking and legal
+  clearance remain separate open requirements.
 
 ## Automated qualification required for this exact source
 
@@ -40,18 +45,22 @@ unrun result.
 | Gate | Result |
 | --- | --- |
 | Tracked-index policy on the proposed public commit | must pass against the exact committed index |
-| Clean-checkout bootstrap (`zsh scripts/bootstrap-source-checkout.sh`) | must reconstruct pinned Node, DSH 0.1.1-rc.1, qs 6.16.0, fast-uri 3.1.6, 13 patches, and the exact 38,501-entry / 394,622,078-byte VendorRuntime inventory |
+| Clean-checkout bootstrap (`zsh scripts/bootstrap-source-checkout.sh`) | must reconstruct pinned Node, DSH 0.1.1-rc.1, qs 6.16.0, fast-uri 3.1.6, 14 patches, the exact 38,501-entry / 394,622,662-byte VendorRuntime inventory and the verified Rust notice-material cache |
 | DSH promotion provenance, source product contract, DeepSeek runtime contract | must pass |
 | Production dependency audit (pinned npm 10.9.8 virtual tree; credential-free bounded Bulk Advisory primary; whole-graph OSV QueryBatch secondary authority only after a narrowly retryable batch outage; no Quick Audit route) | must report zero findings and identify one complete authority |
 | Static security scan | must report zero unreviewed findings using the content-pinned Semgrep 1.135.0 closure and pinned rules |
-| JavaScript gate | must complete 899 exact tests: 852 passed, 47 reviewed intentional skips, 0 failures |
+| JavaScript gate | 902 exact tests: source profile requires 855 passed / 47 reviewed skips; candidate profile requires 856 passed / 46 reviewed skips, with 0 failures |
 | Swift gate | must complete 1,455/1,455 isolated functions, DeviceAttestationAuthorityTests 12/12, warning-clean, with deployment target 15.0 verified |
 | GitHub-hosted source checks | Workflow jobs `static-analysis`, `codeql-javascript`, `macos`, and `minimum-macos-candidate`, plus the separate `CodeQL` app check, must all pass on the exact source commit |
 
-Automated results cover the exercised cases; they do not prove the absence of defects.
-The exact build-156 candidate has **not** yet had its own candidate-bound physical
-hardware rerun (local inference, thermal, tool routes) — earlier builds on the same
-host have, see `docs/QUALIFICATION_EVIDENCE.md` and `docs/SUPPORT_MATRIX.md`.
+Retained local results on 2026-09-09 for source `d40a1ee` passed all 1,455 Swift
+functions plus 12 attestation scenarios and the candidate JavaScript gate
+(902 tests, 856 passed, 46 intentional skips, no failures). Its installed build 156
+also passed native startup, actual Qwen MLX inference with Write and Read tools, quit
+cleanup and relaunch without a repeated Keychain or recovery prompt on the 48 GB
+M5 Pro. This is bounded acceptance, not a complete thermal, other-hardware,
+live-provider or hosted-CI qualification. The final public commit still needs its own
+hosted results. See `docs/HANDOFF_CURRENT.md` and `docs/SUPPORT_MATRIX.md`.
 
 ## What you can do with it
 
@@ -74,7 +83,10 @@ host have, see `docs/QUALIFICATION_EVIDENCE.md` and `docs/SUPPORT_MATRIX.md`.
 ## Open gates before any binary release
 
 Developer ID signing and notarisation, clean-Mac and minimum-macOS installation tests,
-the interactive permission/accessibility matrix, two-version update/rollback exercise,
-live funded provider tests, the unresolved binary libvips redistribution obligations,
-formal trademark clearance beyond the owner's source-preview risk acceptance, and the
-first exact-candidate hardware rerun (`docs/PUBLIC_RELEASE_READINESS.md`).
+the interactive permission/accessibility matrix, live funded provider tests, the
+unresolved binary libvips redistribution obligations, formal trademark clearance
+beyond the owner's source-preview risk acceptance, and the remaining exact-candidate
+hardware matrix (`docs/PUBLIC_RELEASE_READINESS.md`). The stable profile also requires
+two-version update/rollback and power-loss recovery; the separate manual-install beta
+requires its own install/reinstall/recovery evidence with the updater disabled
+(`docs/PUBLIC_BETA_RELEASE_CONTRACT.md`).

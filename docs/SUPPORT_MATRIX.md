@@ -10,7 +10,7 @@ claims, and nothing here implies that every Ollama model or every Mac has been t
 
 | Tier | Definition | What it does **not** mean |
 | --- | --- | --- |
-| **1 — Fully qualified** | Exercised end to end on physical hardware with a retained log, or a complete automated gate whose exact counts are recorded in `docs/QUALIFICATION_EVIDENCE.md` / `build/release-triage` evidence | Proof of zero defects, or coverage of other hardware |
+| **1 — Qualified for the recorded cases** | Exercised on physical hardware with retained evidence, or by a complete automated gate whose exact counts and source revision are recorded | Proof of zero defects, unexercised cases, or coverage of other hardware |
 | **2 — Protocol-simulated** | The wire protocol, streaming, tools, cancellation, authentication, retry and error shapes are proven against credential-free fixtures | That a live paid account accepted, billed or completed a request |
 | **3 — Expected compatible, not hardware-tested** | The policy is implemented and deterministically unit-tested (for example injected memory sizes), but no physical run on that configuration exists | Performance, thermal or usability evidence on that configuration |
 | **4 — Unsupported or unqualified** | Refused by the app, disabled by design, or outside the tested envelope | Anything |
@@ -19,7 +19,7 @@ claims, and nothing here implies that every Ollama model or every Mac has been t
 
 | Configuration | Tier | Evidence and notes |
 | --- | --- | --- |
-| Apple M5 Pro, 48 GB unified memory, macOS 26.6.2 (25G83), Apple silicon | 1 | The development host. Every physical local-inference, thermal, tool-route and installed-UI record in `docs/QUALIFICATION_EVIDENCE.md` comes from this single machine (builds 132, 133 and 153; build 156's exact frozen candidate has passed the complete automated source and candidate gates and still awaits its own candidate-bound hardware rerun, see Known limitations) |
+| Apple M5 Pro, 48 GB unified memory, macOS 26.6.2 (25G83), Apple silicon | 1 for recorded cases | The development host. Build 156 at `d40a1ee` passed native startup, one actual Qwen MLX Write/Read task, quit cleanup and relaunch without a repeated Keychain or recovery prompt on 2026-09-09. Earlier thermal and wider tool-route records in `docs/QUALIFICATION_EVIDENCE.md` concern builds 132, 133 and 153; they are not a full build-156 hardware rerun |
 | Other Apple-silicon Macs (M1–M4 families, other core counts) | 3 | Architecture and deployment-target checks are automated; no physical run |
 | Apple-silicon Macs with 8, 16, 24, 32, 64 or 96 GiB | 3 | Memory admission thresholds are proven by injected-memory tests only; the 48 GB floor for the qualified route and the "2 × model size + 4 GiB" Compatibility floor are policy, not measured performance |
 | macOS 15.0 (declared minimum) through current | 3 | Each bundled Mach-O declares ≤ 15.0 and this is verified at build; no physical macOS 15 run has been performed |
@@ -30,7 +30,7 @@ claims, and nothing here implies that every Ollama model or every Mac has been t
 
 | Configuration | Tier | Evidence and notes |
 | --- | --- | --- |
-| Official Ollama.app 0.33.2 – 0.33.x (signed `ai.ollama.ollama`, team `3MU9H2V9Y9`) with exact `qwen3.8:27b-mlx` (manifest SHA-256 `5642e974…2cf7e`) on a ≥ 48 GB Mac | 1 | Fast/Balanced/Deep profiles, reasoning controls, Metal/MLX residency, thermal Eco/emergency behaviour, bash/filesystem/project tool routes and quit cleanup were exercised on the M5 Pro host (Ollama 0.33.2, build 153; the same route is the build-156 contract) |
+| Official Ollama.app 0.33.2 – 0.33.x (signed `ai.ollama.ollama`, team `3MU9H2V9Y9`) with exact `qwen3.8:27b-mlx` (manifest SHA-256 `5642e974…2cf7e`) on a ≥ 48 GiB Mac | 1 for recorded cases | Build 156 at `d40a1ee` completed actual MLX inference, a Write/Read task and quit/relaunch on the M5 Pro. The broader Fast/Balanced/Deep, reasoning, thermal Eco/emergency and bash/project-tool record is from build 153; sustained thermals and the full route matrix remain unqualified on this candidate |
 | `qwen3.8:27b-hermes` (older selection) | 1 for earlier builds, 3 now | Physically exercised on builds 132/133 (Ollama 0.33.0/0.33.1); build 156 preserves an existing Hermes selection but runs it as an unqualified Compatibility route with reasoning disabled |
 | Any other installed Ollama model that reports completion + tools, no model-specific thinking mode, 8,192–1,048,576 context, and passes the RAM floor | 3 | Admitted only in fixed **Compatibility** mode (8K context / 2K output, text and tools only, no Fast/Balanced/Deep, no Flash Attention/q8 KV). Admission is policy-tested; behaviour of that model in agent workflows is untested and may be poor |
 | Thinking-capable alternate models, models below 8K context, models without tool support | 4 | Refused rather than guessed at |
@@ -63,6 +63,7 @@ claims, and nothing here implies that every Ollama model or every Mac has been t
 
 ## Evidence pointers
 
+- `docs/HANDOFF_CURRENT.md` — source `d40a1ee`, complete local Swift/candidate-JavaScript results and the bounded 2026-09-09 installed acceptance record.
 - `docs/QUALIFICATION_EVIDENCE.md` — dated physical/candidate ledgers (builds 132, 133, 153).
 - `docs/KNOWN_LIMITATIONS.md`, `docs/PUBLIC_RELEASE_READINESS.md` — open gates.
 - `docs/RELEASE_NOTES_v1.2.36-preview.1.md` — the automated gate results for the exact

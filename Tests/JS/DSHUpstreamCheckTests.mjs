@@ -358,7 +358,7 @@ test("tracked GitHub acknowledgements bind the only promoted version to promotio
       .map(([version]) => version),
     ["0.1.1-rc.1"]
   );
-  assert.equal(trackedAcknowledgement.tags.alpha.version, "0.1.2-alpha.5");
+  assert.equal(trackedAcknowledgement.tags.alpha.version, "0.1.5-alpha.1");
   assert.deepEqual(
     trackedAcknowledgement.officialGitHub.versions["0.1.2-alpha.5"],
     {
