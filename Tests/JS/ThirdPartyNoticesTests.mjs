@@ -190,7 +190,7 @@ test("notices enumerate only shipped packages and bind every licence payload", a
     assert.match(notices, /Copyright \(c\) Beta Authors/u);
     assert.match(notices, /Copyright \(c\) Gamma Authors \(vendored\)/u);
     assert.match(notices, /Source archive member: `alpha-1\.2\.3\/LICENSE` of archive `sha256:d{64}`/u);
-    assert.match(notices, new RegExp(`Component notice manifest: \`Config/provenance\.json\` \\(\`sha256:${digest(await readFile(files.provenance))}\`\\)`, "u"));
+    assert.match(notices, new RegExp(`Component notice manifest: \`Config/provenance\\.json\` \\(\`sha256:${digest(await readFile(files.provenance))}\`\\)`, "u"));
     const again = invoke(files, join(files.root, "again.md"));
     assert.equal(again.status, 0, again.stderr);
     assert.equal(await readFile(join(files.root, "again.md"), "utf8"), notices, "output is deterministic");

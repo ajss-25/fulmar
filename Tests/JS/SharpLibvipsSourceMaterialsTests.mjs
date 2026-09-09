@@ -46,7 +46,7 @@ test("source materials manifest pins every component of the exact 1.3.2 build by
     assert.equal(url.hash, "", item.id);
     assert.ok(Array.isArray(item.allowedRedirectHosts) && item.allowedRedirectHosts.length <= 4, item.id);
     if (url.hostname === "github.com" && /\/releases\/download\//u.test(url.pathname)) {
-      assert.ok(item.allowedRedirectHosts.includes("release-assets.githubusercontent.com"), `${item.id} release asset must allow the asset host`);
+      assert.ok(item.allowedRedirectHosts.some((host) => host === "release-assets.githubusercontent.com"), `${item.id} release asset must allow the asset host`);
     }
     if (url.hostname === "github.com" && /\/archive\//u.test(url.pathname)) {
       assert.deepEqual(item.allowedRedirectHosts, ["codeload.github.com"], item.id);

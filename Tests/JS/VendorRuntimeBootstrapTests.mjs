@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, cp, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, open, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -679,21 +679,39 @@ test("notice-material cache preparation admits only a private canonical cache, r
       "process.exit(3);",
       ""
     ].join("\n"), { mode: 0o600 });
-    const publishedFailure = runNoticeMaterials(["prepare", root]);
-    assert.equal(publishedFailure.status, 1, publishedFailure.stderr);
-    assert.match(publishedFailure.stderr, /HTTPS acquisition failed \(status 3\); cache publication state is unverified at/u);
-    assert.doesNotMatch(publishedFailure.stderr, /no cache was published/u);
-    const expectedRecovery = `inspect it with "scripts/prepare-libvips-source-materials.mjs verify Config/SharpLibvipsRustProvenance.json ${cache} --notice-materials Config/SharpLibvipsRustNoticeMaterials.json", remove it deliberately if it is stale, then rerun scripts/bootstrap-source-checkout.sh; nothing is overwritten or deleted automatically`;
-    assert.ok(publishedFailure.stderr.includes(expectedRecovery), publishedFailure.stderr);
-    assert.equal(await readFile(observed, "utf8"), "published-then-failed\n", "a failed child must not be retried");
-    assert.equal((await stat(cache)).mode & 0o777, 0o700);
-    for (const name of ["INVENTORY.json", "SHA256SUMS", "RUST_CRATE_NOTICES.md"]) {
-      assert.deepEqual(await readFile(join(cache, name)), await readFile(join(projectNoticeMaterials, name)), "published cache bytes must be preserved after failure");
+    // Own the append-only fixture observation before the child runs, retaining
+    // its descriptor across verification instead of reopening a checked path.
+    const observation = await open(observed, "wx+", 0o600);
+    try {
+      const expectedObservation = "published-then-failed\n";
+      const readObservation = async () => {
+        const buffer = Buffer.alloc(Buffer.byteLength(expectedObservation) + 1);
+        let length = 0;
+        while (length < buffer.length) {
+          const { bytesRead } = await observation.read(buffer, length, buffer.length - length, length);
+          if (bytesRead === 0) break;
+          length += bytesRead;
+        }
+        return buffer.subarray(0, length).toString("utf8");
+      };
+      const publishedFailure = runNoticeMaterials(["prepare", root]);
+      assert.equal(publishedFailure.status, 1, publishedFailure.stderr);
+      assert.match(publishedFailure.stderr, /HTTPS acquisition failed \(status 3\); cache publication state is unverified at/u);
+      assert.doesNotMatch(publishedFailure.stderr, /no cache was published/u);
+      const expectedRecovery = `inspect it with "scripts/prepare-libvips-source-materials.mjs verify Config/SharpLibvipsRustProvenance.json ${cache} --notice-materials Config/SharpLibvipsRustNoticeMaterials.json", remove it deliberately if it is stale, then rerun scripts/bootstrap-source-checkout.sh; nothing is overwritten or deleted automatically`;
+      assert.ok(publishedFailure.stderr.includes(expectedRecovery), publishedFailure.stderr);
+      assert.equal(await readObservation(), expectedObservation, "a failed child must not be retried");
+      assert.equal((await stat(cache)).mode & 0o777, 0o700);
+      for (const name of ["INVENTORY.json", "SHA256SUMS", "RUST_CRATE_NOTICES.md"]) {
+        assert.deepEqual(await readFile(join(cache, name)), await readFile(join(projectNoticeMaterials, name)), "published cache bytes must be preserved after failure");
+      }
+      const verifyPublished = runNoticeMaterials(["verify", root, cache]);
+      assert.equal(verifyPublished.status, 0, verifyPublished.stderr);
+      assert.match(verifyPublished.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 159 items/mu);
+      assert.equal(await readObservation(), expectedObservation, "independent verification must not acquire");
+    } finally {
+      await observation.close();
     }
-    const verifyPublished = runNoticeMaterials(["verify", root, cache]);
-    assert.equal(verifyPublished.status, 0, verifyPublished.stderr);
-    assert.match(verifyPublished.stderr, /^verified notice-material cache .*: transport https \(authoritative\); 159 items/mu);
-    assert.equal(await readFile(observed, "utf8"), "published-then-failed\n", "independent verification must not acquire");
     await rm(observed);
     const { manifest, manifestSHA256, manifestPath } = await loadManifest(join(root, "Config", "SharpLibvipsRustProvenance.json"));
     const noticeMaterials = await loadRustNoticeMaterials(join(root, "Config", "SharpLibvipsRustNoticeMaterials.json"), manifest, manifestPath);
