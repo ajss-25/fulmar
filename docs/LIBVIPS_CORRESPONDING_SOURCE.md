@@ -274,15 +274,19 @@ never an archive member) or one precise unresolved record:
 | `mutants 0.0.4` (MIT) | `.cargo_vcs_info.json` → `sourcefrog/cargo-mutants` @ `14011d08…`, `mutants_attrs`; `src/lib.rs` byte-identical | **established, external:** repository `LICENSE` at that commit ("Copyright (c) 2021 Martin Pool") |
 | `selectors 0.40.0` (MPL-2.0) | `.cargo_vcs_info.json` → `servo/stylo` @ `67faaab3…`, `selectors`; `Cargo.toml.orig`, `lib.rs` and `matching.rs` byte-identical to their upstream counterparts | **established:** archive-contained per-file MPL-2.0 header (all 16 `.rs` members; no package-specific copyright statement inferred) plus **external** MPL-2.0 text from SPDX 3.28.0 (commit `c4a7237e…`); the stylo README at that commit states "Stylo is licensed under MPL 2.0" |
 | `block 0.1.6` (MIT) | tag `0.1.6` = `SSheldon/rust-block` @ `47178790…`; README byte-identical | **unresolved:** no licence text, copyright line or licence statement in the archive or the tagged tree; only `license = "MIT"` and `authors = ["Steven Sheldon"]` |
-| `malloc_buf 0.0.6` (MIT) | tag `0.0.6` = `SSheldon/malloc_buf` @ `a7811e5f…` | **unresolved** (as above) |
+| `malloc_buf 0.0.6` (MIT) | tag `0.0.6` = `SSheldon/malloc_buf` @ `a7811e5f…` | **unresolved** (as above). Recorded but **not bound**: the repository's `master` HEAD `d9a3e539…` (29/06/2020, "Add LICENSE", committed by a contributor) carries an MIT `LICENSE` reading "Copyright (c) 2020 Steven Sheldon" (raw sha256 `aced7b57…`); it post-dates 0.0.6 by more than four years and is not part of its tree or archive, so whether it may stand for 0.0.6 is an owner/legal decision |
 | `objc-foundation 0.1.1` (MIT) | tag `0.1.1` = `SSheldon/rust-objc-foundation` @ `0c157a59…` | **unresolved** (as above) |
 | `objc_id 0.1.1` (MIT) | tag `0.1.1` = `SSheldon/rust-objc-id` @ `6527cdf2…`; README byte-identical | **unresolved** (as above) |
 
 For the four unresolved crates a generic MIT text would need a copyright line
 the upstream never published for that version, so none is asserted; the
 record names the checks performed and the single fallback used (source-file
-headers at the tagged revision, none present). Their disposition is an
-owner/legal decision.
+headers at the tagged revision, none present). On 09/09/2026 the four exact
+archives were re-read from the HTTPS-acquired cache and each repository's
+default branch and GitHub licence endpoint were checked and recorded per
+record: `rust-block`, `rust-objc-foundation` and `rust-objc-id` still carry no
+licence file at any revision; only `malloc_buf` gained one later (row above).
+Their disposition is an owner/legal decision.
 
 `prepare-libvips-source-materials.mjs acquire|verify … --notice-materials
 Config/SharpLibvipsRustNoticeMaterials.json` binds that manifest to the crate
@@ -328,7 +332,60 @@ truthfully. `verify` re-checks a published set against the tracked manifests
 files, a changed manifest, a truncated archive, links and any edit to the
 generated files. Two independent stagings from identical inputs are
 byte-identical. No public ZIP/TAR asset, hosting URL or offer mechanism is
-created; the nine-asset public contract is unchanged.
+created; the nine-asset public contract is unchanged. A fresh staging against
+the current manifests on 09/09/2026 (after the notice-manifest refresh above)
+produced 217 files and 176,668,128 bytes: the 41 upstream items, the 161
+`.crate` archives, their two inventories and checksum lists,
+`RUST_CRATE_NOTICES.md`, the four manifests, the acknowledgements document, the
+two external notice texts and the three generated records.
+
+### Delivery archive (private; not a source offer)
+
+`scripts/package-libvips-delivery-materials.mjs package
+Config/ThirdPartyBinaryProvenance.json <verified sharp-libvips-1.3.3-delivery-materials>
+<new private output directory> <source commit>` turns one verified delivery set
+into a single plain ustar archive `sharp-libvips-1.3.3-delivery-materials.tar`,
+a `sha256sum`-shaped sidecar and a concise machine-readable
+`sharp-libvips-1.3.3-delivery-materials.binding.json`. It establishes the input
+set with the stager's own `verify`, copies every file into an invocation-owned
+staging tree with one fixed member timestamp (2000-01-01T00:00:00Z) and modes
+0700/0600, and runs the system bsdtar in ustar format with owner 0:0, empty
+user/group names and no extended attributes, ACLs, file flags or AppleDouble
+metadata, so two packagings of one verified set are byte-identical with the
+same bsdtar/libarchive build (recorded in the binding). The archive is
+uncompressed because every upstream input is already a compressed archive and
+nothing can then expand on extraction beyond the archive's own size; nested
+archives stay opaque. Before publication the archive is listed against the
+planned member set, unpacked into staging and re-verified by the stager
+verifier; the three outputs are then published atomically into one new
+directory, and a failure removes only that invocation's staging. The binding
+records the source commit, the redistributed binary's package/version/build
+commit/dylib digest, the digests of the four tracked manifests and the
+acknowledgements document, the acquisition transports and authoritative flags,
+the delivery inventory (every file with size and SHA-256) and the archive
+identity; it contains no timestamps, private paths or legal conclusion.
+
+`verify-archive Config/ThirdPartyBinaryProvenance.json <archive.tar>
+<binding.json> <expected sha256> <source commit> <new private unpack directory>`
+is the recipient side. It needs the archive, the binding, an **externally
+supplied** expected digest and an independently trusted checkout of the exact
+source commit — never the packager's caches. Before any extraction it checks
+the archive digest, then the binding as untrusted payload against that checkout
+(source commit, component, binary cohort, tracked manifest digests, inventory
+shape), then the exact member listing; it unpacks only into a fresh private
+directory, refuses symbolic links, hard links, special files and any mode other
+than 0700/0600, and finally runs the stager verifier on the unpacked root. The
+sidecar and the manifests inside the archive are payload to be checked, not
+trust roots: the expected digest must come from a trusted release record, not
+from a checksum file downloaded beside the archive. Fixture (`local-fixture`)
+provenance is carried into the binding and the summary as NOT authoritative and
+cannot be relabelled.
+
+Packaging closes only the engineering step "materials packaged". It does not
+publish a source offer, add a release asset, demonstrate library replacement
+under signing or constitute legal clearance, and the archive digest is
+deliberately not recorded in this repository (it would create a circular
+identity with the source tree it binds); the private handback records it.
 
 ### Explicitly unretained or unverifiable
 
@@ -397,10 +454,13 @@ work:
   before either offline build. The cache never enters the compiler-only source
   snapshot, the app runtime, the runtime inventory or a public asset, and its
   presence is not a corresponding-source offer.
-- **Delivery set.** `scripts/stage-libvips-delivery-materials.mjs` produces the
-  verified `sharp-libvips-1.3.3-delivery-materials/` directory described above;
-  deterministic archive packaging (a single ZIP/TAR of that directory) is one
-  bounded further step once the owner chooses a distribution mechanism.
+- **Delivery set and archive.** `scripts/stage-libvips-delivery-materials.mjs`
+  produces the verified `sharp-libvips-1.3.3-delivery-materials/` directory
+  described above and `scripts/package-libvips-delivery-materials.mjs` turns it
+  into one deterministic, recipient-verifiable archive with a sidecar and a
+  binding ("Delivery archive" above). Choosing a distribution mechanism, adding
+  the archive as a release asset and committing to a hosting duration remain
+  owner/Codex decisions; the packager does none of them.
 
 Two options for distribution, either of which is a Codex-integrated delta, not
 something this record enables on its own:
@@ -453,7 +513,12 @@ separately approved lane. Neither is performed here.
    two approximation-only crates an acceptable notice basis for a beta, given
    that incorporation into the dylib is unverified, or is a controlled pinned
    replacement build (separately approved; changes runtime bytes) preferred?
-   How should the four unresolved Steven Sheldon crate notices be treated?
+   How should the four unresolved Steven Sheldon crate notices be treated — in
+   particular, may the later-revision `malloc_buf` `LICENSE` (29/06/2020,
+   "Copyright (c) 2020 Steven Sheldon", not part of the 0.0.6 tree) stand for
+   0.0.6? Binding it would need a deliberately labelled later-revision material
+   kind in `Config/SharpLibvipsRustNoticeMaterials.json`; the current schema
+   accepts upstream files only at the connected revision.
 6. How are the MPL-2.0 crate sources and Unicode-3.0 notices to be made
    available/presented, and where do the FTL and IJG acknowledgements in
    `docs/THIRD_PARTY_ACKNOWLEDGEMENTS.md` go (Codex integration)?
