@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -8,6 +9,98 @@ import { runInNewContext } from "node:vm";
 import { rootWatchdogChildOptions } from "./RootWatchdogChildProcess.mjs";
 
 const root = process.cwd();
+
+async function verifyMigrationPhaseDiagnostics(liveVerifier, migrationService) {
+  const shell = liveVerifier, swift = migrationService, project = root;
+  const body = /\n(import \{ spawnSync \} from "node:child_process";[\s\S]*?)\nFULMAR_MIGRATION_PHASE_DIAGNOSTIC\n/u.exec(shell)?.[1];
+  assert.ok(body);
+  const transformed = body.replace(/^import .*;\n/gmu, "")
+    .replace('const { readAttestedRegularFileSync } = await import(pathToFileURL(join(project, "scripts/attested-regular-file.mjs")));',
+      "const { readAttestedRegularFileSync } = fixture;");
+  assert.ok(!transformed.includes("await import("));
+  const fixtureRoot = "/private/tmp/fulmar-credential-xpc-live.phase-fixture";
+  const executable = "/private/tmp/Fixture.app/Contents/XPCServices/LocalHarnessCredentialMigrationService.xpc/Contents/MacOS/LocalHarnessCredentialMigrationService";
+  const fixtureNow = Date.UTC(2026, 8, 9, 18, 0, 8);
+  const start = (fixtureNow / 1_000) - 8;
+  const end = (fixtureNow / 1_000) - 1;
+  const phaseLabels = [...swift.matchAll(/^    case \w+ = "([a-z-]+)"$/gmu)]
+    .map(match => match[1]);
+  assert.equal(phaseLabels.length, 16);
+  const record = phase => ({ eventType: "logEvent", processID: 4321, processImagePath: executable,
+    subsystem: "com.angadjairath.localharness.migration-diagnostic", category: "xpc-phase",
+    timestamp: "2026-09-09 18:00:02.123456+0000", eventMessage: phase });
+  const outcomes = [];
+  for (const scenario of ["complete", "empty", "wrong-pid", "wrong-path", "wrong-subsystem", "wrong-category",
+    "unknown-label", "wrong-time", "wrong-schema", "invalid-json", "log-timeout", "log-stderr",
+    "oversize-log", "monitor-failed", "monitor-stderr", "done-mismatch", "invalid-evidence",
+    "wrong-file-mode", "unsafe-root", "stale-window", "date-failed", "unsafe-executable", "expired-budget", "late-log-budget"]) {
+    let output = "", queries = 0, fixtureClock = fixtureNow;
+    const evidence = "pid=4321\nstarted=Wed Sep  9 18:00:00 2026\ncdhash=" + "a".repeat(40) + "\n";
+    const rows = phaseLabels.map(record);
+    if (scenario === "wrong-pid") rows[0].processID = 9876;
+    if (scenario === "wrong-path") rows[0].processImagePath += ".other";
+    if (scenario === "wrong-subsystem") rows[0].subsystem = "unrelated";
+    if (scenario === "wrong-category") rows[0].category = "unrelated";
+    if (scenario === "unknown-label") rows[0].eventMessage = "PRIVATE_FIXTURE_MUST_NOT_LEAK";
+    if (scenario === "wrong-time") rows[0].timestamp = "2026-09-09 17:59:59.999999+0000";
+    if (scenario === "wrong-schema") delete rows[0].processID;
+    const files = new Map([
+      ["monitor.stdout", scenario === "monitor-failed" ? "not-pass\n" : "FULMAR_CREDENTIAL_XPC_PROCESS_DRAIN_OK\n"],
+      ["monitor.stderr", scenario === "monitor-stderr" ? "PRIVATE_FIXTURE_MUST_NOT_LEAK" : ""],
+      ["client.done", scenario === "done-mismatch" ? "nope\n" : "done\n"],
+      ["service.evidence", scenario === "invalid-evidence" ? "pid=OTHER\n" : evidence]
+    ]);
+    const fixture = { readAttestedRegularFileSync(path, options) {
+      assert.equal(options.requireCurrentUser, true);
+      assert.equal(options.requirePrivateMode, true);
+      assert.equal(options.requireSingleLink, true);
+      assert.equal(options.requireCanonicalPath, true);
+      const bytes = Buffer.from(files.get(path.slice(fixtureRoot.length + 1)));
+      if (bytes.length < options.minimumBytes || bytes.length > options.maximumBytes) throw 0;
+      return { bytes, metadata: { mode: scenario === "wrong-file-mode" ? 0o640n : 0o600n } };
+    } };
+    const context = {
+      fixture, Buffer, Number, JSON, Set, Math, createHash, join,
+      Date: class extends Date { static now() { return fixtureClock; } },
+      process: { argv: ["node", "-", project, fixtureRoot, "1:2:501:700",
+        scenario === "unsafe-executable" ? executable + '"' : executable,
+        String(scenario === "stale-window" ? start - 60 : start), String(end),
+        String(scenario === "expired-budget" ? fixtureNow : fixtureNow + 4_000)],
+        getuid: () => 501, stdout: { write: text => { output += text; } } },
+      lstatSync: () => ({ isDirectory: () => true, isSymbolicLink: () => false,
+        uid: 501, mode: scenario === "unsafe-root" ? 0o755 : 0o700, dev: 1, ino: 2 }),
+      realpathSync: value => value,
+      spawnSync(command, argumentsList, options) {
+        assert.equal(options.killSignal, "SIGKILL");
+        if (command === "/bin/date") {
+          assert.equal(options.timeout, 500);
+          if (scenario === "late-log-budget") fixtureClock += 3_500;
+          return { status: scenario === "date-failed" ? 1 : 0, signal: null, stdout: String(start) + "\n", stderr: "" };
+        }
+        assert.equal(command, "/usr/bin/log");
+        assert.equal(options.timeout, scenario === "late-log-budget" ? 250 : 2_000);
+        assert.equal(options.maxBuffer, 128 * 1_024);
+        assert.ok(argumentsList.includes(`@${start}`) && argumentsList.includes(`@${end + 1}`));
+        assert.ok(argumentsList.at(-1).includes(`processIdentifier == 4321 AND processImagePath == "${executable}"`));
+        queries += 1;
+        return { status: scenario === "log-timeout" ? null : 0,
+          signal: scenario === "log-timeout" ? "SIGKILL" : null,
+          stderr: scenario === "log-stderr" ? "PRIVATE_FIXTURE_MUST_NOT_LEAK" : "",
+          stdout: scenario === "oversize-log" ? "x".repeat(128 * 1_024 + 1)
+            : scenario === "invalid-json" ? "not-json" : JSON.stringify(scenario === "empty" ? [] : rows) };
+      }
+    };
+    await runInNewContext(`(async () => { ${transformed}\n })()`, context, { timeout: 1_000 });
+    assert.ok(!output.includes("PRIVATE_FIXTURE") && !output.includes(executable) && !output.includes("4321"));
+    if (["complete", "empty", "late-log-budget"].includes(scenario)) {
+      assert.match(output, /^FULMAR_CREDENTIAL_XPC_PHASE_EVIDENCE_SHA256=[a-f0-9]{64}\n/u);
+      assert.ok(output.includes("historical-correlation-only"));
+      assert.equal(output.split("FULMAR_CREDENTIAL_XPC_PHASE=").length - 1, scenario === "empty" ? 0 : 16);
+    } else assert.equal(output, "FULMAR_CREDENTIAL_XPC_PHASE_DIAGNOSTIC=unavailable\n", scenario);
+    assert.ok(queries <= 1);
+    outcomes.push({ scenario, passed: true, queries });
+  }
+}
 
 function verifyMonitorCompletionHandling(source) {
   const start = source.indexOf("\nvalidateInputs();");
@@ -263,6 +356,34 @@ test("release assembly preserves helper ACL identity while pinning the exact ser
   assert.match(processMonitor, /process\.kill\(identity\.pid, signal\)/u);
   assert.doesNotMatch(processMonitor, /pkill|killall|pgrep/u);
   verifyMonitorCompletionHandling(processMonitor);
+  // Diagnostic-only phase telemetry must not become another acceptance channel.
+  const migrationService = await readFile(join(root, "Tools/CredentialMigrationService/main.swift"), "utf8");
+  assert.match(migrationService, /private enum MigrationDiagnosticPhase: String/u);
+  assert.match(migrationService, /migrationDiagnosticLog\.notice\("\\\(phase\.rawValue, privacy: \.public\)"\)/u);
+  assert.match(migrationService, /recordMigrationPhase\(\.serviceStartup\)[\s\S]*private let listenerDelegate/u);
+  for (const [phase, argument, nested] of [["service", "serviceBundle", "false"], ["helper", "helper", "false"], ["application", "application", "true"]]) {
+    const before = `recordMigrationPhase(.${phase}ValidationEntered)`;
+    const inspection = `MigrationCodeIdentity.inspect(${argument}, nested: ${nested})`;
+    const after = `recordMigrationPhase(.${phase}ValidationReturned)`;
+    for (const marker of [before, inspection, after]) assert.equal(migrationService.split(marker).length, 2);
+    assert.ok(migrationService.indexOf(before) < migrationService.indexOf(inspection));
+    assert.ok(migrationService.indexOf(inspection) < migrationService.indexOf(after));
+  }
+  assert.match(migrationService, /recordMigrationPhase\(\.requestEntered\)\s+guard admission\.begin\(\)/u);
+  assert.match(migrationService, /recordMigrationPhase\(\.connectionEntered\)\s+connection\.setCodeSigningRequirement\(exactApplicationRequirement\)/u);
+  assert.match(migrationService, /recordMigrationPhase\(\.acceptanceMetadataEntered\)\s+try runAcceptanceMetadataCanary\(nonce: request\.acceptanceNonce\)\s+recordMigrationPhase\(\.acceptanceMetadataReturned\)/u);
+  assert.match(migrationService, /if diagnosticAcceptance \{ recordMigrationPhase\(\.acceptanceReplyInvoked\) \}\s+reply\(encode\(response\)\)\s+if diagnosticAcceptance \{ recordMigrationPhase\(\.acceptanceReplyReturned\) \}/u);
+  assert.match(liveVerifier, /CLIENT_CONTRACT:-.*failed.*MONITOR_STATUS:-.*0/u);
+  assert.match(liveVerifier, /collect_migration_phase_diagnostics \|\| true/u);
+  assert.match(liveVerifier, /readAttestedRegularFileSync[\s\S]*requireSingleLink: true, requireCanonicalPath: true/u);
+  assert.match(liveVerifier, /timeout: remainingSpawnBudget\(2_000\), killSignal: "SIGKILL", maxBuffer: 128 \* 1_024/u);
+  assert.match(liveVerifier, /run-with-watchdog\.sh" --inherit-root[\s\S]*--seconds 5 --max-rss-bytes 34359738368 --rss-grace-seconds 10[\s\S]*--emergency-rss-bytes 38654705664/u);
+  assert.match(liveVerifier, /if zmodload zsh\/datetime 2>\/dev\/null; then/u);
+  assert.doesNotMatch(liveVerifier, /\$\(\/bin\/date \+%s/u);
+  assert.match(liveVerifier, /record\.processID !== Number\(match\[1\]\)[\s\S]*record\.processImagePath !== executable/u);
+  assert.match(liveVerifier, /historical-correlation-only/u);
+  assert.doesNotMatch(liveVerifier, /console\.(?:log|error)\(query|process\.(?:stdout|stderr)\.write\(query/u);
+  await verifyMigrationPhaseDiagnostics(liveVerifier, migrationService);
   assert.match(launcher, /arguments\.count == 2/u);
   assert.match(launcher, /genericFailure/u);
   assert.match(launcher, /CredentialMigrationXPCAcceptanceCoordinator\.run/u);

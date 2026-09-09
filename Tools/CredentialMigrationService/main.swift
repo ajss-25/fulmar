@@ -6,6 +6,37 @@ import LocalAuthentication
 import LocalHarnessCredentialMigrationXPCProtocol
 import LocalHarnessCredentialSecurity
 import Security
+import OSLog
+
+// Fixed phase labels only: never log request fields, paths, identities or values.
+// Notice persistence is best-effort; absence is not proof that a phase was not reached.
+private enum MigrationDiagnosticPhase: String {
+    case serviceStartup = "service-startup"
+    case serviceValidationEntered = "service-validation-entered"
+    case serviceValidationReturned = "service-validation-returned"
+    case helperValidationEntered = "helper-validation-entered"
+    case helperValidationReturned = "helper-validation-returned"
+    case applicationValidationEntered = "application-validation-entered"
+    case applicationValidationReturned = "application-validation-returned"
+    case listenerResumeInvoked = "listener-resume-invoked"
+    case listenerResumeReturned = "listener-resume-returned"
+    case connectionEntered = "connection-entered"
+    case requestEntered = "request-entered"
+    case acceptanceEntered = "acceptance-entered"
+    case acceptanceMetadataEntered = "acceptance-metadata-entered"
+    case acceptanceMetadataReturned = "acceptance-metadata-returned"
+    case acceptanceReplyInvoked = "acceptance-reply-invoked"
+    case acceptanceReplyReturned = "acceptance-reply-returned"
+}
+
+private let migrationDiagnosticLog = Logger(
+    subsystem: "com.angadjairath.localharness.migration-diagnostic",
+    category: "xpc-phase"
+)
+
+private func recordMigrationPhase(_ phase: MigrationDiagnosticPhase) {
+    migrationDiagnosticLog.notice("\(phase.rawValue, privacy: .public)")
+}
 
 private let credentialService = "app.localharness.credentials"
 private let applicationBundleIdentifier = "com.angadjairath.localharness"
@@ -1084,6 +1115,7 @@ private func performAcceptance(
     request: CredentialMigrationXPCRequest,
     cancellation: MigrationCancellation
 ) throws -> CredentialMigrationXPCResponse {
+    recordMigrationPhase(.acceptanceEntered)
     try cancellation.check()
     guard request.operation == .acceptance else {
         throw MigrationServiceError.invalidRequest
@@ -1105,7 +1137,9 @@ private func performAcceptance(
         expected: sourceIdentity,
         expectedBytes: Data()
     )
+    recordMigrationPhase(.acceptanceMetadataEntered)
     try runAcceptanceMetadataCanary(nonce: request.acceptanceNonce)
+    recordMigrationPhase(.acceptanceMetadataReturned)
     try cancellation.check()
     return CredentialMigrationXPCResponse(status: .success)
 }
@@ -1130,11 +1164,13 @@ private final class CredentialMigrationService: NSObject, LocalHarnessCredential
         yamlGraph: NSData,
         withReply reply: @escaping (NSData) -> Void
     ) {
+        recordMigrationPhase(.requestEntered)
         guard admission.begin() else {
             reply(encode(CredentialMigrationXPCResponse(status: .busy)))
             return
         }
         defer { admission.finish() }
+        var diagnosticAcceptance = false
         let response: CredentialMigrationXPCResponse
         do {
             guard request.length > 0,
@@ -1185,6 +1221,7 @@ private final class CredentialMigrationService: NSObject, LocalHarnessCredential
                     cancellation: cancellation
                 )
             case .acceptance:
+                diagnosticAcceptance = true
                 response = try performAcceptance(
                     source: source.fileDescriptor,
                     sourceParent: sourceParent.fileDescriptor,
@@ -1198,7 +1235,9 @@ private final class CredentialMigrationService: NSObject, LocalHarnessCredential
         } catch {
             response = CredentialMigrationXPCResponse(status: .internalFailure)
         }
+        if diagnosticAcceptance { recordMigrationPhase(.acceptanceReplyInvoked) }
         reply(encode(response))
+        if diagnosticAcceptance { recordMigrationPhase(.acceptanceReplyReturned) }
     }
 
     private func encode(_ response: CredentialMigrationXPCResponse) -> NSData {
@@ -1248,9 +1287,15 @@ private final class CredentialMigrationListenerDelegate: NSObject, NSXPCListener
                   Bundle(url: application)?.bundleIdentifier == applicationBundleIdentifier else {
                 failClosedServiceStartup()
             }
+            recordMigrationPhase(.serviceValidationEntered)
             let serviceIdentity = try MigrationCodeIdentity.inspect(serviceBundle, nested: false)
+            recordMigrationPhase(.serviceValidationReturned)
+            recordMigrationPhase(.helperValidationEntered)
             let helperIdentity = try MigrationCodeIdentity.inspect(helper, nested: false)
+            recordMigrationPhase(.helperValidationReturned)
+            recordMigrationPhase(.applicationValidationEntered)
             let appIdentity = try MigrationCodeIdentity.inspect(application, nested: true)
+            recordMigrationPhase(.applicationValidationReturned)
             guard serviceIdentity.identifier == CredentialMigrationXPCConstants.serviceName,
                   helperIdentity.identifier == CredentialMigrationXPCConstants.serviceName,
                   serviceIdentity.designatedRequirement == helperIdentity.designatedRequirement,
@@ -1268,6 +1313,7 @@ private final class CredentialMigrationListenerDelegate: NSObject, NSXPCListener
         _ listener: NSXPCListener,
         shouldAcceptNewConnection connection: NSXPCConnection
     ) -> Bool {
+        recordMigrationPhase(.connectionEntered)
         connection.setCodeSigningRequirement(exactApplicationRequirement)
         let service = CredentialMigrationService(admission: admission)
         connection.exportedInterface = NSXPCInterface(
@@ -1281,7 +1327,10 @@ private final class CredentialMigrationListenerDelegate: NSObject, NSXPCListener
     }
 }
 
+recordMigrationPhase(.serviceStartup)
 private let listenerDelegate = CredentialMigrationListenerDelegate()
 private let listener = NSXPCListener.service()
 listener.delegate = listenerDelegate
+recordMigrationPhase(.listenerResumeInvoked)
 listener.resume()
+recordMigrationPhase(.listenerResumeReturned)
