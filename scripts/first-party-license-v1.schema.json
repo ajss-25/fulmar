@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fulmar.invalid/schema/first-party-license-v1.json",
+  "title": "Fulmar first-party licence selection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "licenseFile",
+    "spdxExpression",
+    "displayName",
+    "licenseSHA256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "licenseFile": { "const": "LICENSE" },
+    "spdxExpression": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "licenseSHA256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

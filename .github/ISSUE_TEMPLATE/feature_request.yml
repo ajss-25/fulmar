@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose a Fulmar feature or supported-provider improvement
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user outcome without including private data.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include empty, loading, permission-denied, cancellation, and error behavior where relevant.
+    validations:
+      required: true
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Data boundary affected
+      options:
+        - On-device only
+        - Local network
+        - Cloud provider
+        - Multiple boundaries
+        - No model or network boundary
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Security, privacy, performance, and compatibility considerations
+      description: Explain new credentials, files, network access, tools, permissions, or background work.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: I reviewed the supported DSH subset and Known Limitations.
+          required: true
+        - label: I have not included credentials, prompts, private files, or exploit details.
+          required: true

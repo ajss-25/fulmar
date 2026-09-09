@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a reproducible, non-security Fulmar defect without private data
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not post credentials, private prompts/files, full unreviewed logs, or exploit details. Security reports belong in GitHub private vulnerability reporting. Fulmar is currently a source preview, not a supported public binary. Work through docs/BUG_REPORT_CHECKLIST.md and docs/TROUBLESHOOTING.md first, and check docs/SUPPORT_MATRIX.md for whether your configuration is qualified.
+  - type: input
+    id: version
+    attributes:
+      label: Fulmar version and build
+      description: Find this in About Fulmar or the Diagnostics report.
+      placeholder: "1.2.36 (156)"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS
+      placeholder: "For example: Apple M2 Pro, 32 GB, macOS 15.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Provider boundary
+      options:
+        - Ollama on this Mac
+        - Local-network compatible endpoint
+        - DeepSeek cloud API
+        - OpenAI cloud API
+        - Anthropic cloud API
+        - Other cloud-compatible endpoint
+        - No model request involved
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Provider and model label
+      description: Do not include a credential or private endpoint URL.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use disposable content and list the smallest exact sequence.
+      placeholder: |
+        1. Open …
+        2. Select …
+        3. Observe …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include the exact non-secret error text. Attach a Diagnostics report only after reviewing it.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed API keys, authorization values, prompts, workspace content, private endpoint details, and unreviewed logs.
+          required: true
+        - label: This is not a vulnerability or exploit report.
+          required: true
+        - label: I checked the Getting Started guide and Known Limitations.
+          required: true

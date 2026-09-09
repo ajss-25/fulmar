@@ -1,0 +1,7 @@
+{
+  "name": "@local-harness/dsh-credentials-keychain",
+  "version": "1.0.8",
+  "private": true,
+  "type": "module",
+  "main": "./index.mjs"
+}

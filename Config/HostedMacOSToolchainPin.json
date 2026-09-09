@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 3,
+  "pinStatus": "active",
+  "runnerContract": {
+    "provider": "github-hosted",
+    "requestedLabel": "macos-26",
+    "operatingSystem": "macOS",
+    "architecture": "ARM64"
+  },
+  "hostedDiscovery": {
+    "github": {
+      "repository": "ajss-25/fulmar",
+      "commitSHA": "f36868328089f223b50473374a45c43147a9b009",
+      "runID": "33875851373",
+      "runAttempt": "1",
+      "job": "macos"
+    },
+    "image": {
+      "imageOS": "macos26",
+      "imageVersion": "20260831.0337.3"
+    },
+    "runner": {
+      "effectiveUID": 501
+    },
+    "xcode": {
+      "version": "Xcode 26.6\nBuild version 17F113",
+      "executable": {
+        "path": "/Applications/Xcode_26.6.app/Contents/Developer/usr/bin/xcodebuild",
+        "bytes": 182448,
+        "sha256": "d6ceec0a4fa47e3f7a20c712d960ffb954b2246a2c94a0bf0818b2e8344065c5"
+      }
+    },
+    "toolchain": {
+      "schemaVersion": 6,
+      "architecture": "arm64",
+      "operatingSystem": {
+        "productVersion": "26.6.2",
+        "buildVersion": "25G83"
+      },
+      "developerDirectory": "/Applications/Xcode_26.6.app/Contents/Developer",
+      "sdk": {
+        "path": "/Applications/Xcode_26.6.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+        "version": "26.5",
+        "buildVersion": "25F70",
+        "settings": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
+          "bytes": 7774,
+          "sha256": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe"
+        },
+        "systemVersion": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/CoreServices/SystemVersion.plist",
+          "bytes": 599,
+          "sha256": "4fc59201cb9979797ab3158c8ddfa20b4a0be0cdc2b34f2942b65f395fc0ea76"
+        }
+      },
+      "versions": {
+        "swiftc": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)\nTarget: arm64-apple-macosx26.0",
+        "swiftFrontend": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)\nTarget: arm64-apple-macosx26.0",
+        "swiftBuild": "Swift Package Manager - Swift 6.3.3",
+        "clang": "Apple clang version 21.0.0 (clang-2100.1.1.101)\nTarget: arm64-apple-darwin25.6.0\nThread model: posix\nInstalledDir: /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+        "ld": "@(#)PROGRAM:ld PROJECT:ld-1267\nBUILD 16:38:58 Jun  8 2026\nconfigured to support archs: armv6 armv7 armv7s arm64 arm64e arm64_32 i386 x86_64 x86_64h armv6m armv7k armv7m armv7em armv8m.main armv8.1m.main\nwill use ld-classic for: armv6 armv7 armv7s i386 armv6m armv7k armv7m armv7em\nLTO support using: LLVM version 21.0.0 (static support for 30, runtime is 30)\nTAPI support using: Apple TAPI version 21.0.0 (tapi-2100.0.2.6)",
+        "dsymutil": "Apple LLVM version 21.0.0\n  Optimized build."
+      },
+      "tools": {
+        "clang": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+          "bytes": 290664032,
+          "sha256": "d2e4bf622758eee1bf7267c060497fb2c41e098d37b0fca8be73898dc7e14eda"
+        },
+        "dsymutil": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil",
+          "bytes": 97964848,
+          "sha256": "012d1b32970a63f2e77c627916e868bfd21822c37b862cbd08b04d41f0d5c260"
+        },
+        "ld": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld",
+          "bytes": 4953232,
+          "sha256": "e412b9f2af31b1567a9eabc28f553a8f1cf34127e2107cb39c2694cf147571a4"
+        },
+        "swift": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+          "bytes": 357109680,
+          "sha256": "8a63cc031d970b57f03741ae83becbfb26f2b913565ac212b81b80bdcb35600f"
+        },
+        "swift-build": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-package",
+          "bytes": 48459440,
+          "sha256": "487af88e37990b089e4979b874bd7944aca0dba5ffb0cae6236aefd02b301f05"
+        },
+        "swift-frontend": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+          "bytes": 357109680,
+          "sha256": "8a63cc031d970b57f03741ae83becbfb26f2b913565ac212b81b80bdcb35600f"
+        },
+        "swiftc": {
+          "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+          "bytes": 357109680,
+          "sha256": "8a63cc031d970b57f03741ae83becbfb26f2b913565ac212b81b80bdcb35600f"
+        },
+        "codesign": {
+          "path": "/usr/bin/codesign",
+          "bytes": 458576,
+          "sha256": "844d30a12929b59c9f2215e2a308c3e1db572831a478f35906e452a54025603e"
+        },
+        "ditto": {
+          "path": "/usr/bin/ditto",
+          "bytes": 172160,
+          "sha256": "638df9b6d1454be2405dbc3c69c28ac75405bb5b21c9e878166be92f8b3a1c4d"
+        },
+        "sips": {
+          "path": "/usr/bin/sips",
+          "bytes": 504304,
+          "sha256": "854fe5bb83f6176615b3f2ac599c66e808b9bb5d708ad66f743e480cc8045cf6"
+        },
+        "strip": {
+          "path": "/usr/bin/strip",
+          "bytes": 118640,
+          "sha256": "b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9"
+        },
+        "xcrun": {
+          "path": "/usr/bin/xcrun",
+          "bytes": 117104,
+          "sha256": "178e19cfe796ce33815195c42d34562c20ec4d5131534fb7e6a55b91f14371d5"
+        }
+      },
+      "build": {
+        "configuration": "release",
+        "jobs": 1,
+        "swiftFrontendThreads": 1,
+        "dsymutilThreads": 1,
+        "sourcePrefix": "/Fulmar/Sources",
+        "scratchPrefix": "/Fulmar/Build",
+        "generatedPrefix": "/Fulmar/Generated",
+        "linkerReproducible": true,
+        "canonicalSourceSnapshot": true,
+        "relativeDebugMapObjects": true,
+        "serializedDebugPrefixMappings": true,
+        "swiftPMDebugInfoFormat": "none",
+        "frontendDebugInfo": "dwarf",
+        "clangModuleBreadcrumbs": false,
+        "automaticDSYMGeneration": false,
+        "compilationDirectory": "/Fulmar/Compilation",
+        "dsymObjectPrependScratch": true,
+        "dsymObjectPrefixMaps": [
+          "scratchToEmpty",
+          "generatedScratchLeafToEmpty"
+        ]
+      }
+    }
+  },
+  "compatiblePins": [
+    {
+      "schemaVersion": 2,
+      "pinStatus": "active",
+      "runnerContract": {
+        "provider": "github-hosted",
+        "requestedLabel": "macos-26",
+        "operatingSystem": "macOS",
+        "architecture": "ARM64"
+      },
+      "hostedDiscovery": {
+        "github": {
+          "repository": "ajss-25/fulmar",
+          "commitSHA": "b2565d3154824352fa018932598c38e447694bb8",
+          "runID": "34054609479",
+          "runAttempt": "1",
+          "job": "macos"
+        },
+        "image": {
+          "imageOS": "macos26",
+          "imageVersion": "20260728.0273.1"
+        },
+        "runner": {
+          "effectiveUID": 501
+        },
+        "xcode": {
+          "version": "Xcode 26.6\nBuild version 17F113",
+          "executable": {
+            "path": "/Applications/Xcode_26.6.app/Contents/Developer/usr/bin/xcodebuild",
+            "bytes": 182448,
+            "sha256": "d6ceec0a4fa47e3f7a20c712d960ffb954b2246a2c94a0bf0818b2e8344065c5"
+          }
+        },
+        "toolchain": {
+          "schemaVersion": 6,
+          "architecture": "arm64",
+          "operatingSystem": {
+            "productVersion": "26.5.2",
+            "buildVersion": "25F84"
+          },
+          "developerDirectory": "/Applications/Xcode_26.6.app/Contents/Developer",
+          "sdk": {
+            "path": "/Applications/Xcode_26.6.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+            "version": "26.5",
+            "buildVersion": "25F70",
+            "settings": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
+              "bytes": 7774,
+              "sha256": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe"
+            },
+            "systemVersion": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/CoreServices/SystemVersion.plist",
+              "bytes": 599,
+              "sha256": "4fc59201cb9979797ab3158c8ddfa20b4a0be0cdc2b34f2942b65f395fc0ea76"
+            }
+          },
+          "versions": {
+            "swiftc": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)\nTarget: arm64-apple-macosx26.0",
+            "swiftFrontend": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)\nTarget: arm64-apple-macosx26.0",
+            "swiftBuild": "Swift Package Manager - Swift 6.3.3",
+            "clang": "Apple clang version 21.0.0 (clang-2100.1.1.101)\nTarget: arm64-apple-darwin25.5.0\nThread model: posix\nInstalledDir: /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+            "ld": "@(#)PROGRAM:ld PROJECT:ld-1267\nBUILD 16:38:58 Jun  8 2026\nconfigured to support archs: armv6 armv7 armv7s arm64 arm64e arm64_32 i386 x86_64 x86_64h armv6m armv7k armv7m armv7em armv8m.main armv8.1m.main\nwill use ld-classic for: armv6 armv7 armv7s i386 armv6m armv7k armv7m armv7em\nLTO support using: LLVM version 21.0.0 (static support for 30, runtime is 30)\nTAPI support using: Apple TAPI version 21.0.0 (tapi-2100.0.2.6)",
+            "dsymutil": "Apple LLVM version 21.0.0\n  Optimized build."
+          },
+          "tools": {
+            "clang": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+              "bytes": 290664032,
+              "sha256": "d2e4bf622758eee1bf7267c060497fb2c41e098d37b0fca8be73898dc7e14eda"
+            },
+            "dsymutil": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil",
+              "bytes": 97964848,
+              "sha256": "012d1b32970a63f2e77c627916e868bfd21822c37b862cbd08b04d41f0d5c260"
+            },
+            "ld": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld",
+              "bytes": 4953232,
+              "sha256": "e412b9f2af31b1567a9eabc28f553a8f1cf34127e2107cb39c2694cf147571a4"
+            },
+            "swift": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+              "bytes": 357109680,
+              "sha256": "8a63cc031d970b57f03741ae83becbfb26f2b913565ac212b81b80bdcb35600f"
+            },
+            "swift-build": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-package",
+              "bytes": 48459440,
+              "sha256": "487af88e37990b089e4979b874bd7944aca0dba5ffb0cae6236aefd02b301f05"
+            },
+            "swift-frontend": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+              "bytes": 357109680,
+              "sha256": "8a63cc031d970b57f03741ae83becbfb26f2b913565ac212b81b80bdcb35600f"
+            },
+            "swiftc": {
+              "path": "/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+              "bytes": 357109680,
+              "sha256": "8a63cc031d970b57f03741ae83becbfb26f2b913565ac212b81b80bdcb35600f"
+            },
+            "codesign": {
+              "path": "/usr/bin/codesign",
+              "bytes": 459824,
+              "sha256": "214d455584d19abc0d74d02b9cbc7d3da6bdcb0596c235e6156dd9ed2f4e1ba7"
+            },
+            "ditto": {
+              "path": "/usr/bin/ditto",
+              "bytes": 172576,
+              "sha256": "31a07d70d9ebea58b083e47d4fa380c1d5b8f7fe58ac3fefa9ce2714ca898ca6"
+            },
+            "sips": {
+              "path": "/usr/bin/sips",
+              "bytes": 505616,
+              "sha256": "df1c90df20dcc48bcd03c84e80eec3594ad6c0b6478efac83da6153fc793ecc5"
+            },
+            "strip": {
+              "path": "/usr/bin/strip",
+              "bytes": 118928,
+              "sha256": "179301dcb41ea78accc3fa0048a7e6f6710d891945a751a34addd622020c1818"
+            },
+            "xcrun": {
+              "path": "/usr/bin/xcrun",
+              "bytes": 117392,
+              "sha256": "a439970aea2b4e435eac6518ff62c97fd1c57d8c731974027ad211b515c7a7b8"
+            }
+          },
+          "build": {
+            "configuration": "release",
+            "jobs": 1,
+            "swiftFrontendThreads": 1,
+            "dsymutilThreads": 1,
+            "sourcePrefix": "/Fulmar/Sources",
+            "scratchPrefix": "/Fulmar/Build",
+            "generatedPrefix": "/Fulmar/Generated",
+            "linkerReproducible": true,
+            "canonicalSourceSnapshot": true,
+            "relativeDebugMapObjects": true,
+            "serializedDebugPrefixMappings": true,
+            "swiftPMDebugInfoFormat": "none",
+            "frontendDebugInfo": "dwarf",
+            "clangModuleBreadcrumbs": false,
+            "automaticDSYMGeneration": false,
+            "compilationDirectory": "/Fulmar/Compilation",
+            "dsymObjectPrependScratch": true,
+            "dsymObjectPrefixMaps": [
+              "scratchToEmpty",
+              "generatedScratchLeafToEmpty"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

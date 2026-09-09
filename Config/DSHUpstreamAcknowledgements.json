@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 2,
+  "registryOrigin": "https://registry.npmjs.org",
+  "reviewedPin": "0.1.1-rc.1",
+  "tags": {
+    "alpha": {
+      "version": "0.1.5-alpha.2",
+      "disposition": "observed-not-promoted",
+      "note": "Observed from npm alpha on 2026-09-09T15:36Z with registry root integrity sha512-nzkfldYf3rIXeW0gfExtxoUdhaivsO+kAaKV4JpNLZC0OtxAUlnAZ0yHzf03IaOTNtAP/aXS7FOAr5O8Lckr1A==; latest and next remain 0.1.2-rc.1. Official GitHub prerelease 385585674, tag dsh-v0.1.5-alpha.2, was published 2026-09-09T14:23:10Z at commit b2e3b2a0125854567a4a5fcba75782e42fe84901. It changes file previews, feedback, provider URL validation, MCP pagination and plugin/Profile APIs; cumulative V3 no-downgrade and Agent/Inbox boundaries remain. This is a read-only metadata and release-note observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
+    },
+    "latest": {
+      "version": "0.1.2-rc.1",
+      "disposition": "observed-not-promoted",
+      "note": "Observed from npm on 2026-09-04T08:26Z as both latest and next; published 2026-09-03T06:21:52.107Z with root integrity sha512-RPq48TzxvwpdT9/7W1tbhZDBMmeK+bxDrX9cqQC27Wx/LqtgJF8PSa3b3xriU8oxtvhwYmk21w2cej3uMQrnVA==. Official GitHub prerelease 381777538 and tag dsh-v0.1.2-rc.1 were published 2026-09-03T06:06:07Z at commit a66e4702047846cdaa10c66c9d3df3951f5ea70d as the first 0.1.2 release candidate, cumulating the alpha-series user and developer changes since 0.1.1-rc.2. This is an observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
+    },
+    "next": {
+      "version": "0.1.2-rc.1",
+      "disposition": "observed-not-promoted",
+      "note": "Observed from npm on 2026-09-04T08:26Z as both latest and next; published 2026-09-03T06:21:52.107Z with root integrity sha512-RPq48TzxvwpdT9/7W1tbhZDBMmeK+bxDrX9cqQC27Wx/LqtgJF8PSa3b3xriU8oxtvhwYmk21w2cej3uMQrnVA==. Official GitHub prerelease 381777538 and tag dsh-v0.1.2-rc.1 were published 2026-09-03T06:06:07Z at commit a66e4702047846cdaa10c66c9d3df3951f5ea70d as the first 0.1.2 release candidate, cumulating the alpha-series user and developer changes since 0.1.1-rc.2. This is an observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
+    }
+  },
+  "officialGitHub": {
+    "apiOrigin": "https://api.github.com",
+    "repository": "deepseek-ai/deepseek-harness",
+    "releaseIndexURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases?per_page=100&page=1",
+    "tagIndexURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/tags?per_page=100&page=1",
+    "versions": {
+      "0.1.0-rc.7": {
+        "tag": "dsh-v0.1.0-rc.7",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/371725157",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.7",
+        "commitSHA": "99f6f02fecdb7dff40c3fbc9470f5907c29f74ca",
+        "disposition": "observed-not-promoted",
+        "note": "Historical official GitHub release and tag observed on 2026-09-02. It predates Fulmar's reviewed pin and is not shipped."
+      },
+      "0.1.0-rc.8": {
+        "tag": "dsh-v0.1.0-rc.8",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/373166049",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8",
+        "commitSHA": "141eb6fef83422698aef7a981029e843e8161534",
+        "disposition": "observed-not-promoted",
+        "note": "Historical official GitHub release and tag observed on 2026-09-02. It predates Fulmar's reviewed pin and is not shipped."
+      },
+      "0.1.1-rc.1": {
+        "tag": "dsh-v0.1.1-rc.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/374224613",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.1",
+        "commitSHA": "528c682e061696f5a160f363f236ecbf53cbd006",
+        "disposition": "promoted",
+        "note": "This is the only GitHub release/tag identity promoted into Fulmar 1.2.36 build 156."
+      },
+      "0.1.1-rc.2": {
+        "tag": "dsh-v0.1.1-rc.2",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/374388128",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.2",
+        "commitSHA": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+        "disposition": "assessed-not-promoted",
+        "note": "The 2026-08-29 assessor found privacy-patch and guarded-MCP contract blockers. This official GitHub release/tag is not shipped."
+      },
+      "0.1.2-alpha.1": {
+        "tag": "dsh-v0.1.2-alpha.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/377991936",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1",
+        "commitSHA": "cd5ef8148158c3a752a658978873241fdf8e2bbc",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub release/tag observed and included in the cumulative alpha compatibility matrix. It is not promoted or shipped."
+      },
+      "0.1.2-alpha.2": {
+        "tag": "dsh-v0.1.2-alpha.2",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/379296034",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.2",
+        "commitSHA": "0a53fb55bea101816fa226bb964ae2bed71c343b",
+        "disposition": "assessed-not-promoted",
+        "note": "The 2026-08-31 assessment did not promote this official GitHub release/tag. It is not shipped."
+      },
+      "0.1.2-alpha.3": {
+        "tag": "dsh-v0.1.2-alpha.3",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/379884041",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.3",
+        "commitSHA": "dd6322d604e00eec1ba5e0c8541159906a21094a",
+        "disposition": "assessed-not-promoted",
+        "note": "The 2026-09-01 exact-cohort assessment found privacy and guarded-MCP blockers. This official GitHub release/tag is not shipped."
+      },
+      "0.1.2-alpha.4": {
+        "tag": "dsh-v0.1.2-alpha.4",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/380633709",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.4",
+        "commitSHA": "4e84901e6471b79ec0338099867ebb4606d12bb5",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub release/tag observed and included in the cumulative alpha compatibility matrix. It has not completed promotion and is not shipped."
+      },
+      "0.1.2-alpha.5": {
+        "tag": "dsh-v0.1.2-alpha.5",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/381145530",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.5",
+        "commitSHA": "db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub release/tag published 2026-09-02T10:02:56Z and observed after the earlier npm-only sighting. It fixes upgrade startup failures and missing session-list titles from 0.1.1-rc.2 or 0.1.2-alpha.3; it still requires cumulative exact-cohort requalification and is not promoted or shipped."
+      },
+      "0.1.2-rc.1": {
+        "tag": "dsh-v0.1.2-rc.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/381777538",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-rc.1",
+        "commitSHA": "a66e4702047846cdaa10c66c9d3df3951f5ea70d",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published 2026-09-03T06:06:07Z and observed on 2026-09-04 as the first 0.1.2 release candidate, now also npm latest and next. It cumulates the alpha-series changes since 0.1.1-rc.2 and requires a full exact-cohort requalification before any promotion; it is not promoted or shipped."
+      },
+      "0.1.3-alpha.1": {
+        "tag": "dsh-v0.1.3-alpha.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/382677748",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.1",
+        "commitSHA": "d347e703908d0406b7a7ef80e3a0e594d86b2215",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published and observed on 2026-09-04 while npm alpha, latest, and next remained unchanged. Its release notes include arbitrary file uploads, startup proxy handling, model-discovery changes, a breaking lifecycle-owned SessionHandle/session-lock API, Session format v2 migrations, and a known performance regression. It requires a separate exact-cohort privacy/runtime/migration/provider/tool/rollback assessment; it is not promoted or shipped."
+      },
+      "0.1.3-alpha.2": {
+        "tag": "dsh-v0.1.3-alpha.2",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/384129524",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.2",
+        "commitSHA": "82a5fd61a7cf5c293cec4bdff68f455398d685e9",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published 2026-09-07T13:59:29Z and observed on 2026-09-09. Release notes describe Web reconnect and long-session performance fixes, continuable-subagent queue/Steer/Stop changes, feedback submissions that include conversation content, changed SDK/Headless/ACP file-tool defaults, and persona/subprocess API changes. These are cumulative compatibility boundaries requiring separate exact-cohort privacy/runtime/provider/tool/state/rollback assessment; it is not promoted or shipped."
+      },
+      "0.1.5-alpha.1": {
+        "tag": "dsh-v0.1.5-alpha.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/384887562",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.1",
+        "commitSHA": "5dda764ed3aa172535a7967b06ff95d9cbfe536a",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published 2026-09-08T16:16:04Z and observed on 2026-09-09, also on npm alpha. Session format V3 creates new logs while preserving originals, records system prompts in history, migrates legacy PTC/code references, and does not support downgrade reads. Agent callers must pass Agent explicitly instead of ctx.agent; Inbox becomes a type-only interface accessed through agent.inbox without public hasPending/claim. UI, file rendering, queue/goal ownership, and native-dependency changes also require cumulative exact-cohort requalification. This is an observation only; it is not promoted or shipped."
+      },
+      "0.1.5-alpha.2": {
+        "tag": "dsh-v0.1.5-alpha.2",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/385585674",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.2",
+        "commitSHA": "b2e3b2a0125854567a4a5fcba75782e42fe84901",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published 2026-09-09T14:23:10Z and observed on 2026-09-09T15:36Z, also on npm alpha. Release notes describe Sidebar file previews and explicit file delivery, detailed feedback, custom-provider Base URL validation, rejection of repeated MCP pagination cursors while preserving the last valid tool set, pi-ai settings repair, fs-ext installation fixes, Web panel API changes, and shell-only webminimal/Python sdkminimal defaults. Experimental Agent Teams remains explicit opt-in. Cumulative V3 no-downgrade, Agent/Inbox, privacy and migration boundaries still require separate exact-cohort qualification; it is not promoted or shipped."
+      }
+    }
+  }
+}

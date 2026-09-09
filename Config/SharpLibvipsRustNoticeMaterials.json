@@ -1,0 +1,250 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Version-bound notice material for the crates in Config/SharpLibvipsRustProvenance.json whose .crate archives carry no licence text: for each crate, the exact upstream revision the archive was packaged from, the evidence connecting the archive to that revision, and either the exact external notice material retained under Resources/ThirdPartyLicenses/sharp-libvips-1.3.3/rust/ or one precise unresolved record. External material is labelled as such and was never a member of the original archive. This is material identification, not legal clearance and not a corresponding-source offer.",
+  "crateManifest": "Config/SharpLibvipsRustProvenance.json",
+  "researchedOn": "2026-09-09",
+  "summary": {
+    "established": [
+      "mutants 0.0.4",
+      "selectors 0.40.0"
+    ],
+    "unresolved": [
+      "block 0.1.6",
+      "malloc_buf 0.0.6",
+      "objc-foundation 0.1.1",
+      "objc_id 0.1.1"
+    ]
+  },
+  "records": [
+    {
+      "crateName": "block",
+      "crateVersion": "0.1.6",
+      "crateSHA256": "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a",
+      "licenseExpression": "MIT",
+      "status": "unresolved",
+      "connection": {
+        "kind": "version-tag",
+        "repository": "https://github.com/SSheldon/rust-block",
+        "revision": "47178790cfc9d4a8b092051d8b413b78bd31254a",
+        "revisionEvidence": "lightweight tag 0.1.6 resolved with git ls-remote on 2026-09-06; Cargo.toml at that commit carries version = \"0.1.6\""
+      },
+      "materials": [],
+      "unresolved": {
+        "missingEvidence": "An upstream-published MIT licence text and copyright statement for this exact version. Neither the crate archive nor the tagged upstream revision carries any licence text, copyright line or licence statement; only the Cargo.toml license expression (MIT) and the authors metadata (Steven Sheldon) exist. A generic MIT text would require a copyright line the upstream never published for this version, so none is asserted.",
+        "checksPerformed": [
+          {
+            "check": "crate archive top-level members",
+            "result": "Cargo.toml, README.md only; no licence, copying or notice member (crate archive sha256 0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a)"
+          },
+          {
+            "check": "upstream repository tag for this exact version",
+            "result": "SSheldon/rust-block tag 0.1.6 = commit 47178790cfc9d4a8b092051d8b413b78bd31254a (lightweight tag resolved with git ls-remote on 2026-09-06); Cargo.toml at that commit declares version = \"0.1.6\", license = \"MIT\", authors = [\"Steven Sheldon\"]"
+          },
+          {
+            "check": "repository tree at that commit",
+            "result": "no LICENSE, COPYING, NOTICE or similar file at any path"
+          },
+          {
+            "check": "source file header (fallback)",
+            "result": "src/lib.rs at that commit carries no copyright or licence header"
+          },
+          {
+            "check": "README.md",
+            "result": "crate member README.md (sha256 01c56329fa14f48ea1c9c7986c3660c41beeff2477f61c2d36bd8e666b9fc562) is byte-identical to README.md at the tag commit and contains no licence or copyright statement"
+          },
+          {
+            "check": "crates.io registry record",
+            "result": "version record declares license MIT (same declaration as the crate's Cargo.toml); the registry holds no licence text"
+          }
+        ],
+        "fallbackUsed": "source file headers at the tagged revision (none present); research stopped per the bounded scope"
+      }
+    },
+    {
+      "crateName": "malloc_buf",
+      "crateVersion": "0.0.6",
+      "crateSHA256": "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb",
+      "licenseExpression": "MIT",
+      "status": "unresolved",
+      "connection": {
+        "kind": "version-tag",
+        "repository": "https://github.com/SSheldon/malloc_buf",
+        "revision": "a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9",
+        "revisionEvidence": "lightweight tag 0.0.6 resolved with git ls-remote on 2026-09-06; Cargo.toml at that commit carries version = \"0.0.6\""
+      },
+      "materials": [],
+      "unresolved": {
+        "missingEvidence": "An upstream-published MIT licence text and copyright statement for this exact version. Neither the crate archive nor the tagged upstream revision carries any licence text, copyright line or licence statement; only the Cargo.toml license expression (MIT) and the authors metadata (Steven Sheldon) exist. A generic MIT text would require a copyright line the upstream never published for this version, so none is asserted.",
+        "checksPerformed": [
+          {
+            "check": "crate archive top-level members",
+            "result": "Cargo.toml only; no licence, copying or notice member (crate archive sha256 62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb)"
+          },
+          {
+            "check": "upstream repository tag for this exact version",
+            "result": "SSheldon/malloc_buf tag 0.0.6 = commit a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9 (lightweight tag resolved with git ls-remote on 2026-09-06); Cargo.toml at that commit declares version = \"0.0.6\", license = \"MIT\", authors = [\"Steven Sheldon\"]"
+          },
+          {
+            "check": "repository tree at that commit",
+            "result": "no LICENSE, COPYING, NOTICE or similar file at any path"
+          },
+          {
+            "check": "source file header (fallback)",
+            "result": "src/lib.rs at that commit carries no copyright or licence header"
+          },
+          {
+            "check": "crates.io registry record",
+            "result": "version record declares license MIT (same declaration as the crate's Cargo.toml); the registry holds no licence text"
+          }
+        ],
+        "fallbackUsed": "source file headers at the tagged revision (none present); research stopped per the bounded scope"
+      }
+    },
+    {
+      "crateName": "mutants",
+      "crateVersion": "0.0.4",
+      "crateSHA256": "add0ac067452ff1aca8c5002111bd6b1c895baee6e45fcbc44e0193aea17be56",
+      "licenseExpression": "MIT",
+      "status": "established",
+      "connection": {
+        "kind": "cargo-vcs-info",
+        "repository": "https://github.com/sourcefrog/cargo-mutants",
+        "revision": "14011d08c42a7cd368698fe28f77eb4cd0b65bf0",
+        "pathInVcs": "mutants_attrs",
+        "revisionEvidence": "the crate archive member mutants-0.0.4/.cargo_vcs_info.json (sha256 0d94837de8d4d5d8a2a6e3efb55051b761ef41228e0fceee1dc03a034518482c) records git sha1 14011d08c42a7cd368698fe28f77eb4cd0b65bf0 and path_in_vcs mutants_attrs; mutants_attrs/Cargo.toml at that commit declares version = \"0.0.4\" and license = \"MIT\"; the crate member src/lib.rs (sha256 aa7edf6f9b7b655eb93651604ab81980f972b841f85e39790dabcd28d6b2b4f5) is byte-identical to mutants_attrs/src/lib.rs at that commit"
+      },
+      "materials": [
+        {
+          "kind": "external-upstream-file",
+          "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.3/rust/mutants-0.0.4-external-cargo-mutants-LICENSE",
+          "describes": "MIT licence with the copyright statement 'Copyright (c) 2021 Martin Pool', the repository-level LICENSE of sourcefrog/cargo-mutants at the exact commit the crate was packaged from; the mutants_attrs package directory carries no separate licence file and the .crate archive carries none (external to the archive)",
+          "origin": "https://github.com/sourcefrog/cargo-mutants/blob/14011d08c42a7cd368698fe28f77eb4cd0b65bf0/LICENSE",
+          "upstreamSHA256": "479cbeb2506157776cf80abe31df18065d0fe50b5816ff77bfd75d5deb04ab5c",
+          "upstreamSize": 1068,
+          "normalization": "append-terminal-lf-v1",
+          "sha256": "099b247c314d66317be08682502eb4c2e00ab92a56b6e8564788842a32fb42f3",
+          "size": 1069,
+          "retrievedOn": "2026-09-06"
+        }
+      ]
+    },
+    {
+      "crateName": "objc-foundation",
+      "crateVersion": "0.1.1",
+      "crateSHA256": "1add1b659e36c9607c7aab864a76c7a4c2760cd0cd2e120f3fb8b952c7e22bf9",
+      "licenseExpression": "MIT",
+      "status": "unresolved",
+      "connection": {
+        "kind": "version-tag",
+        "repository": "https://github.com/SSheldon/rust-objc-foundation",
+        "revision": "0c157a59b7931430ed5ac7839381470b0c516d3c",
+        "revisionEvidence": "lightweight tag 0.1.1 resolved with git ls-remote on 2026-09-06; Cargo.toml at that commit carries version = \"0.1.1\""
+      },
+      "materials": [],
+      "unresolved": {
+        "missingEvidence": "An upstream-published MIT licence text and copyright statement for this exact version. Neither the crate archive nor the tagged upstream revision carries any licence text, copyright line or licence statement; only the Cargo.toml license expression (MIT) and the authors metadata (Steven Sheldon) exist. A generic MIT text would require a copyright line the upstream never published for this version, so none is asserted.",
+        "checksPerformed": [
+          {
+            "check": "crate archive top-level members",
+            "result": "Cargo.toml only; no licence, copying or notice member (crate archive sha256 1add1b659e36c9607c7aab864a76c7a4c2760cd0cd2e120f3fb8b952c7e22bf9)"
+          },
+          {
+            "check": "upstream repository tag for this exact version",
+            "result": "SSheldon/rust-objc-foundation tag 0.1.1 = commit 0c157a59b7931430ed5ac7839381470b0c516d3c (lightweight tag resolved with git ls-remote on 2026-09-06); Cargo.toml at that commit declares version = \"0.1.1\", license = \"MIT\", authors = [\"Steven Sheldon\"]"
+          },
+          {
+            "check": "repository tree at that commit",
+            "result": "no LICENSE, COPYING, NOTICE or similar file at any path"
+          },
+          {
+            "check": "source file header (fallback)",
+            "result": "src/lib.rs at that commit carries no copyright or licence header"
+          },
+          {
+            "check": "crates.io registry record",
+            "result": "version record declares license MIT (same declaration as the crate's Cargo.toml); the registry holds no licence text"
+          }
+        ],
+        "fallbackUsed": "source file headers at the tagged revision (none present); research stopped per the bounded scope"
+      }
+    },
+    {
+      "crateName": "objc_id",
+      "crateVersion": "0.1.1",
+      "crateSHA256": "c92d4ddb4bd7b50d730c215ff871754d0da6b2178849f8a2a2ab69712d0c073b",
+      "licenseExpression": "MIT",
+      "status": "unresolved",
+      "connection": {
+        "kind": "version-tag",
+        "repository": "https://github.com/SSheldon/rust-objc-id",
+        "revision": "6527cdf28fef2b155c67c1681f548ecfd794003c",
+        "revisionEvidence": "lightweight tag 0.1.1 resolved with git ls-remote on 2026-09-06; Cargo.toml at that commit carries version = \"0.1.1\""
+      },
+      "materials": [],
+      "unresolved": {
+        "missingEvidence": "An upstream-published MIT licence text and copyright statement for this exact version. Neither the crate archive nor the tagged upstream revision carries any licence text, copyright line or licence statement; only the Cargo.toml license expression (MIT) and the authors metadata (Steven Sheldon) exist. A generic MIT text would require a copyright line the upstream never published for this version, so none is asserted.",
+        "checksPerformed": [
+          {
+            "check": "crate archive top-level members",
+            "result": "Cargo.toml, README.md only; no licence, copying or notice member (crate archive sha256 c92d4ddb4bd7b50d730c215ff871754d0da6b2178849f8a2a2ab69712d0c073b)"
+          },
+          {
+            "check": "upstream repository tag for this exact version",
+            "result": "SSheldon/rust-objc-id tag 0.1.1 = commit 6527cdf28fef2b155c67c1681f548ecfd794003c (lightweight tag resolved with git ls-remote on 2026-09-06); Cargo.toml at that commit declares version = \"0.1.1\", license = \"MIT\", authors = [\"Steven Sheldon\"]"
+          },
+          {
+            "check": "repository tree at that commit",
+            "result": "no LICENSE, COPYING, NOTICE or similar file at any path"
+          },
+          {
+            "check": "source file header (fallback)",
+            "result": "src/lib.rs at that commit carries no copyright or licence header"
+          },
+          {
+            "check": "README.md",
+            "result": "crate member README.md (sha256 09ef009a08879a901c3bbfa2aeb35813e084d841b721905e5ae2d1cd84f6063c) is byte-identical to README.md at the tag commit and contains no licence or copyright statement"
+          },
+          {
+            "check": "crates.io registry record",
+            "result": "version record declares license MIT (same declaration as the crate's Cargo.toml); the registry holds no licence text"
+          }
+        ],
+        "fallbackUsed": "source file headers at the tagged revision (none present); research stopped per the bounded scope"
+      }
+    },
+    {
+      "crateName": "selectors",
+      "crateVersion": "0.40.0",
+      "crateSHA256": "eeee001a77567bb05e71652718d3ff76d8697c151ac523e68e9513194eb2b75a",
+      "licenseExpression": "MPL-2.0",
+      "status": "established",
+      "connection": {
+        "kind": "cargo-vcs-info",
+        "repository": "https://github.com/servo/stylo",
+        "revision": "67faaab3ff7aa66780ec1d0f51ca47e177b812d3",
+        "pathInVcs": "selectors",
+        "revisionEvidence": "the crate archive member selectors-0.40.0/.cargo_vcs_info.json (sha256 22be7410f4d55a02279a2c57ef7022a47a008172005e008da1db51cace59d7e5) records git sha1 67faaab3ff7aa66780ec1d0f51ca47e177b812d3 and path_in_vcs selectors; selectors/Cargo.toml at that commit declares version = \"0.40.0\", license = \"MPL-2.0\", authors = [\"The Servo Project Developers\"]; the crate members Cargo.toml.orig (sha256 db73828f4113fa8204f173e5b42b505e2bb1d800e88e83734944796590fbcb1f), lib.rs (sha256 d54c6e13e9e952dac17d209171df8657e3cae93beaddace4906150cdec8d02e9) and matching.rs (sha256 3a12424ee5d63fa81d6b5348d1b7d2688c393ac2be300b4e3f54170a0aa1826c) are byte-identical to selectors/Cargo.toml, selectors/lib.rs and selectors/matching.rs at that commit"
+      },
+      "archiveNotice": {
+        "member": "selectors-0.40.0/lib.rs",
+        "memberSHA256": "d54c6e13e9e952dac17d209171df8657e3cae93beaddace4906150cdec8d02e9",
+        "text": "/* This Source Code Form is subject to the terms of the Mozilla Public\n * License, v. 2.0. If a copy of the MPL was not distributed with this\n * file, You can obtain one at https://mozilla.org/MPL/2.0/. */",
+        "note": "Per-file MPL-2.0 notice verified in all 16 .rs members of the crate archive (archive-contained). The repository README at the same commit (sha256 59b1db611079186865d636abe5311c434d748955a97ea6f1ba1ec55ebaf9a84a) states Stylo is licensed under MPL 2.0. The complete tree at that commit has no root or selectors licence file; licence files elsewhere belong to other components. No package-specific copyright statement is inferred."
+      },
+      "materials": [
+        {
+          "kind": "external-spdx-licence-text",
+          "sourcePath": "Resources/ThirdPartyLicenses/sharp-libvips-1.3.3/rust/selectors-0.40.0-external-spdx-3.28.0-MPL-2.0.txt",
+          "describes": "Mozilla Public License Version 2.0 text as published in SPDX License List 3.28.0, the licence the new crate per-file notices designate (external to the archive; the MPL text itself carries no package-specific copyright line)",
+          "origin": "https://github.com/spdx/license-list-data/blob/c4a7237ec8f4654e867546f9f409749300f1bf4c/text/MPL-2.0.txt",
+          "upstreamSHA256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+          "upstreamSize": 16727,
+          "normalization": "append-terminal-lf-v1",
+          "sha256": "1a389c0a135f37855baa2fb879f86ed111d7facf8b0d5188330b35a22c4428a1",
+          "size": 16728,
+          "retrievedOn": "2026-09-06"
+        }
+      ]
+    }
+  ]
+}

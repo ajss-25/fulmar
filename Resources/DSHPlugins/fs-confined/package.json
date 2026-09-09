@@ -1,0 +1,7 @@
+{
+  "name": "@local-harness/dsh-fs-confined",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs"
+}

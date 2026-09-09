@@ -1,0 +1,19 @@
+(version 1)
+(allow default)
+
+; Keep the model server and authenticated Harness carrier available on loopback,
+; while denying every outbound IP destination outside this Mac.
+(deny network-outbound
+  (require-not (remote ip "localhost:*")))
+
+; Built-in tools still operate in selected workspaces, while common credential,
+; browser-profile and private-communications stores are outside the runtime.
+(deny file-read-data file-write*
+  (regex #"^/Users/[^/]+/Library/Keychains(/|$)")
+  (regex #"^/Users/[^/]+/Library/Mail(/|$)")
+  (regex #"^/Users/[^/]+/Library/Messages(/|$)")
+  (regex #"^/Users/[^/]+/Library/Safari(/|$)")
+  (regex #"^/Users/[^/]+/Library/Application Support/(Google/Chrome|Firefox|BraveSoftware|1Password)(/|$)")
+  (regex #"^/Users/[^/]+/\.(aws|azure)(/|$)")
+  (regex #"^/Users/[^/]+/\.config/gcloud(/|$)")
+  (regex #"^/Users/[^/]+/\.ssh/(id_[^/]+|.*\.pem|.*\.key)$"))
