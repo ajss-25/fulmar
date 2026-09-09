@@ -16,17 +16,20 @@ unacknowledged GitHub version, promoted tag target, or promoted release-note bod
 fails the observation job. The watcher never edits the runtime pin, opens a pull
 request, or publishes an app.
 
-As observed on 2026-09-09, Fulmar remains pinned to reviewed `0.1.1-rc.1`,
+As observed on 2026-09-09T15:36Z, Fulmar remains pinned to reviewed `0.1.1-rc.1`,
 including guarded MCP. npm `latest`/`next` remain at observed-but-not-promoted
-`0.1.2-rc.1`; npm `alpha` now points to observed-but-not-promoted `0.1.5-alpha.1`.
-The new official GitHub prereleases are `0.1.3-alpha.2` (release 384129524,
+`0.1.2-rc.1`; npm `alpha` now points to observed-but-not-promoted `0.1.5-alpha.2`.
+The recent official GitHub prereleases are `0.1.3-alpha.2` (release 384129524,
 tag `dsh-v0.1.3-alpha.2`, commit
 `82a5fd61a7cf5c293cec4bdff68f455398d685e9`, published
-2026-09-07T13:59:29Z) and `0.1.5-alpha.1` (release 384887562,
+2026-09-07T13:59:29Z), `0.1.5-alpha.1` (release 384887562,
 tag `dsh-v0.1.5-alpha.1`, commit
 `5dda764ed3aa172535a7967b06ff95d9cbfe536a`, published
-2026-09-08T16:16:04Z). The ledger records read-only npm metadata and official
-GitHub release/tag observations; neither new cohort has been staged, assessed,
+2026-09-08T16:16:04Z), and `0.1.5-alpha.2` (release 385585674,
+tag `dsh-v0.1.5-alpha.2`, commit
+`b2e3b2a0125854567a4a5fcba75782e42fe84901`, published
+2026-09-09T14:23:10Z). The ledger records read-only npm metadata and official
+GitHub release/tag observations; none of these cohorts has been staged, assessed,
 promoted or shipped. The latest completed exact-cohort assessment remains the
 separate `0.1.2-alpha.3` cohort, and the promotion record still identifies only
 `0.1.1-rc.1`. npm's `latest` tag identifies its default package channel; it does
@@ -42,6 +45,13 @@ the retained pre-upgrade state snapshot and previous app; pointing the previous
 app at V3 state is not a supported rollback. All cumulative boundaries below
 remain prerequisites for a future exact-cohort assessment.
 
+The `0.1.5-alpha.2` notes add file previews/delivery and detailed feedback, provider
+Base URL validation and settings repair, repeated-cursor MCP pagination rejection,
+and breaking Web panel/minimal-Profile changes. These are upstream change reports,
+not proof of a vulnerability in Fulmar's guarded routes or proof that an upgrade is
+safe. The checked official notes and public advisories did not identify a mandatory
+migration or end-of-life deadline for the pin; that is not a security clearance.
+
 Official upstream records:
 
 - [DeepSeek Harness releases](https://github.com/deepseek-ai/deepseek-harness/releases)
@@ -53,8 +63,10 @@ Official upstream records:
 - [`dsh-v0.1.3-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.1)
 - [`dsh-v0.1.3-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.2)
 - [`dsh-v0.1.5-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.1)
+- [`dsh-v0.1.5-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.2)
 - [npm DSH channel metadata](https://registry.npmjs.org/-/package/@deepseek-ai%2Fdsh/dist-tags)
-- [DeepSeek Harness safety notice](https://github.com/deepseek-ai/deepseek-harness/blob/main/SAFETY.md)
+- [DeepSeek Harness safety notice](https://github.com/deepseek-ai/deepseek-harness/blob/master/SAFETY.md)
+- [Official public security advisories](https://github.com/deepseek-ai/deepseek-harness/security/advisories)
 
 The upstream safety notice describes Harness as experimental developer-preview
 software that has not undergone a security audit. Fulmar's qualification and sandbox
@@ -94,6 +106,8 @@ enough; every earlier alpha boundary remains in the promotion matrix:
 | `0.1.5-alpha.1` | Session format V3 creates new logs while preserving originals, records system prompts in history, migrates legacy PTC/code references, and does not support downgrade reads | Exercise custom readers, sanitized history/export and prompt disclosure, supported source-state migrations and interruption recovery; rehearse rollback using the previous app with a retained pre-upgrade snapshot, never by reading V3 with the old runtime |
 | `0.1.5-alpha.1` | Agent must be passed explicitly after removal of ctx.agent; Inbox is a type-only interface accessed through agent.inbox, with hasPending/claim removed from public API; continuable-subagent ownership changes | Requalify every local plugin's Agent/Inbox calls, parent/child routing, pending-message ownership, queue/Steer/cancellation and root-only scheduling against the exact cohort |
 | `0.1.5-alpha.1` | Dynamic system prompts require declared model support; Sidebar replaces Detail; absolute-path image rendering, paused-goal resume, project-root discovery and native fs-ext dependency behavior change | Requalify provider capability gating, Web/RPC/DOM and accessibility, path confinement including out-of-workspace images, user-owned goal resume, instruction-root errors, and the complete native dependency inventory/build |
+| `0.1.5-alpha.2` | Sidebar previews and explicit file delivery, detailed feedback, custom-provider Base URL validation/settings repair, repeated-cursor MCP rejection preserving the last valid tool set, and fs-ext installation fixes | Requalify preview/open/reveal path confinement, consent and content redaction, exact-origin discovery and credentials, guarded MCP startup/resync/cancellation, and the complete native dependency inventory; reported fixes do not establish pinned exposure or promotion readiness |
+| `0.1.5-alpha.2` | Web panels move to sidebar.panellist/main with conversation slots on main; webminimal/Python sdkminimal default to shell-only, editor tools need opt-in, persistent Bash reports exit/timeout, and experimental Agent Teams needs explicit Profile opt-in | Requalify local Web/RPC/DOM plugins, every shipped Profile's exact tools, subprocess termination, subagent guidance and opt-in boundaries while retaining all earlier V3, Agent/Inbox, privacy and rollback requirements |
 
 These changes touch privacy, network egress, authentication, provider discovery,
 continuation and subagent behavior, history/security bridges, export and cloned-state

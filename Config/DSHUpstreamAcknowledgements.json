@@ -4,9 +4,9 @@
   "reviewedPin": "0.1.1-rc.1",
   "tags": {
     "alpha": {
-      "version": "0.1.5-alpha.1",
+      "version": "0.1.5-alpha.2",
       "disposition": "observed-not-promoted",
-      "note": "Observed from npm alpha on 2026-09-09 with registry root integrity sha512-AUjywjrPnhXcAdAjRNgyQa1QCnplFTNYZ+XpR9uCZdbg2FiCb06pHyoDUB2Wxuddzid9D7pVwEiU1OTl4Oshsg==; latest and next remain 0.1.2-rc.1. Official GitHub prerelease 384887562, tag dsh-v0.1.5-alpha.1, was published 2026-09-08T16:16:04Z at commit 5dda764ed3aa172535a7967b06ff95d9cbfe536a. Session format V3 does not support downgrade reads, and Agent/Inbox plugin APIs change. This is a read-only metadata and release-note observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
+      "note": "Observed from npm alpha on 2026-09-09T15:36Z with registry root integrity sha512-nzkfldYf3rIXeW0gfExtxoUdhaivsO+kAaKV4JpNLZC0OtxAUlnAZ0yHzf03IaOTNtAP/aXS7FOAr5O8Lckr1A==; latest and next remain 0.1.2-rc.1. Official GitHub prerelease 385585674, tag dsh-v0.1.5-alpha.2, was published 2026-09-09T14:23:10Z at commit b2e3b2a0125854567a4a5fcba75782e42fe84901. It changes file previews, feedback, provider URL validation, MCP pagination and plugin/Profile APIs; cumulative V3 no-downgrade and Agent/Inbox boundaries remain. This is a read-only metadata and release-note observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
     },
     "latest": {
       "version": "0.1.2-rc.1",
@@ -128,6 +128,14 @@
         "commitSHA": "5dda764ed3aa172535a7967b06ff95d9cbfe536a",
         "disposition": "observed-not-promoted",
         "note": "Official GitHub prerelease published 2026-09-08T16:16:04Z and observed on 2026-09-09, also on npm alpha. Session format V3 creates new logs while preserving originals, records system prompts in history, migrates legacy PTC/code references, and does not support downgrade reads. Agent callers must pass Agent explicitly instead of ctx.agent; Inbox becomes a type-only interface accessed through agent.inbox without public hasPending/claim. UI, file rendering, queue/goal ownership, and native-dependency changes also require cumulative exact-cohort requalification. This is an observation only; it is not promoted or shipped."
+      },
+      "0.1.5-alpha.2": {
+        "tag": "dsh-v0.1.5-alpha.2",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/385585674",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.2",
+        "commitSHA": "b2e3b2a0125854567a4a5fcba75782e42fe84901",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published 2026-09-09T14:23:10Z and observed on 2026-09-09T15:36Z, also on npm alpha. Release notes describe Sidebar file previews and explicit file delivery, detailed feedback, custom-provider Base URL validation, rejection of repeated MCP pagination cursors while preserving the last valid tool set, pi-ai settings repair, fs-ext installation fixes, Web panel API changes, and shell-only webminimal/Python sdkminimal defaults. Experimental Agent Teams remains explicit opt-in. Cumulative V3 no-downgrade, Agent/Inbox, privacy and migration boundaries still require separate exact-cohort qualification; it is not promoted or shipped."
       }
     }
   }
