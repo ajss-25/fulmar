@@ -197,6 +197,98 @@ if (protectedRun === 'yes') {
         ) == 0)
         #expect(try Data(contentsOf: fixture.profileManifest) == manifestBefore)
     }
+
+    // Exercise the actual native preparation wrapper as well as the boot
+    // exports above. Foundation's nullDevice has fd -1 on Darwin; passing
+    // that descriptor to the raw spawn runner used to fail before JS ran.
+    // Use the checkout's ignored build namespace rather than /private/tmp:
+    // the retained capability rejects Foundation's /tmp alias normalization.
+    let nativeRoot = project.appendingPathComponent(
+        "build/native-profile-wrapper-\(UUID().uuidString)", isDirectory: true
+    )
+    defer { try? FileManager.default.removeItem(at: nativeRoot) }
+    let resources = nativeRoot.appendingPathComponent("Resources", isDirectory: true)
+    let nativeHome = nativeRoot.appendingPathComponent("HarnessHome", isDirectory: true)
+    let nativeWorkspace = nativeRoot.appendingPathComponent("Workspace", isDirectory: true)
+    let temporary = nativeHome.appendingPathComponent("Temp", isDirectory: true)
+    for directory in [nativeRoot, resources, nativeHome, nativeWorkspace, temporary] {
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+    }
+    let resolvedHomeSpelling = Darwin.realpath(nativeHome.path, nil)
+    let homeSpelling = try #require(resolvedHomeSpelling)
+    let canonicalHome = URL(fileURLWithPath: String(cString: homeSpelling), isDirectory: true)
+    Darwin.free(homeSpelling)
+    let preparationScript = resources.appendingPathComponent("PrepareHarnessProfile.mjs")
+    let inputProbe = #"""
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+assert.equal(process.argv.length, 3);
+const home = process.argv[2];
+assert.equal(fs.realpathSync.native(home), home);
+assert.equal(process.env.HOME, home);
+assert.equal(fs.realpathSync.native(process.env.TMPDIR), home + '/Temp');
+assert.equal(fs.realpathSync.native(process.cwd()), home.replace(/\/HarnessHome$/, '/Workspace'));
+assert.equal(process.env.DSH_TELEMETRY_MODE, 'DISABLED');
+for (const name of Object.keys(process.env)) {
+  assert.ok(!/AUTH|TOKEN|NONCE|CREDENTIAL|API_KEY|SSH_AUTH_SOCK/.test(name));
+}
+const input = fs.fstatSync(0), nullDevice = fs.statSync('/dev/null');
+assert.ok(input.isCharacterDevice());
+for (const key of ['dev', 'ino', 'rdev']) assert.equal(input[key], nullDevice[key]);
+assert.equal(fs.readSync(0, Buffer.alloc(1), 0, 1, null), 0);
+fs.writeFileSync(home + '/native-preparation-input-verified', 'null EOF and private environment');
+"""#
+    try Data(inputProbe.utf8).write(to: preparationScript, options: .withoutOverwriting)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: preparationScript.path)
+    let runPreparation: (URL) throws -> Void = { executable in
+        try HarnessProfilePreparation.run(
+            node: executable, resources: resources, home: canonicalHome,
+            workspace: nativeWorkspace, temporaryDirectory: temporary,
+            budget: RuntimeStartupPrerequisiteBudget(
+                cancellation: RuntimeStartupPrerequisiteCancellation(), duration: 15
+            )
+        )
+    }
+    try runPreparation(node)
+    #expect(try String(
+        contentsOf: nativeHome.appendingPathComponent("native-preparation-input-verified"), encoding: .utf8
+    ) == "null EOF and private environment")
+
+    let privateDiagnostic = "synthetic-private-preparation-diagnostic"
+    try Data("process.stderr.write('\(privateDiagnostic)'); process.exit(23);".utf8).write(to: preparationScript)
+    do {
+        try runPreparation(node)
+        Issue.record("A failed preparation must not be accepted")
+    } catch HarnessProfilePreparationError.exited(let status) {
+        #expect(status == 23)
+        let message = HarnessProfilePreparationError.exited(status).localizedDescription
+        #expect(message.contains("exit status 23"))
+        #expect(!message.contains(privateDiagnostic))
+        #expect(!message.contains(nativeRoot.path))
+    }
+    try Data("process.stderr.write('x'.repeat(32768));".utf8).write(to: preparationScript)
+    do {
+        try runPreparation(node)
+        Issue.record("Oversized preparation diagnostics must remain bounded")
+    } catch HarnessProfilePreparationError.boundedLimit(let limit) {
+        #expect(limit == .stderrBytes(16 * 1_024))
+        #expect(HarnessProfilePreparationError.boundedLimit(limit).localizedDescription
+            == "The bundled web-profile preparer exceeded its diagnostic output limit.")
+    }
+    let nonExecutable = resources.appendingPathComponent("non-executable-node")
+    try Data("not executable".utf8).write(to: nonExecutable, options: .withoutOverwriting)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: nonExecutable.path)
+    do {
+        try runPreparation(nonExecutable)
+        Issue.record("A native spawn failure must not be accepted")
+    } catch HarnessProfilePreparationError.launchFailed(.spawnFailed(let code)) {
+        #expect(code == EACCES)
+        #expect(!HarnessProfilePreparationError.launchFailed(.spawnFailed(code))
+            .localizedDescription.contains(nativeRoot.path))
+    }
 }
 
 @Test func harnessRuntimeOuterSandboxRejectsPermissiveLinkedOrUnrelatedRoots() throws {

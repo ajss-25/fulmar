@@ -481,9 +481,15 @@ for (const preparationContract of [
   'appendingPathComponent("PrepareHarnessProfile.mjs")',
   'try HarnessProfilePreparation.run(',
   'try budget.remainingTimeInterval(maximum: 15)',
-  'standardInputDescriptor: FileHandle.nullDevice.fileDescriptor'
+  'Darwin.open("/dev/null", O_RDONLY | O_CLOEXEC | O_NOFOLLOW)',
+  'defer { _ = Darwin.close(input) }',
+  'opened.st_rdev == named.st_rdev',
+  'standardInputDescriptor: input'
 ]) {
   if (!harnessController.includes(preparationContract)) fail(`native profile preparation is missing ${preparationContract}`);
+}
+if (harnessController.includes('standardInputDescriptor: FileHandle.nullDevice.fileDescriptor')) {
+  fail("native profile preparation must pass a real retained descriptor, not Foundation's null-handle sentinel");
 }
 if (harnessController.indexOf('try HarnessProfilePreparation.run(')
     >= harnessController.indexOf('let runtimeWriteSandbox = try HarnessRuntimeWriteSandbox.prepare(')) {

@@ -38,12 +38,41 @@ enum SandboxBoundaryProbeProcess {
 
 enum HarnessProfilePreparationError: Error, LocalizedError {
     case unavailable
+    case standardInputUnavailable
+    case launchFailed(BoundedProcessGroupRunnerError)
+    case exited(Int32)
+    case terminated(Int32)
+    case boundedLimit(BoundedProcessGroupLimit)
     case failed
 
     var errorDescription: String? {
         switch self {
         case .unavailable:
             return "Fulmar's bundled web-profile preparer is unavailable."
+        case .standardInputUnavailable:
+            return "Fulmar could not open a safe input stream for its bundled web-profile preparer."
+        case .launchFailed(let failure):
+            switch failure {
+            case .invalidConfiguration:
+                return "The bundled web-profile preparer's native launch configuration was invalid."
+            case .pipeFailed(let code):
+                return "The bundled web-profile preparer's diagnostic pipe could not open (system code \(code))."
+            case .spawnFailed(let code):
+                return "The bundled web-profile preparer could not launch (system code \(code))."
+            case .waitFailed(let code):
+                return "The bundled web-profile preparer's exit could not be verified (system code \(code))."
+            }
+        case .exited(let status):
+            return "The bundled web-profile preparer failed with exit status \(status)."
+        case .terminated(let signal):
+            return "The bundled web-profile preparer stopped with signal \(signal)."
+        case .boundedLimit(let limit):
+            switch limit {
+            case .deadline:
+                return "The bundled web-profile preparer exceeded its startup time limit."
+            case .stderrBytes:
+                return "The bundled web-profile preparer exceeded its diagnostic output limit."
+            }
         case .failed:
             return "Fulmar could not prepare its built-in web profile before starting the protected runtime."
         }
@@ -71,24 +100,50 @@ enum HarnessProfilePreparation {
         let homeCapability = try RetainedPrivateDirectoryCapability(directoryURL: home, createIfMissing: false)
         let deadline = try budget.remainingTimeInterval(maximum: 15)
         guard deadline >= 0.05 else { throw RuntimeStartupPrerequisiteError.timedOut }
-        let result = try homeCapability.withValidatedDescriptor { _ in
-            try BoundedProcessGroupRunner.run(
-            executable: node,
-            arguments: [script.path, home.path],
-            environment: ChildProcessEnvironment.make(
-                nodeBin: node.deletingLastPathComponent().path,
-                homeDirectory: home,
-                temporaryDirectory: temporaryDirectory
-            ),
-            maximumStderrBytes: 16 * 1_024,
-            deadline: deadline,
-            currentDirectory: workspace,
-            standardInputDescriptor: FileHandle.nullDevice.fileDescriptor,
-            discardStandardOutput: true
-            )
+        // Foundation's nullDevice is a special FileHandle with descriptor -1
+        // on Darwin. Process understands that object, but posix_spawn needs a
+        // real descriptor. Retain and verify the real null device for the
+        // entire bounded spawn; never borrow or close the application's stdin.
+        let input = Darwin.open("/dev/null", O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        guard input >= 0 else { throw HarnessProfilePreparationError.standardInputUnavailable }
+        defer { _ = Darwin.close(input) }
+        var opened = stat()
+        var named = stat()
+        guard Darwin.fstat(input, &opened) == 0,
+              Darwin.lstat("/dev/null", &named) == 0,
+              opened.st_mode & S_IFMT == S_IFCHR,
+              named.st_mode & S_IFMT == S_IFCHR,
+              opened.st_dev == named.st_dev,
+              opened.st_ino == named.st_ino,
+              opened.st_rdev == named.st_rdev else {
+            throw HarnessProfilePreparationError.standardInputUnavailable
+        }
+        let result: BoundedProcessGroupResult
+        do {
+            result = try homeCapability.withValidatedDescriptor { _ in
+                try BoundedProcessGroupRunner.run(
+                    executable: node,
+                    arguments: [script.path, home.path],
+                    environment: ChildProcessEnvironment.make(
+                        nodeBin: node.deletingLastPathComponent().path,
+                        homeDirectory: home,
+                        temporaryDirectory: temporaryDirectory
+                    ),
+                    maximumStderrBytes: 16 * 1_024,
+                    deadline: deadline,
+                    currentDirectory: workspace,
+                    standardInputDescriptor: input,
+                    discardStandardOutput: true
+                )
+            }
+        } catch let failure as BoundedProcessGroupRunnerError {
+            throw HarnessProfilePreparationError.launchFailed(failure)
         }
         for identity in identities { try identity.revalidate() }
         try budget.checkpoint()
+        if let limit = result.limit { throw HarnessProfilePreparationError.boundedLimit(limit) }
+        if let signal = result.terminationSignal { throw HarnessProfilePreparationError.terminated(signal) }
+        if let status = result.exitStatus, status != 0 { throw HarnessProfilePreparationError.exited(status) }
         guard result.exitStatus == 0, result.terminationSignal == nil,
               result.limit == nil, !result.stderrWasTruncated else {
             throw HarnessProfilePreparationError.failed
@@ -2107,13 +2162,16 @@ final class HarnessController {
 
     /// Only errors owned by this module may cross into lifecycle state. Process,
     /// provider, filesystem, or injected Error descriptions can contain private
-    /// paths and credentials and are retained only by the redacted diagnostics
-    /// stream, never by UI state, notifications, or Activity persistence.
+    /// paths and credentials. Unknown descriptions are not retained or exposed
+    /// by UI state, notifications, Activity persistence, or the service log.
     private static func startupFailureMessage(for error: Error) -> String {
         if let failure = error as? RuntimeStartupPrerequisiteError {
             return failure.localizedDescription
         }
         if let failure = error as? RuntimeBundleIntegrityError {
+            return failure.localizedDescription
+        }
+        if let failure = error as? HarnessProfilePreparationError {
             return failure.localizedDescription
         }
         if let failure = error as? OllamaPrerequisiteRecoveryIssue {
@@ -2127,7 +2185,7 @@ final class HarnessController {
                 return failure.localizedDescription
             }
         }
-        return "A launch component failed without a safe public diagnostic. Open Diagnostics for private, redacted details."
+        return "A launch component failed without a safe public diagnostic. Open Diagnostics to copy a support report."
     }
 
     func prepareOllamaOnly(completion: @escaping (Result<Void, Error>) -> Void) {
