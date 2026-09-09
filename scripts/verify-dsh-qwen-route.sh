@@ -29,6 +29,7 @@ NODE="$APP_DIR/Contents/Resources/Runtime/node"
 DSH="$APP_DIR/Contents/Resources/Runtime/dsh/lib/bin.js"
 PRELOADER="$APP_DIR/Contents/Resources/RuntimeSecurityPreload.mjs"
 PATCH="$APP_DIR/Contents/Resources/LocalHarness.patch.yml"
+HEADLESS_PATCH="$PROJECT_DIR/Tests/Fixtures/HeadlessCanary.patch.yml"
 PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-credentials-keychain/index.mjs"
 FS_PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-fs-confined/index.mjs"
 MCP_PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-mcp-guarded/index.mjs"
@@ -173,7 +174,7 @@ report_workspace_shape() {
   print -u2 "Content-free project workspace shape:$summary"
 }
 
-for item in "$NODE" "$DSH" "$PRELOADER" "$PATCH" "$PLUGIN" "$FS_PLUGIN" "$MCP_PLUGIN" "$CLIENT_SECURITY_PLUGIN" "$PERFORMANCE_PLUGIN" "$HELPER" "$SANDBOX_HELPER" "$AUTH_RELAY"; do
+for item in "$NODE" "$DSH" "$PRELOADER" "$PATCH" "$HEADLESS_PATCH" "$PLUGIN" "$FS_PLUGIN" "$MCP_PLUGIN" "$CLIENT_SECURITY_PLUGIN" "$PERFORMANCE_PLUGIN" "$HELPER" "$SANDBOX_HELPER" "$AUTH_RELAY"; do
   [[ -e "$item" ]] || { print -u2 "Missing agent-route component: $item"; exit 1; }
 done
 
@@ -381,7 +382,7 @@ chmod 600 "$MCP_CATALOG"
     LOCAL_HARNESS_PROVIDER_ORIGINS="$PROVIDER_ORIGINS" \
     LOCAL_HARNESS_RUNTIME_ROOT="$APP_DIR/Contents/Resources/Runtime/dsh" \
     NARB_DISABLE_NATIVE_CACHE=1 \
-    /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
+    /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" --patch "$HEADLESS_PATCH" \
       "$TASK"
 ) >"$TEST_ROOT/output.txt" 2>"$TEST_ROOT/error.txt" &
 PROCESS_ID="$!"

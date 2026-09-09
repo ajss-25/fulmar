@@ -7,6 +7,7 @@ NODE="$APP_DIR/Contents/Resources/Runtime/node"
 DSH="$APP_DIR/Contents/Resources/Runtime/dsh/lib/bin.js"
 PRELOADER="$APP_DIR/Contents/Resources/RuntimeSecurityPreload.mjs"
 PATCH="$APP_DIR/Contents/Resources/LocalHarness.patch.yml"
+HEADLESS_PATCH="$PROJECT_DIR/Tests/Fixtures/HeadlessCanary.patch.yml"
 CREDENTIAL_PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-credentials-keychain/index.mjs"
 FS_PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-fs-confined/index.mjs"
 MCP_PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-mcp-guarded/index.mjs"
@@ -89,7 +90,7 @@ trap 'on_signal 129' HUP
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 
-for item in "$NODE" "$DSH" "$PRELOADER" "$PATCH" "$CREDENTIAL_PLUGIN" "$FS_PLUGIN" "$MCP_PLUGIN" "$CLIENT_SECURITY_PLUGIN" "$PERFORMANCE_PLUGIN" "$HELPER" "$SANDBOX_HELPER" "$PRESET_VERIFIER" "$AUTH_RELAY"; do
+for item in "$NODE" "$DSH" "$PRELOADER" "$PATCH" "$HEADLESS_PATCH" "$CREDENTIAL_PLUGIN" "$FS_PLUGIN" "$MCP_PLUGIN" "$CLIENT_SECURITY_PLUGIN" "$PERFORMANCE_PLUGIN" "$HELPER" "$SANDBOX_HELPER" "$PRESET_VERIFIER" "$AUTH_RELAY"; do
   [[ -e "$item" ]] || { print -u2 "Missing provider-matrix component: $item"; exit 1; }
 done
 "$NODE" "$PRESET_VERIFIER" "$APP_DIR/Contents/Resources/Runtime/dsh" >/dev/null
@@ -269,9 +270,11 @@ print_safe_diagnostic() {
 invoke_headless() {
   local label="$1"
   local task="$2"
-  (
-    cd "$TEST_ROOT/workspace"
-    runtime_auth_frame | env -i "${matrix_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" "$task"
+  # The recorded PID must become Node, not remain a wrapper around a pipeline.
+  runtime_auth_frame | (
+    trap - EXIT HUP INT TERM
+    cd "$TEST_ROOT/workspace" || exit $?
+    exec env -i "${matrix_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" --patch "$HEADLESS_PATCH" "$task"
   ) >"$TEST_ROOT/$label.out" 2>"$TEST_ROOT/$label.err" &
   HEADLESS_PID="$!"
   for _ in {1..1200}; do
@@ -440,9 +443,10 @@ assert_request_count custom MATRIX_OVERSIZED_CHUNKED 1
 for route in deepseek responses anthropic custom; do
   select_route "$route"
   label="$route-cancel"
-  (
-    cd "$TEST_ROOT/workspace"
-    runtime_auth_frame | env -i "${matrix_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
+  runtime_auth_frame | (
+    trap - EXIT HUP INT TERM
+    cd "$TEST_ROOT/workspace" || exit $?
+    exec env -i "${matrix_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" --patch "$HEADLESS_PATCH" \
       "Begin the cancellable protocol-matrix stream. MATRIX_CANCEL"
   ) >"$TEST_ROOT/$label.out" 2>"$TEST_ROOT/$label.err" &
   HEADLESS_PID="$!"

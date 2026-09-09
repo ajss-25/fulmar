@@ -280,7 +280,7 @@ test("static scan manifest warning allowlist is exact, reviewed, and source-boun
       level: "warn",
       code: 3,
       reason: "Semgrep 1.135 cannot meaningfully parse the reviewed zsh associative-array and process-control script; the exact source SHA requires review after any edit.",
-      sourceSha256: "ba175c19003e1f77a2f85c43c385b6efc6b1cec1d0f3d7dfe9cf2c1804e69aa5"
+      sourceSha256: "472b40181a0a16de18bfaef0e20d8631e7b373a7adc55cd5d71735109a5fe7df"
     }
   ];
   assert.deepEqual(

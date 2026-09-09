@@ -1,0 +1,7 @@
+# Qualification-only overlay for `--profile headless`. This profile has no
+# browser API proxy, so the native WebView bridge cannot activate here. Keep
+# the complete native patch first; all credential, tool, filesystem, network,
+# MCP and performance boundaries remain enabled. Native web/RPC verification
+# continues to use LocalHarness.patch.yml without this overlay.
+- id: client-security-bridge
+  disabled: true

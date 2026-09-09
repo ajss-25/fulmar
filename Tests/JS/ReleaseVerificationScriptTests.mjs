@@ -197,6 +197,184 @@ test("clean release canaries never depend on ambient Homebrew ripgrep", async ()
       `${name} must request the relay's post-handoff descriptor layout`);
   }
 
+  const contract = await readFile(join(process.cwd(), "scripts", "verify-simulated-provider-contract.sh"), "utf8");
+  const headlessPatch = await readFile(join(process.cwd(), "Tests", "Fixtures", "HeadlessCanary.patch.yml"), "utf8");
+  assert.equal(headlessPatch.split("\n").filter((line) => !/^\s*(?:#|$)/u.test(line)).join("\n"),
+    "- id: client-security-bridge\n  disabled: true",
+    "the qualification-only overlay may disable only the browser-dependent bridge");
+  const nativePatch = await readFile(join(process.cwd(), "Resources", "LocalHarness.patch.yml"), "utf8");
+  for (const [id, name] of [
+    ["credentials-keychain", "dsh-credentials-keychain"],
+    ["mcp-guarded", "dsh-mcp-guarded"],
+    ["client-security-bridge", "dsh-client-security-bridge"],
+    ["performance-profile", "dsh-performance-profile"],
+    ["web-fetch-safe", "dsh-web-fetch-safe"],
+    ["fs-confined", "dsh-fs-confined"]
+  ]) {
+    const insertion = nativePatch.split(/(?=^- )/mu).find((block) =>
+      block.includes(`    - id: ${id}\n`) && block.includes(`name: '@local-harness/${name}'`));
+    assert.ok(insertion, `the native patch must retain ${id}`);
+    assert.doesNotMatch(insertion, /disabled:\s*true/u, `the native ${id} must remain enabled`);
+  }
+  for (const name of [
+    "verify-simulated-provider-contract.sh", "verify-simulated-provider-matrix.sh", "verify-dsh-qwen-route.sh"
+  ]) {
+    const source = await readFile(join(process.cwd(), "scripts", name), "utf8");
+    assert.ok(source.includes('HEADLESS_PATCH="$PROJECT_DIR/Tests/Fixtures/HeadlessCanary.patch.yml"'));
+    const commands = source.replace(/\\\r?\n[\t ]*/gu, " ").split("\n");
+    const headlessCommands = commands.filter((line) => line.includes("--profile headless"));
+    assert.ok(headlessCommands.length > 0, `${name} must retain its headless canary`);
+    for (const command of headlessCommands) {
+      assert.ok(command.includes('--profile headless --patch "$PATCH" --patch "$HEADLESS_PATCH"'),
+        `${name} must apply the complete native patch before the headless-only overlay`);
+    }
+    for (const command of commands.filter((line) => line.includes('--patch "$HEADLESS_PATCH"'))) {
+      assert.ok(command.includes("--profile headless"), `${name} must never apply the overlay to a non-headless command`);
+    }
+    if (name !== "verify-dsh-qwen-route.sh") {
+      const launches = [...source.matchAll(/^[\t ]*runtime_auth_frame \| \(\n[\t ]*trap - EXIT HUP INT TERM\n[\s\S]*?^[\t ]*HEADLESS_PID="\$!"$/gmu)];
+      assert.equal(launches.length, name === "verify-simulated-provider-contract.sh" ? 1 : 2,
+        `${name} must record the right-hand pipeline PID for every background headless launch`);
+      for (const [launch] of launches) {
+        assert.match(launch, /cd "\$TEST_ROOT\/workspace" \|\| exit \$\?\n[\t ]*exec env -i/u);
+        assert.match(launch, /--profile headless --patch "\$PATCH" --patch "\$HEADLESS_PATCH"/u);
+        assert.match(launch, /\) >"\$TEST_ROOT\/[^\n]+ &\n[\t ]*HEADLESS_PID="\$!"$/u);
+      }
+    }
+  }
+  const webCanary = await readFile(join(process.cwd(), "scripts", "verify-dsh-web-rpc-canary.mjs"), "utf8");
+  assert.ok(webCanary.includes('patch: path.join(appDir, "Contents", "Resources", "LocalHarness.patch.yml")'));
+  assert.doesNotMatch(webCanary, /HeadlessCanary|HEADLESS_PATCH/u);
+
+  // Extract production helpers verbatim: zsh ERR_EXIT inside a function must
+  // not bypass EXIT cleanup when a headless pipeline or its marker scan fails.
+  const verifyHeadlessCleanup = async (source) => {
+    const extractFunction = (name) => {
+      const boundedSource = `\n${source}\n`;
+      const opening = `\n${name}() {\n`;
+      const start = boundedSource.indexOf(opening);
+      assert.ok(start >= 0, `the actual ${name} helper must have an exact unindented opening`);
+      const end = boundedSource.indexOf("\n}\n", start + opening.length);
+      assert.ok(end > start, `the actual ${name} helper must have an exact unindented closing`);
+      return boundedSource.slice(start + 1, end + 2);
+    };
+    const exitTraps = source.match(/^trap cleanup EXIT\ntrap 'on_signal 129' HUP\ntrap 'on_signal 130' INT\ntrap 'on_signal 143' TERM$/mu)?.[0];
+    assert.ok(exitTraps, "the fixture must install the exact production cleanup traps");
+    const helpers = [
+      "runtime_auth_frame", "cleanup", "on_signal", "probe_extended_pattern",
+      "assert_extended_pattern_absent", "run_headless"
+    ].map(extractFunction).join("\n\n");
+    const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "fulmar-headless-cleanup-")));
+    try {
+      const fakeCommand = join(fixtureRoot, "inert-command.pl");
+      await writeFile(fakeCommand, [
+        "#!/usr/bin/perl", "use strict;", "use warnings;",
+        "if (@ARGV == 2 && $ARGV[0] eq 'unset') {",
+        "  open(my $out, '>>', $ARGV[1]) or die 'fixture cleanup record failed';",
+        "  print $out qq(cleanup\\n); close($out) or die 'fixture cleanup close failed'; exit 0;",
+        "}",
+        "if (@ARGV == 1 && $ARGV[0] eq 'sentinel') { sleep 3; exit 0; }",
+        "my $frame = <STDIN>;",
+        "die 'unexpected fixture authentication' unless defined($frame) && $frame eq qq(FULMAR_RUNTIME_AUTH_V1:fixture-token:fixture-nonce\\n);",
+        "my $mode = $ARGV[-1];",
+        "if ($mode eq 'command-failure') { exit 7; }",
+        "if ($mode eq 'missing-marker') { print qq(FIXTURE_OTHER_OUTPUT\\n); exit 0; }",
+        "if ($mode eq 'success') { print qq(FIXTURE_HEADLESS_OK\\n); exit 0; }",
+        "if ($mode eq 'Begin a long response and wait. CONTRACT_CANCEL') {",
+        "  open(my $out, '>', $ENV{FIXTURE_TARGET_PID}) or die 'fixture target record failed';",
+        "  print $out qq($$\\n); close($out) or die 'fixture target close failed'; sleep 3; exit 0;",
+        "}",
+        "die 'unexpected inert fixture mode';", ""
+      ].join("\n"), { mode: 0o700 });
+      for (const [mode, expectedStatus] of [["command-failure", 7], ["missing-marker", 1], ["success", 0]]) {
+        const caseRoot = join(fixtureRoot, mode);
+        const ownedRoot = join(caseRoot, "owned");
+        const cleanupRecord = join(caseRoot, "cleanup.log");
+        const unrelated = join(caseRoot, "unrelated.txt");
+        await mkdir(join(ownedRoot, "workspace"), { recursive: true, mode: 0o700 });
+        await writeFile(unrelated, "unrelated private fixture\n", { mode: 0o600 });
+        const result = spawnSync("/bin/zsh", ["-f", "-c", [
+          "set -euo pipefail", "umask 077",
+          'TEST_ROOT="$1"; HELPER="$2"; AUTH_RELAY="$2"; CREDENTIAL_REF="$3"',
+          'NODE="/usr/bin/false"; PRELOADER="fixture-preloader"; DSH="fixture-dsh"',
+          'PATCH="fixture-base-patch"; HEADLESS_PATCH="fixture-headless-patch"',
+          'HEADLESS_PID=""; SERVER_PID=""; STAGE="fixture"; CREDENTIAL_VALUE="fixture-non-secret"',
+          'TOKEN="fixture-token"; NONCE="fixture-nonce"; contract_environment=(PATH=/usr/bin:/bin)',
+          helpers, exitTraps,
+          'run_headless fixture "$4" FIXTURE_HEADLESS_OK',
+          '[[ -d "$TEST_ROOT" ]] || exit 97',
+          '[[ ! -e "$3" ]] || exit 98',
+          'print -r -- "fixture continued while root exists"',
+          "exit 0"
+        ].join("\n"), "fulmar-headless-cleanup-fixture", ownedRoot, fakeCommand, cleanupRecord, mode], {
+          encoding: "utf8", timeout: 5_000, maxBuffer: 64 * 1024,
+          env: { PATH: "/usr/bin:/bin", TMPDIR: fixtureRoot }
+        });
+        assert.equal(result.error, undefined, result.error?.message);
+        assert.equal(result.signal, null, `${mode}: ${result.stderr}`);
+        assert.equal(result.status, expectedStatus, `${mode}: preserve the original result through cleanup: ${result.stderr}`);
+        assert.equal(existsSync(cleanupRecord), true, `${mode}: EXIT must invoke the actual cleanup helper`);
+        assert.equal(await readFile(cleanupRecord, "utf8"), "cleanup\n", `${mode}: cleanup must run exactly once`);
+        assert.equal(existsSync(ownedRoot), false, `${mode}: cleanup must remove its owned private TEST_ROOT`);
+        assert.equal(await readFile(unrelated, "utf8"), "unrelated private fixture\n",
+          `${mode}: cleanup must preserve the unrelated sibling`);
+        assert.equal(result.stdout, mode === "success" ? "fixture continued while root exists\n" : "",
+          `${mode}: only success may continue, before top-level EXIT performs cleanup`);
+      }
+      const cancellationLaunch = source.match(/^runtime_auth_frame \| \(\n[\t ]*trap - EXIT HUP INT TERM\n[\s\S]*?^HEADLESS_PID="\$!"$/mu)?.[0];
+      assert.ok(cancellationLaunch, "exercise the exact production background launch, without a wrapper substitution");
+      const caseRoot = join(fixtureRoot, "cancellation");
+      const ownedRoot = join(caseRoot, "owned");
+      const cleanupRecord = join(caseRoot, "cleanup.log");
+      const targetRecord = join(caseRoot, "target.pid");
+      const unrelated = join(caseRoot, "unrelated.txt");
+      await mkdir(join(ownedRoot, "workspace"), { recursive: true, mode: 0o700 });
+      await writeFile(unrelated, "unrelated private fixture\n", { mode: 0o600 });
+      const cancelled = spawnSync("/bin/zsh", ["-f", "-c", [
+        "set -euo pipefail", "umask 077",
+        'TEST_ROOT="$1"; HELPER="$2"; AUTH_RELAY="$2"; CREDENTIAL_REF="$3"',
+        'NODE="/usr/bin/false"; PRELOADER="fixture-preloader"; DSH="fixture-dsh"',
+        'PATCH="fixture-base-patch"; HEADLESS_PATCH="fixture-headless-patch"',
+        'HEADLESS_PID=""; SERVER_PID=""; STAGE="fixture-cancellation"',
+        'TOKEN="fixture-token"; NONCE="fixture-nonce"',
+        'contract_environment=(PATH=/usr/bin:/bin FIXTURE_TARGET_PID="$4")',
+        helpers,
+        '"$HELPER" sentinel &', 'SENTINEL_PID="$!"',
+        // The sentinel is deliberately outside production ownership. This
+        // fixture-only trap still reaps it if a regression assertion fails.
+        'trap \'fixture_exit=$?; trap - EXIT HUP INT TERM; cleanup "$fixture_exit" || true; kill "$SENTINEL_PID" 2>/dev/null || true; wait "$SENTINEL_PID" 2>/dev/null || true; exit "$fixture_exit"\' EXIT',
+        cancellationLaunch,
+        'for _ in {1..100}; do [[ -s "$4" ]] && break; /bin/sleep 0.01; done',
+        '[[ -s "$4" && "$(< "$4")" == "$HEADLESS_PID" ]] || exit 94',
+        'kill -0 "$SENTINEL_PID" || exit 95',
+        'kill -TERM "$HEADLESS_PID" || exit 96',
+        'if wait "$HEADLESS_PID"; then task_exit=0; else task_exit=$?; fi',
+        '[[ "$task_exit" == 143 ]] || exit 97',
+        'HEADLESS_PID=""',
+        'cleanup 0',
+        'kill -0 "$SENTINEL_PID" || exit 98',
+        '[[ ! -e "$TEST_ROOT" ]] || exit 99',
+        'kill "$SENTINEL_PID"; wait "$SENTINEL_PID" 2>/dev/null || true',
+        'trap - EXIT HUP INT TERM',
+        'print -r -- "target PID matched; TERM reaped target; unrelated sentinel survived cleanup"'
+      ].join("\n"), "fulmar-headless-cancel-fixture", ownedRoot, fakeCommand, cleanupRecord, targetRecord], {
+        encoding: "utf8", timeout: 5_000, maxBuffer: 64 * 1024,
+        env: { PATH: "/usr/bin:/bin", TMPDIR: fixtureRoot }
+      });
+      assert.equal(cancelled.error, undefined, cancelled.error?.message);
+      assert.equal(cancelled.signal, null, cancelled.stderr);
+      assert.equal(cancelled.status, 0, cancelled.stderr);
+      assert.match(await readFile(targetRecord, "utf8"), /^[1-9][0-9]*\n$/u);
+      assert.equal(cancelled.stdout, "target PID matched; TERM reaped target; unrelated sentinel survived cleanup\n");
+      assert.equal(await readFile(cleanupRecord, "utf8"), "cleanup\n");
+      assert.equal(existsSync(ownedRoot), false);
+      assert.equal(await readFile(unrelated, "utf8"), "unrelated private fixture\n");
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  };
+  await verifyHeadlessCleanup(contract);
+
   // Exercise the actual canary frame through the actual relay and preloader:
   // malformed authentication must not masquerade as a rejected DSH_HOME.
   const token = runtime.match(/^TOKEN="([A-Za-z0-9_-]+)"$/mu)?.[1];
@@ -989,7 +1167,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
     "ProviderDNSBoundaryTests.mjs": 1,
     "PublicDistributionScriptsTests.mjs": 8,
     "ReleaseEvidenceRetentionTests.mjs": 3,
-    "ReleaseVerificationScriptTests.mjs": 8,
+    "ReleaseVerificationScriptTests.mjs": 10,
     "ReleaseWatchdogTests.mjs": 3,
     "SignalCleanupTrapTests.mjs": 6,
     "SourceBuildInputInventoryTests.mjs": 2,
@@ -1029,7 +1207,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
       `${name} changed the reviewed literal zsh command topology`);
     auditedZshCommands += fileCommands;
   }
-  assert.equal(auditedZshCommands, 46, "the literal zsh command audit must remain complete");
+  assert.equal(auditedZshCommands, 48, "the literal zsh command audit must remain complete");
 });
 
 test("every production watchdog and privileged shell callsite suppresses ambient startup injection", async () => {

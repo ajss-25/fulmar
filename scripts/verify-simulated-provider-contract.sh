@@ -7,6 +7,7 @@ NODE="$APP_DIR/Contents/Resources/Runtime/node"
 DSH="$APP_DIR/Contents/Resources/Runtime/dsh/lib/bin.js"
 PRELOADER="$APP_DIR/Contents/Resources/RuntimeSecurityPreload.mjs"
 PATCH="$APP_DIR/Contents/Resources/LocalHarness.patch.yml"
+HEADLESS_PATCH="$PROJECT_DIR/Tests/Fixtures/HeadlessCanary.patch.yml"
 CREDENTIAL_PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-credentials-keychain/index.mjs"
 FS_PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-fs-confined/index.mjs"
 MCP_PLUGIN="$APP_DIR/Contents/Resources/Runtime/dsh/node_modules/@local-harness/dsh-mcp-guarded/index.mjs"
@@ -80,7 +81,7 @@ assert_extended_pattern_absent() {
   fi
 }
 
-for item in "$NODE" "$DSH" "$PRELOADER" "$PATCH" "$CREDENTIAL_PLUGIN" "$FS_PLUGIN" "$MCP_PLUGIN" "$CLIENT_SECURITY_PLUGIN" "$PERFORMANCE_PLUGIN" "$HELPER" "$SANDBOX_HELPER" "$AUTH_RELAY"; do
+for item in "$NODE" "$DSH" "$PRELOADER" "$PATCH" "$HEADLESS_PATCH" "$CREDENTIAL_PLUGIN" "$FS_PLUGIN" "$MCP_PLUGIN" "$CLIENT_SECURITY_PLUGIN" "$PERFORMANCE_PLUGIN" "$HELPER" "$SANDBOX_HELPER" "$AUTH_RELAY"; do
   [[ -e "$item" ]] || { print -u2 "Missing simulated-provider contract component: $item"; exit 1; }
 done
 
@@ -193,11 +194,14 @@ run_headless() {
   local task="$2"
   local expected="$3"
   STAGE="headless-$label"
+  # zsh's ERR_EXIT from a function can bypass the script's EXIT trap. Explicit
+  # exits preserve the failing command and run cleanup of the owned provider.
+  # Guard cd separately because the guarded subshell suppresses ERR_EXIT.
   (
-    cd "$TEST_ROOT/workspace"
-    runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" "$task"
-  ) >"$TEST_ROOT/$label.out" 2>"$TEST_ROOT/$label.err"
-  /usr/bin/grep -Eq -- "$expected" "$TEST_ROOT/$label.out"
+    cd "$TEST_ROOT/workspace" || exit $?
+    runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" --patch "$HEADLESS_PATCH" "$task"
+  ) >"$TEST_ROOT/$label.out" 2>"$TEST_ROOT/$label.err" || exit $?
+  /usr/bin/grep -Eq -- "$expected" "$TEST_ROOT/$label.out" || exit $?
   assert_extended_pattern_absent "$CREDENTIAL_VALUE|MISSING_CREDENTIAL|no credential for provider route" "$TEST_ROOT/$label.out" "$TEST_ROOT/$label.err"
 }
 
@@ -211,7 +215,7 @@ STAGE="tool-artifact"
 STAGE="bounded-provider-error"
 if (
   cd "$TEST_ROOT/workspace"
-  runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
+  runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" --patch "$HEADLESS_PATCH" \
     "Trigger the bounded provider failure. CONTRACT_ERROR"
 ) >"$TEST_ROOT/error.out" 2>"$TEST_ROOT/error.err"; then
   print -u2 "Simulated provider error unexpectedly succeeded."
@@ -221,9 +225,12 @@ fi
 assert_extended_pattern_absent "$CREDENTIAL_VALUE" "$TEST_ROOT/error.out" "$TEST_ROOT/error.err"
 
 STAGE="transport-cancellation"
-(
-  cd "$TEST_ROOT/workspace"
-  runtime_auth_frame | env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" \
+# Keep the right-hand pipeline PID through relay -> Node exec. Killing a
+# subshell around an inner pipeline can leave the actual request running.
+runtime_auth_frame | (
+  trap - EXIT HUP INT TERM
+  cd "$TEST_ROOT/workspace" || exit $?
+  exec env -i "${contract_environment[@]}" /usr/bin/perl "$AUTH_RELAY" --fulmar-post-handoff "$NODE" --import "$PRELOADER" "$DSH" --profile headless --patch "$PATCH" --patch "$HEADLESS_PATCH" \
     "Begin a long response and wait. CONTRACT_CANCEL"
 ) >"$TEST_ROOT/cancel.out" 2>"$TEST_ROOT/cancel.err" &
 HEADLESS_PID="$!"
