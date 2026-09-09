@@ -34,7 +34,11 @@
         "checksPerformed": [
           {
             "check": "crate archive top-level members",
-            "result": "Cargo.toml, README.md only; no licence, copying or notice member (crate archive sha256 0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a)"
+            "result": "Cargo.toml, README.md only; no licence, copying or notice member (crate archive sha256 0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a); re-read 2026-09-09 from the HTTPS-acquired archive: the only licence-related bytes in any member are Cargo.toml license = MIT"
+          },
+          {
+            "check": "repository default branch (later revisions)",
+            "result": "SSheldon/rust-block master HEAD tree 642ea4a4a5853a21b55b05c34832a5f1bb1af61c (16 entries, retrieved 2026-09-09 via api.github.com) carries no LICENSE, COPYING, NOTICE or similar file at any path; GitHub's repository licence endpoint returns 404 (no detected licence); last push 2024-06-04"
           },
           {
             "check": "upstream repository tag for this exact version",
@@ -74,11 +78,15 @@
       },
       "materials": [],
       "unresolved": {
-        "missingEvidence": "An upstream-published MIT licence text and copyright statement for this exact version. Neither the crate archive nor the tagged upstream revision carries any licence text, copyright line or licence statement; only the Cargo.toml license expression (MIT) and the authors metadata (Steven Sheldon) exist. A generic MIT text would require a copyright line the upstream never published for this version, so none is asserted.",
+        "missingEvidence": "An upstream-published MIT licence text and copyright statement for this exact version. Neither the crate archive nor the tagged upstream revision carries any licence text, copyright line or licence statement; only the Cargo.toml license expression (MIT) and the authors metadata (Steven Sheldon) exist. A later revision of the same repository (commit d9a3e539642bd90e07df458d226b19cdfa606863, 2020-06-29, 'Add LICENSE', committed by a contributor) adds an MIT LICENSE reading 'Copyright (c) 2020 Steven Sheldon'; it is not part of the 0.0.6 tree or archive, post-dates this version by more than four years and states nothing about earlier versions, so whether it may stand for 0.0.6 is an owner/legal decision recorded here and not taken by this manifest. No copyright line or year is bound for this version, so none is asserted.",
         "checksPerformed": [
           {
             "check": "crate archive top-level members",
-            "result": "Cargo.toml only; no licence, copying or notice member (crate archive sha256 62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb)"
+            "result": "Cargo.toml only; no licence, copying or notice member (crate archive sha256 62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb); re-read 2026-09-09 from the HTTPS-acquired archive: the only licence-related bytes in any member are Cargo.toml license = MIT"
+          },
+          {
+            "check": "repository default branch (later revisions)",
+            "result": "SSheldon/malloc_buf master HEAD is commit d9a3e539642bd90e07df458d226b19cdfa606863 (2020-06-29T21:56:00Z, 'Add LICENSE', commit author Fred Potter, parent 49f2fea4b7725742ddf1454ef0651d5f33589d9e); it adds LICENSE (git blob c852b1d181129b0ea5ca454ce3c370cbe8586692, 1071 bytes, raw sha256 aced7b57e474a63edb5a724954222bf7659c01ceef0e648a03af799582991db7), an MIT text reading 'Copyright (c) 2020 Steven Sheldon', retrieved 2026-09-09 from https://raw.githubusercontent.com/SSheldon/malloc_buf/d9a3e539642bd90e07df458d226b19cdfa606863/LICENSE; GitHub's repository licence endpoint reports MIT for that HEAD. The tag 0.0.6 tree a7811e5f4c6f9685dd57ad9bfe34e9bf6b0ba4f9 (.gitignore, Cargo.toml, src/lib.rs) has no such file, so this later-revision text is recorded as evidence and not bound as material for this exact version"
           },
           {
             "check": "upstream repository tag for this exact version",
@@ -146,7 +154,11 @@
         "checksPerformed": [
           {
             "check": "crate archive top-level members",
-            "result": "Cargo.toml only; no licence, copying or notice member (crate archive sha256 1add1b659e36c9607c7aab864a76c7a4c2760cd0cd2e120f3fb8b952c7e22bf9)"
+            "result": "Cargo.toml only; no licence, copying or notice member (crate archive sha256 1add1b659e36c9607c7aab864a76c7a4c2760cd0cd2e120f3fb8b952c7e22bf9); re-read 2026-09-09 from the HTTPS-acquired archive: the only licence-related bytes in any member are Cargo.toml license = MIT"
+          },
+          {
+            "check": "repository default branch (later revisions)",
+            "result": "SSheldon/rust-objc-foundation master HEAD tree 15f9ebec1190889e48a4bc2d36601e61d303071f (19 entries, retrieved 2026-09-09 via api.github.com) carries no LICENSE, COPYING, NOTICE or similar file at any path; GitHub's repository licence endpoint returns 404 (no detected licence); last push 2021-11-23"
           },
           {
             "check": "upstream repository tag for this exact version",
@@ -186,7 +198,11 @@
         "checksPerformed": [
           {
             "check": "crate archive top-level members",
-            "result": "Cargo.toml, README.md only; no licence, copying or notice member (crate archive sha256 c92d4ddb4bd7b50d730c215ff871754d0da6b2178849f8a2a2ab69712d0c073b)"
+            "result": "Cargo.toml, Cargo.toml.orig, README.md only; no licence, copying or notice member (crate archive sha256 c92d4ddb4bd7b50d730c215ff871754d0da6b2178849f8a2a2ab69712d0c073b); re-read 2026-09-09 from the HTTPS-acquired archive: the only licence-related bytes in any member are the license = MIT lines of Cargo.toml and Cargo.toml.orig"
+          },
+          {
+            "check": "repository default branch (later revisions)",
+            "result": "SSheldon/rust-objc-id master HEAD is still the tag commit 6527cdf28fef2b155c67c1681f548ecfd794003c (6 entries, retrieved 2026-09-09 via api.github.com): no LICENSE, COPYING, NOTICE or similar file at any path; GitHub's repository licence endpoint returns 404 (no detected licence); last push 2021-06-15"
           },
           {
             "check": "upstream repository tag for this exact version",
