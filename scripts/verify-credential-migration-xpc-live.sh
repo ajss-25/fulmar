@@ -44,7 +44,7 @@ collect_migration_phase_diagnostics() {
   # Five seconds bounds command work; existing bounded TERM/KILL reaping follows.
   # An earlier finish budget keeps either inner spawn within that outer budget.
   local -i phase_finish_ms
-  (( phase_finish_ms = EPOCHREALTIME * 1000 + 4000 ))
+  phase_finish_ms=$(( EPOCHREALTIME * 1000 + 4000 ))
   "$PROJECT_DIR/scripts/run-with-watchdog.sh" --inherit-root \
     --seconds 5 --max-rss-bytes 34359738368 --rss-grace-seconds 10 \
     --emergency-rss-bytes 38654705664 --label "Credential XPC phase diagnostic" -- \
