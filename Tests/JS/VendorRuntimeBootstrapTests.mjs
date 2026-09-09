@@ -669,19 +669,20 @@ test("notice-material cache preparation admits only a private canonical cache, r
     // fatal without claiming absence, removing the cache, retrying acquisition,
     // or bypassing independent verification of the retained published bytes.
     await rm(cache, { recursive: true });
+    const publishedObservationPath = join(root, "observed-published-acquisition.log");
     await writeFile(join(root, "scripts", "prepare-libvips-source-materials.mjs"), [
       'import { appendFileSync, chmodSync, cpSync } from "node:fs";',
       'const destination = process.argv[4];',
       `cpSync(${JSON.stringify(projectNoticeMaterials)}, destination, { recursive: true, errorOnExist: true, force: false });`,
       'chmodSync(destination, 0o700);',
-      `appendFileSync(${JSON.stringify(observed)}, "published-then-failed\\n");`,
+      `appendFileSync(${JSON.stringify(publishedObservationPath)}, "published-then-failed\\n");`,
       'process.stderr.write("fake acquisition published then refused\\n");',
       "process.exit(3);",
       ""
     ].join("\n"), { mode: 0o600 });
     // Own the append-only fixture observation before the child runs, retaining
     // its descriptor across verification instead of reopening a checked path.
-    const observation = await open(observed, "wx+", 0o600);
+    const observation = await open(publishedObservationPath, "wx+", 0o600);
     try {
       const expectedObservation = "published-then-failed\n";
       const readObservation = async () => {
@@ -712,7 +713,7 @@ test("notice-material cache preparation admits only a private canonical cache, r
     } finally {
       await observation.close();
     }
-    await rm(observed);
+    await rm(publishedObservationPath);
     const { manifest, manifestSHA256, manifestPath } = await loadManifest(join(root, "Config", "SharpLibvipsRustProvenance.json"));
     const noticeMaterials = await loadRustNoticeMaterials(join(root, "Config", "SharpLibvipsRustNoticeMaterials.json"), manifest, manifestPath);
     const inventory = JSON.parse(await readFile(join(cache, "INVENTORY.json"), "utf8"));
@@ -724,7 +725,7 @@ test("notice-material cache preparation admits only a private canonical cache, r
       const result = runNoticeMaterials(command);
       assert.notEqual(result.status, 0, `fixture transport must be refused for ${command[0]}`);
       assert.match(result.stderr, /existing notice-material cache records transport local-fixture \(NOT authoritative\): .*; the release cache must be acquired over HTTPS, so remove it deliberately and rerun scripts\/bootstrap-source-checkout\.sh/u);
-      await assert.rejects(stat(observed), { code: "ENOENT" });
+      await assert.rejects(stat(publishedObservationPath), { code: "ENOENT" });
     }
     // The relabelled copy still verifies as fixture output for the materials
     // tool itself, which is what proves the refusal came from the recorded
