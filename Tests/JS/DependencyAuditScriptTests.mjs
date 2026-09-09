@@ -278,7 +278,7 @@ test("dependency audit uses complete bounded bulk-advisory batches and fails clo
     assert.equal(expectedProvenance.packageNodeCount, 511);
     assert.equal(
       expectedProvenance.packageNodeProvenanceSHA256,
-      "c81a01227e4b7c6e6ca6bd909a5b77a3194a3fd377ae2ac48a81975fc7f2c4dc"
+      "9a63aed2e62d91207bc25a36b5578d57aae5c6f50128c726067cd86e2115c14d"
     );
     assert.ok(observed.length > 1);
     assert.equal(observed.length, Math.ceil(expectedGraph.packageNameCount / advisoryBatchSize));
