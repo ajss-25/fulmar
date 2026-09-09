@@ -88,11 +88,11 @@ function exactFullRecords(candidate) {
       descriptors.push({ file, name: `synthetic topology ${descriptors.length}` });
     }
   }
-  while (descriptors.length < 902) descriptors.push({
+  while (descriptors.length < 939) descriptors.push({
     file: fixtureFile, name: `synthetic exact lifecycle ${descriptors.length}`
   });
-  assert.equal(descriptors.length, 902);
-  for (let index = descriptors.length - 212; index < descriptors.length; index += 1) {
+  assert.equal(descriptors.length, 939);
+  for (let index = descriptors.length - 245; index < descriptors.length; index += 1) {
     descriptors[index].nesting = 1;
   }
   const events = [];
@@ -108,9 +108,9 @@ function exactFullRecords(candidate) {
   });
   const skipped = descriptors.filter((descriptor) => descriptor.skip).length;
   events.push(
-    { type: "test:plan", nesting: 0, count: 690 },
+    { type: "test:plan", nesting: 0, count: 694 },
     { type: "test:summary", success: true,
-      counts: { tests: 902, passed: 902 - skipped, failed: 0, cancelled: 0, skipped, todo: 0 } }
+      counts: { tests: 939, passed: 939 - skipped, failed: 0, cancelled: 0, skipped, todo: 0 } }
   );
   return events;
 }
@@ -274,7 +274,7 @@ test("JavaScript event verifier rejects unsafe metadata and a partial full-suite
     assert.ok(noisy.length > 4096);
     const reported = await reportedRecords(noisy);
     assert.deepEqual(reported, exact, "non-accounting traffic must not consume or truncate evidence");
-    assert.equal(reported.length, 1806);
+    assert.equal(reported.length, 1880);
     withLedger((path) => assert.equal(run(path, profile).status, 0), { records: reported });
     withLedger((path) => assert.notEqual(run(path, profile).status, 0), { records: exactFullRecords(!candidate) });
   }
