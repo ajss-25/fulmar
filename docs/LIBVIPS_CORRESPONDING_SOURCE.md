@@ -352,13 +352,22 @@ staging tree with one fixed member timestamp (2000-01-01T00:00:00Z) and modes
 0700/0600, and runs the system bsdtar in ustar format with owner 0:0, empty
 user/group names and no extended attributes, ACLs, file flags or AppleDouble
 metadata, so two packagings of one verified set are byte-identical with the
-same bsdtar/libarchive build (recorded in the binding). The archive is
-uncompressed because every upstream input is already a compressed archive and
-nothing can then expand on extraction beyond the archive's own size; nested
-archives stay opaque. Before publication the archive is listed against the
-planned member set, unpacked into staging and re-verified by the stager
-verifier; the three outputs are then published atomically into one new
-directory, and a failure removes only that invocation's staging. The binding
+same bsdtar/libarchive build (recorded in the binding; a different build on the
+verifying host is reported, not rejected, and byte-identical re-packaging is
+only claimed for the recorded build). The archive is plain POSIX ustar without
+compression, and that is enforced rather than assumed: the created stream is
+walked header by header and must contain exactly the planned members in the
+planned order — regular files and directories only, `ustar` magic and version
+`00`, octal numeric fields, owner 0:0, empty user/group names, the fixed mtime,
+modes 0600/0700, member sizes equal to the bound inventory, zero padding, the
+two end-of-archive blocks and only zero padding after them; compressed streams,
+pax/GNU extension records, sparse members, links, special files and base-256
+encodings are refused. Nested upstream archives stay opaque (nothing is
+extracted from them). Before publication the archive is also listed by the
+system tar against the planned member set, unpacked into staging and
+re-verified by the stager verifier; the three outputs are then published
+atomically into one new directory, and a failure removes only that
+invocation's staging. The binding
 records the source commit, the redistributed binary's package/version/build
 commit/dylib digest, the digests of the four tracked manifests and the
 acknowledgements document, the acquisition transports and authoritative flags,
@@ -369,17 +378,35 @@ identity; it contains no timestamps, private paths or legal conclusion.
 <binding.json> <expected sha256> <source commit> <new private unpack directory>`
 is the recipient side. It needs the archive, the binding, an **externally
 supplied** expected digest and an independently trusted checkout of the exact
-source commit — never the packager's caches. Before any extraction it checks
-the archive digest, then the binding as untrusted payload against that checkout
-(source commit, component, binary cohort, tracked manifest digests, inventory
-shape), then the exact member listing; it unpacks only into a fresh private
-directory, refuses symbolic links, hard links, special files and any mode other
-than 0700/0600, and finally runs the stager verifier on the unpacked root. The
-sidecar and the manifests inside the archive are payload to be checked, not
-trust roots: the expected digest must come from a trusted release record, not
-from a checksum file downloaded beside the archive. Fixture (`local-fixture`)
-provenance is carried into the binding and the summary as NOT authoritative and
-cannot be relabelled.
+source commit — never the packager's caches. It first reads the external
+archive exactly once, through an attested open descriptor whose identity is
+checked before, during and after the read, into one private snapshot inside its
+own staging, and the snapshot's digest must equal the externally supplied
+digest before anything else happens; the format walk, the system-tar listing
+and the extraction all consume that snapshot, and the external path is never
+reopened, so the bytes that are extracted are the bytes that were hashed. It
+then validates the binding as untrusted payload against the trusted checkout
+before extraction — exact shape of every record, archive size and format
+declarations, the deterministic metadata (tool, options, owner, modes, mtime),
+the source commit, the component including its lockfile path and open
+obligations, every tracked manifest digest, the binary cohort, the acquisition
+counts and transport/authority consistency, the status facts (kind, historical
+compilation and dylib incorporation against the crate manifest, the unresolved
+notice count against the notice-materials manifest, open obligations against
+the provenance record), the sidecar declaration, the fixed record names and
+their digests against the file entries, and the absence of any legal
+conclusion — and, after extraction into a fresh private directory that refuses
+symbolic links, hard links, special files and any mode other than 0700/0600,
+compares the status object, component and acquisition transports against the
+independently verified material and runs the stager verifier on the unpacked
+root. `<source commit>` is the recipient's own trusted checkout commit
+(`git rev-parse HEAD` of a clean, verified clone); the tool compares the
+binding to that operand and to that checkout's tracked files, it does not
+authenticate the checkout or the export itself. The sidecar and the manifests
+inside the archive are payload to be checked, not trust roots: the expected
+digest must come from a trusted release record, not from a checksum file
+downloaded beside the archive. Fixture (`local-fixture`) provenance is carried
+into the binding and the summary as NOT authoritative and cannot be relabelled.
 
 Packaging closes only the engineering step "materials packaged". It does not
 publish a source offer, add a release asset, demonstrate library replacement
