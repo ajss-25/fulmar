@@ -438,7 +438,8 @@ was really closed), then:
 
 ```sh
 # runnable — structural verification against the exact candidate, then finalize (no rebuild)
-make public-beta-external-evidence-verify
+./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
+  --emergency-rss-bytes 17179869184 --label "Fulmar beta external-evidence check" -- /usr/bin/make public-beta-external-evidence-verify
 LOCAL_HARNESS_SIGN_IDENTITY="…" LOCAL_HARNESS_SIGNING_KEYCHAIN="…" LOCAL_HARNESS_NOTARY_PROFILE="…" \
 make public-beta-release-finalize
 ```
