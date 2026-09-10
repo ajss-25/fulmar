@@ -250,7 +250,8 @@ if (!/prepare-public-release-assets\.sh" \\\n+    "\$ARCHIVE" "\$MANIFEST" "\$PU
   fail("public release operator does not candidate-bind public asset preparation");
 }
 if ((publicAssetPreparation.match(/verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"/gu) ?? []).length !== 2
-    || !/verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"\n"\$ATOMIC_PUBLISHER" publish/u.test(publicAssetPreparation)) {
+    || !/PUBLISH_OPERATION="publish"\nCLEANUP_OPERATION="cleanup"\nif \[\[ "\$RELEASE_PROFILE" == "beta" \]\]; then\n  PUBLISH_OPERATION="publish-beta"\n  CLEANUP_OPERATION="cleanup-beta"\nfi/u.test(publicAssetPreparation)
+    || !/verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"\n"\$ATOMIC_PUBLISHER" "\$PUBLISH_OPERATION"/u.test(publicAssetPreparation)) {
   fail("public asset preparation does not rebind the expected live candidate before snapshot and atomic publication");
 }
 const makefile = read("Makefile");
