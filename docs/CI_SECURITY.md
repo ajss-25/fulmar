@@ -122,23 +122,30 @@ evidence transport.
    `discovery-required` state uploads a bounded proposal and deliberately fails before
    compilation. A maintainer must review and commit the exact active pin, after which
    a fresh hosted run must verify it.
-   Schema 3 preserves the primary identity and permits exactly one complete active
-   schema-2 compatibility pin. The reviewed pair is image `20260907.0351.1`
-   (macOS `26.6.2` / `25G83`) and image `20260728.0273.1`
-   (macOS `26.5.2` / `25F84`); neither is a version range or a mutable fallback.
+   Schema 3 retains its exact two-identity contract. Schema 4 permits exactly three
+   complete active schema-2 identities: images `20260907.0351.1` and
+   `20260831.0337.3` (macOS `26.6.2` / `25G83`) and image `20260728.0273.1`
+   (macOS `26.5.2` / `25F84`). These are exact records, not a version range or a
+   mutable fallback; every member carries its own complete discovery provenance.
    The primary identity was refreshed from the proposal retained by run
    `34410256881` at source `5f2e6a6701b5b12a3b16623ce361aacb330e9e3d`.
    Relative to image `20260831.0337.3`, only its image version and discovery
    provenance changed; the captured OS, Xcode, SDK, tool hashes and build controls
-   were identical. This review does not qualify the refreshed image: a fresh
-   complete hosted run must still pass for the candidate source.
+   were identical. Run `34447026792` then observed `20260831.0337.3` again, showing
+   the older image could still be assigned after the newer one had been observed.
+   That complete discovery is retained
+   as the third member, including its pull-request merge source revision.
    Fresh discovery must equal one whole member, including its image and tool
-   hashes. The clean capture selects a unique member using the system OS identity,
-   uid and Xcode directory, then rechecks that member's complete inventory. Mixing
-   fields across members, ambiguous selectors, nested pins and unknown hosted OS
-   identities are rejected. Local Command Line Tools remain root-only. A reviewed
-   compatibility pin is not qualification evidence: each image still needs a real
-   complete hosted run against the candidate source before claiming qualification.
+   hashes. The environment-free clean capture selects one inventory using the
+   system OS identity, uid and Xcode directory, then rechecks the complete inventory.
+   Schema 4 permits a shared selector only when the runner contract, repository,
+   ImageOS, uid, complete Xcode descriptor and complete toolchain inventory are
+   identical. Such image records share an inventory representative; clean capture
+   does not claim to identify which image ran. Mixing fields, differing inventories
+   with the same selector, duplicate image identities, nested pins and unknown OS
+   identities are rejected. Local Command Line Tools remain root-only. Reviewed pins
+   are not qualification evidence: each image still needs a real complete hosted
+   run against the candidate source before claiming qualification of that image.
    The clean release toolchain capture inside `scripts/build-app.sh` stays root-only
    except for one pin-bound admission: GitHub's hosted image owns Xcode as the
    `runner` user, so `scripts/toolchain-inventory.mjs` admits a non-root-owned
