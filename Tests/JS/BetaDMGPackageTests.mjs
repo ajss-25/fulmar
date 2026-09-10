@@ -53,8 +53,10 @@ function exactMountedDevice(entities, mount) {
   const mounted = entities.filter((entry) => entry["mount-point"] !== undefined);
   assert.equal(mounted.length, 1, "only the exact fixture mount may be detached");
   assert.equal(mounted[0]["mount-point"], mount);
-  const device = entities[0]?.["dev-entry"];
-  assert.match(device, /^\/dev\/disk[0-9]+$/u);
+  // The attach receipt need not list the whole disk first. Identify the device
+  // attached at our exact mount, then compare that same entity with fresh info.
+  const device = mounted[0]["dev-entry"];
+  assert.match(device, /^\/dev\/disk[0-9]+(?:s[0-9]+)?$/u);
   return device;
 }
 
@@ -324,6 +326,7 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
       let attachedDevice;
       let attachAttempted = false;
       let injected = false;
+      let observedRejection;
       try {
         await assert.rejects(createDMG(options, {
           beforeImageCreate: async ({ root, app }) => {
@@ -344,8 +347,12 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
             injected = true;
             throw new Error("synthetic failure after attaching a different owned fixture image");
           }
-        }), (error) => error instanceof AggregateError && containsMountedDescendantFailure(error));
-        assert.equal(injected, true, "the mounted-filesystem cleanup boundary must actually be reached");
+        }), (error) => {
+          observedRejection = error;
+          return error instanceof AggregateError && containsMountedDescendantFailure(error);
+        });
+        assert.equal(injected, true, observedRejection.errors[0]?.stack
+          ?? "the mounted-filesystem cleanup boundary must actually be reached");
         await absent(options.output);
         assert.ok((await lstat(retainedRoot)).isDirectory(), "cleanup must retain the enclosing private root");
         assert.notEqual((await lstat(mountedPath)).dev, (await lstat(retainedRoot)).dev);
@@ -362,7 +369,10 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
           if (current.length === 1) {
             const device = exactMountedDevice(current[0]["system-entities"], mountedPath);
             if (attachedDevice !== undefined) assert.equal(device, attachedDevice);
-            run("/usr/bin/hdiutil", ["detach", device], files.root);
+            const wholeDevice = device.match(/^(\/dev\/disk[0-9]+)(?:s[0-9]+)?$/u)[1];
+            assert.ok(current[0]["system-entities"].some((entry) => entry["dev-entry"] === wholeDevice),
+              "the whole disk must belong to the freshly matched fixture image");
+            run("/usr/bin/hdiutil", ["detach", wholeDevice], files.root);
           }
           assert.deepEqual(await matchingAttachments(files.root, image), []);
         }
