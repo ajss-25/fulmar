@@ -1136,7 +1136,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
   assert.match(runner, /exit 126/u);
   assert.match(eventVerifier, /full JavaScript qualification skip topology changed/u);
   assert.match(eventVerifier, /full JavaScript qualification count drift/u);
-  assert.match(eventVerifier, /profile === "full-candidate" \? 919 : 918/u);
+  assert.match(eventVerifier, /profile === "full-candidate" \? 925 : 924/u);
   assert.match(eventVerifier, /profile === "full-source"/u);
   assert.match(eventVerifier, /RootWatchdogChildProcess\.mjs/u);
   assert.match(runner, /\/usr\/bin\/env -i/u);
