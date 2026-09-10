@@ -123,9 +123,15 @@ evidence transport.
    compilation. A maintainer must review and commit the exact active pin, after which
    a fresh hosted run must verify it.
    Schema 3 preserves the primary identity and permits exactly one complete active
-   schema-2 compatibility pin. The reviewed pair is image `20260831.0337.3`
+   schema-2 compatibility pin. The reviewed pair is image `20260907.0351.1`
    (macOS `26.6.2` / `25G83`) and image `20260728.0273.1`
    (macOS `26.5.2` / `25F84`); neither is a version range or a mutable fallback.
+   The primary identity was refreshed from the proposal retained by run
+   `34410256881` at source `5f2e6a6701b5b12a3b16623ce361aacb330e9e3d`.
+   Relative to image `20260831.0337.3`, only its image version and discovery
+   provenance changed; the captured OS, Xcode, SDK, tool hashes and build controls
+   were identical. This review does not qualify the refreshed image: a fresh
+   complete hosted run must still pass for the candidate source.
    Fresh discovery must equal one whole member, including its image and tool
    hashes. The clean capture selects a unique member using the system OS identity,
    uid and Xcode directory, then rechecks that member's complete inventory. Mixing

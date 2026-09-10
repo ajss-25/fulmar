@@ -10,14 +10,14 @@
   "hostedDiscovery": {
     "github": {
       "repository": "ajss-25/fulmar",
-      "commitSHA": "f36868328089f223b50473374a45c43147a9b009",
-      "runID": "33875851373",
+      "commitSHA": "5f2e6a6701b5b12a3b16623ce361aacb330e9e3d",
+      "runID": "34410256881",
       "runAttempt": "1",
       "job": "macos"
     },
     "image": {
       "imageOS": "macos26",
-      "imageVersion": "20260831.0337.3"
+      "imageVersion": "20260907.0351.1"
     },
     "runner": {
       "effectiveUID": 501
