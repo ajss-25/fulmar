@@ -1136,7 +1136,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
   assert.match(runner, /exit 126/u);
   assert.match(eventVerifier, /full JavaScript qualification skip topology changed/u);
   assert.match(eventVerifier, /full JavaScript qualification count drift/u);
-  assert.match(eventVerifier, /profile === "full-candidate" \? 856 : 855/u);
+  assert.match(eventVerifier, /profile === "full-candidate" \? 935 : 934/u);
   assert.match(eventVerifier, /profile === "full-source"/u);
   assert.match(eventVerifier, /RootWatchdogChildProcess\.mjs/u);
   assert.match(runner, /\/usr\/bin\/env -i/u);
@@ -1165,6 +1165,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
     "MachOCompatibilityTests.mjs": 1,
     "OllamaFixtureIsolationTests.mjs": 1,
     "ProviderDNSBoundaryTests.mjs": 1,
+    "PublicBetaAssetPolicyTests.mjs": 3,
     "PublicDistributionScriptsTests.mjs": 8,
     "ReleaseEvidenceRetentionTests.mjs": 3,
     "ReleaseVerificationScriptTests.mjs": 10,
@@ -1177,7 +1178,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
     "VendorRuntimeBootstrapTests.mjs": 3
   }));
   const testNames = (await readdir(testRoot)).filter((name) => name.endsWith(".mjs")).sort();
-  assert.equal(testNames.length, 72, "the zsh launch audit must cover every reviewed JavaScript source");
+  assert.equal(testNames.length, 74, "the zsh launch audit must cover every reviewed JavaScript source");
   const zshExecutable = ["/bin/", "zsh"].join("");
   const zshLiterals = [`"${zshExecutable}"`, `'${zshExecutable}'`];
   let auditedZshCommands = 0;
@@ -1207,7 +1208,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
       `${name} changed the reviewed literal zsh command topology`);
     auditedZshCommands += fileCommands;
   }
-  assert.equal(auditedZshCommands, 48, "the literal zsh command audit must remain complete");
+  assert.equal(auditedZshCommands, 51, "the literal zsh command audit must remain complete");
 });
 
 test("every production watchdog and privileged shell callsite suppresses ambient startup injection", async () => {

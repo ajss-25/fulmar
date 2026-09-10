@@ -97,6 +97,19 @@ Until a beta release explicitly qualifies retained-state migration, a beta is
 Support, Keychain items or Harness backups, and do not delete or move existing
 state to make room for it. No beta release exists yet.
 
+A beta release page carries twelve assets rather than nine: the same nine as
+above plus `sharp-libvips-1.3.3-delivery-materials.tar`, its
+`sharp-libvips-1.3.3-delivery-materials.tar.sha256` sidecar and
+`sharp-libvips-1.3.3-delivery-materials.binding.json`. Those three are
+third-party **source material** for the redistributed libvips binary (see
+`docs/LIBVIPS_CORRESPONDING_SOURCE.md`); they are for reviewers and recipients,
+are about 177 MB, and are never installed or needed to run the app. In a beta
+release `SHA256SUMS.txt` lists eleven files. A recipient who wants to check the
+material archive uses `scripts/package-libvips-delivery-materials.mjs
+verify-archive` from a checkout of the exact source commit with the archive
+digest published in the release record — the sidecar beside the download is a
+convenience copy of that number and does not authenticate the archive.
+
 Use in-app update only after the release notes identify a fully qualified two-phase
 updater. A public updater must retain the prior app, install the candidate, launch that
 exact bundle with a private nonce-bound readiness channel, verify application identity

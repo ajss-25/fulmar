@@ -1,38 +1,38 @@
 #!/bin/zsh -f
 set -euo pipefail
 
-PROJECT_DIR="${0:A:h:h}"
-source "$PROJECT_DIR/scripts/watchdog-root.zsh"
-ROOT_WATCHDOG_STATE=0
-fulmar_root_watchdog_state || ROOT_WATCHDOG_STATE=$?
-if (( ROOT_WATCHDOG_STATE == 1 )); then
-  exec "$PROJECT_DIR/scripts/run-with-watchdog.sh" \
-    --seconds 1800 --max-rss-bytes 4294967296 --rss-grace-seconds 5 \
-    --emergency-rss-bytes 6442450944 --lock-dir /private/tmp/LocalHarnessBuild.lock \
-    --label "complete public-distribution verification" -- \
-    /bin/zsh -f "$0" "$@"
-elif (( ROOT_WATCHDOG_STATE == 2 )); then
-  print -u2 "Public-distribution verification inherited an invalid root-watchdog capability."
-  exit 1
-fi
-source "${0:A:h}/clean-release-environment.zsh"
-fulmar_require_clean_release_environment public "$0" "$@"
-
 # An explicit `--profile stable|beta` may follow the positional operands. The
 # default remains the unchanged stable contract; the beta profile binds the
-# verifier to the separately identifiable beta evidence record. The profile is
-# never read from the environment.
+# verifier to the separately identifiable beta evidence record and requires the
+# two material operands: the expected material archive SHA-256 taken from the
+# independently reviewed release record and this checkout's exact source commit.
+# Neither may come from the package's own sidecar, checksum list or binding, and
+# nothing is read from the environment.
+USAGE="Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable | --profile beta --material-sha256 <sha256> --source-commit <commit>]"
+# Syntax checks use shell built-ins only and precede all watchdog, environment
+# and lock setup. Retain the untouched argv because both guarded re-execution
+# paths must parse the same operands again after this loop consumes "$@".
+typeset -a ORIGINAL_ARGUMENTS
+ORIGINAL_ARGUMENTS=("$@")
+(( $# <= 8 )) || {
+  print -u2 "$USAGE"
+  exit 64
+}
 RELEASE_PROFILE="stable"
 typeset -a EVIDENCE_PROFILE_ARGUMENTS
 EVIDENCE_PROFILE_ARGUMENTS=()
 typeset -a POSITIONAL_OPERANDS
 POSITIONAL_OPERANDS=()
 PROFILE_SELECTED=0
+MATERIAL_SHA256=""
+MATERIAL_SHA256_SELECTED=0
+SOURCE_COMMIT_OPERAND=""
+SOURCE_COMMIT_SELECTED=0
 while (( $# > 0 )); do
   case "$1" in
     --profile)
       (( $# >= 2 && PROFILE_SELECTED == 0 )) || {
-        print -u2 "Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable|beta]"
+        print -u2 "$USAGE"
         exit 64
       }
       case "$2" in
@@ -45,8 +45,26 @@ while (( $# > 0 )); do
       PROFILE_SELECTED=1
       shift 2
       ;;
+    --material-sha256)
+      (( $# >= 2 && MATERIAL_SHA256_SELECTED == 0 )) || {
+        print -u2 "$USAGE"
+        exit 64
+      }
+      MATERIAL_SHA256="$2"
+      MATERIAL_SHA256_SELECTED=1
+      shift 2
+      ;;
+    --source-commit)
+      (( $# >= 2 && SOURCE_COMMIT_SELECTED == 0 )) || {
+        print -u2 "$USAGE"
+        exit 64
+      }
+      SOURCE_COMMIT_OPERAND="$2"
+      SOURCE_COMMIT_SELECTED=1
+      shift 2
+      ;;
     --*)
-      print -u2 "Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable|beta]"
+      print -u2 "$USAGE"
       exit 64
       ;;
     *)
@@ -55,11 +73,45 @@ while (( $# > 0 )); do
       ;;
   esac
 done
-unset PROFILE_SELECTED
 (( ${#POSITIONAL_OPERANDS[@]} <= 2 )) || {
-  print -u2 "Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable|beta]"
+  print -u2 "$USAGE"
   exit 64
 }
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  (( MATERIAL_SHA256_SELECTED == 1 && SOURCE_COMMIT_SELECTED == 1 )) || {
+    print -u2 "The beta profile requires --material-sha256 and --source-commit: the expected material archive SHA-256 from the reviewed release record and this checkout's exact source commit."
+    exit 64
+  }
+  [[ "${#MATERIAL_SHA256}" == 64 && "$MATERIAL_SHA256" != *[^a-f0-9]* \
+     && "${#SOURCE_COMMIT_OPERAND}" == 40 && "$SOURCE_COMMIT_OPERAND" != *[^a-f0-9]* ]] || {
+    print -u2 "Beta material operands must be one lowercase SHA-256 and one full 40-hex source commit."
+    exit 64
+  }
+else
+  (( MATERIAL_SHA256_SELECTED == 0 && SOURCE_COMMIT_SELECTED == 0 )) || {
+    print -u2 "Material operands are accepted only with --profile beta; the stable package carries no material assets."
+    exit 64
+  }
+fi
+unset PROFILE_SELECTED MATERIAL_SHA256_SELECTED SOURCE_COMMIT_SELECTED
+
+PROJECT_DIR="${0:A:h:h}"
+source "$PROJECT_DIR/scripts/watchdog-root.zsh"
+ROOT_WATCHDOG_STATE=0
+fulmar_root_watchdog_state || ROOT_WATCHDOG_STATE=$?
+if (( ROOT_WATCHDOG_STATE == 1 )); then
+  exec "$PROJECT_DIR/scripts/run-with-watchdog.sh" \
+    --seconds 1800 --max-rss-bytes 4294967296 --rss-grace-seconds 5 \
+    --emergency-rss-bytes 6442450944 --lock-dir /private/tmp/LocalHarnessBuild.lock \
+    --label "complete public-distribution verification" -- \
+    /bin/zsh -f "$0" "${ORIGINAL_ARGUMENTS[@]}"
+elif (( ROOT_WATCHDOG_STATE == 2 )); then
+  print -u2 "Public-distribution verification inherited an invalid root-watchdog capability."
+  exit 1
+fi
+source "${0:A:h}/clean-release-environment.zsh"
+fulmar_require_clean_release_environment public "$0" "${ORIGINAL_ARGUMENTS[@]}"
+unset ORIGINAL_ARGUMENTS
 
 source "$PROJECT_DIR/scripts/release-lock.zsh"
 RELEASE_IDENTITY="$PROJECT_DIR/Config/ReleaseIdentity.json"
@@ -97,15 +149,32 @@ fulmar_acquire_release_lock "Fulmar public-distribution verification"
   echo "Public external evidence must use one absolute path." >&2
   exit 64
 }
-[[ "$(/usr/bin/find "$PACKAGE" -mindepth 1 -maxdepth 1 | /usr/bin/wc -l | /usr/bin/tr -d ' ')" == 9 ]] || {
-  echo "Public package must contain exactly the nine reviewed release assets." >&2; exit 1
-}
-for name in Fulmar.app.zip Fulmar.app.zip.sha256 Fulmar.dSYMs.zip LICENSE release-manifest.json static-security-summary.json LocalHarness.sbom.cdx.json THIRD_PARTY_NOTICES.md SHA256SUMS.txt; do
-  [[ -f "$PACKAGE/$name" && ! -L "$PACKAGE/$name" \
-     && "$(/usr/bin/stat -f %l "$PACKAGE/$name")" == 1 ]] || exit 1
-done
+# Exact asset policy per profile (scripts/public-release-asset-policy.mjs). The
+# stable package is the unchanged nine assets with eight SHA256SUMS.txt entries;
+# the beta package is exactly those plus the verified material archive, its
+# sidecar and its binding (twelve assets, eleven entries), named only from the
+# tracked provenance record. Names are in C-locale byte order.
+typeset -a STABLE_PACKAGE_ASSET_NAMES
+STABLE_PACKAGE_ASSET_NAMES=(Fulmar.app.zip Fulmar.app.zip.sha256 Fulmar.dSYMs.zip LICENSE LocalHarness.sbom.cdx.json SHA256SUMS.txt THIRD_PARTY_NOTICES.md release-manifest.json static-security-summary.json)
+typeset -a PACKAGE_ASSET_NAMES
+PACKAGE_ASSET_NAMES=("${STABLE_PACKAGE_ASSET_NAMES[@]}")
+typeset -a CHECKSUM_ENTRY_NAMES
+CHECKSUM_ENTRY_NAMES=(Fulmar.app.zip Fulmar.app.zip.sha256 Fulmar.dSYMs.zip LICENSE LocalHarness.sbom.cdx.json THIRD_PARTY_NOTICES.md release-manifest.json static-security-summary.json)
+typeset -a MATERIAL_ASSET_NAMES
+MATERIAL_ASSET_NAMES=()
+if [[ "$RELEASE_PROFILE" == "stable" ]]; then
+  [[ "$(/usr/bin/find "$PACKAGE" -mindepth 1 -maxdepth 1 | /usr/bin/wc -l | /usr/bin/tr -d ' ')" == 9 ]] || {
+    echo "Public package must contain exactly the nine reviewed release assets." >&2; exit 1
+  }
+  for name in Fulmar.app.zip Fulmar.app.zip.sha256 Fulmar.dSYMs.zip LICENSE release-manifest.json static-security-summary.json LocalHarness.sbom.cdx.json THIRD_PARTY_NOTICES.md SHA256SUMS.txt; do
+    [[ -f "$PACKAGE/$name" && ! -L "$PACKAGE/$name" \
+       && "$(/usr/bin/stat -f %l "$PACKAGE/$name")" == 1 ]] || exit 1
+  done
+fi
 TEMP_ROOT="$(/usr/bin/mktemp -d /private/tmp/fulmar-public-verify.XXXXXX)"
 NODE="$PROJECT_DIR/VendorRuntime/node-v22.23.1-darwin-arm64/bin/node"
+ASSET_POLICY="$PROJECT_DIR/scripts/public-release-asset-policy.mjs"
+PROVENANCE_RECORD="$PROJECT_DIR/Config/ThirdPartyBinaryProvenance.json"
 FIRST_PARTY_LICENSE_POLICY="$PROJECT_DIR/scripts/first-party-license-policy.mjs"
 # The private checkout-local notice-material cache prepared by
 # scripts/bootstrap-source-checkout.sh; verified here, never acquired. A
@@ -126,13 +195,70 @@ NOTARY_LOG_EVIDENCE="$PROJECT_DIR/build/notarization-log.json"
 [[ -x "$NODE" && "$(/usr/bin/shasum -a 256 "$NODE" | /usr/bin/awk '{print $1}')" == "$PINNED_NODE_SHA256" ]] || {
   echo "Public distribution verification requires the exact reviewed Node bootstrap." >&2; exit 1
 }
+verify_source_commit_operand() {
+  local expected="$1" toplevel head tracked_status
+  toplevel="$(/usr/bin/git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null)" && [[ "$toplevel" == "$PROJECT_DIR" ]] || {
+    print -u2 "Beta material binding requires this checkout to be the exact Git worktree root."
+    return 1
+  }
+  head="$(/usr/bin/git -C "$PROJECT_DIR" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || {
+    print -u2 "Beta material binding could not read this checkout's HEAD commit."
+    return 1
+  }
+  [[ "$head" == "$expected" ]] || {
+    print -u2 "The supplied --source-commit $expected is not this checkout's HEAD $head; the material binding must name the exact source revision being released."
+    return 1
+  }
+  tracked_status="$(/usr/bin/git -C "$PROJECT_DIR" status --porcelain=v1 --untracked-files=no 2>/dev/null)" || {
+    print -u2 "Beta material binding could not read this checkout's status."
+    return 1
+  }
+  [[ -z "$tracked_status" ]] || {
+    print -u2 "Beta material binding requires a clean committed source tree (no modified tracked files)."
+    return 1
+  }
+}
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  # One policy name per line; plain read loops keep this file parseable by the
+  # reviewed static scanner (zsh expansion flags are not).
+  policy_names="$("$NODE" "$ASSET_POLICY" names beta "$PROVENANCE_RECORD")" || exit 1
+  policy_checksum_names="$("$NODE" "$ASSET_POLICY" checksum-names beta "$PROVENANCE_RECORD")" || exit 1
+  PACKAGE_ASSET_NAMES=()
+  while IFS= read -r policy_name; do PACKAGE_ASSET_NAMES+=("$policy_name"); done <<< "$policy_names"
+  CHECKSUM_ENTRY_NAMES=()
+  while IFS= read -r policy_name; do CHECKSUM_ENTRY_NAMES+=("$policy_name"); done <<< "$policy_checksum_names"
+  # The material assets are exactly the beta names that are not stable names.
+  MATERIAL_ASSET_NAMES=()
+  for policy_name in "${PACKAGE_ASSET_NAMES[@]}"; do
+    policy_name_is_stable=0
+    for stable_name in "${STABLE_PACKAGE_ASSET_NAMES[@]}"; do
+      [[ "$policy_name" == "$stable_name" ]] && policy_name_is_stable=1
+    done
+    (( policy_name_is_stable )) || MATERIAL_ASSET_NAMES+=("$policy_name")
+  done
+  (( ${#PACKAGE_ASSET_NAMES[@]} == 12 && ${#CHECKSUM_ENTRY_NAMES[@]} == 11 && ${#MATERIAL_ASSET_NAMES[@]} == 3 )) || {
+    echo "The beta asset policy did not yield exactly twelve assets, eleven checksum entries and three material assets." >&2; exit 1
+  }
+  [[ "$(/usr/bin/find "$PACKAGE" -mindepth 1 -maxdepth 1 | /usr/bin/wc -l | /usr/bin/tr -d ' ')" == 12 ]] || {
+    echo "Public beta package must contain exactly the twelve reviewed beta release assets (the nine stable assets plus the verified material archive, its sidecar and its binding)." >&2; exit 1
+  }
+  for name in "${PACKAGE_ASSET_NAMES[@]}"; do
+    [[ -f "$PACKAGE/$name" && ! -L "$PACKAGE/$name" \
+       && "$(/usr/bin/stat -f %l "$PACKAGE/$name")" == 1 ]] || {
+      echo "Public beta package is missing, links or duplicates the reviewed asset: $name" >&2; exit 1
+    }
+  done
+fi
 SNAPSHOT="$TEMP_ROOT/package"
 /bin/mkdir -m 0700 "$SNAPSHOT"
 "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/SHA256SUMS.txt" "$SNAPSHOT/SHA256SUMS.txt" 1048576 >/dev/null
 "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/Fulmar.app.zip.sha256" "$SNAPSHOT/Fulmar.app.zip.sha256" 1024 >/dev/null
-[[ "$(/usr/bin/wc -l < "$SNAPSHOT/SHA256SUMS.txt" | /usr/bin/tr -d ' ')" == 8 ]] || exit 1
+[[ "$(/usr/bin/wc -l < "$SNAPSHOT/SHA256SUMS.txt" | /usr/bin/tr -d ' ')" == "${#CHECKSUM_ENTRY_NAMES[@]}" ]] || {
+  echo "SHA256SUMS.txt has unexpected or unsafe entries." >&2; exit 1
+}
 checksum_names="$(/usr/bin/sed -E -n 's/^[0-9a-f]{64}  (.*)$/\1/p' "$SNAPSHOT/SHA256SUMS.txt")"
-[[ "$checksum_names" == $'Fulmar.app.zip\nFulmar.app.zip.sha256\nFulmar.dSYMs.zip\nLICENSE\nLocalHarness.sbom.cdx.json\nTHIRD_PARTY_NOTICES.md\nrelease-manifest.json\nstatic-security-summary.json' ]] || {
+expected_checksum_names="$(printf '%s\n' "${CHECKSUM_ENTRY_NAMES[@]}")"
+[[ "$checksum_names" == "$expected_checksum_names" ]] || {
   echo "SHA256SUMS.txt has unexpected or unsafe entries." >&2; exit 1
 }
 [[ "$(/usr/bin/wc -l < "$SNAPSHOT/Fulmar.app.zip.sha256" | /usr/bin/tr -d ' ')" == 1 \
@@ -146,8 +272,38 @@ checksum_names="$(/usr/bin/sed -E -n 's/^[0-9a-f]{64}  (.*)$/\1/p' "$SNAPSHOT/SH
 "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/LICENSE" "$SNAPSHOT/LICENSE" 1048576 >/dev/null
 "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/LocalHarness.sbom.cdx.json" "$SNAPSHOT/LocalHarness.sbom.cdx.json" 67108864 >/dev/null
 "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/THIRD_PARTY_NOTICES.md" "$SNAPSHOT/THIRD_PARTY_NOTICES.md" 16777216 >/dev/null
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  for name in "${MATERIAL_ASSET_NAMES[@]}"; do
+    case "$name" in
+      *.tar) material_bound=2147483648 ;;
+      *.tar.sha256) material_bound=1024 ;;
+      *.binding.json) material_bound=4194304 ;;
+      *) echo "Unexpected beta material asset name: $name" >&2; exit 1 ;;
+    esac
+    "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/$name" "$SNAPSHOT/$name" "$material_bound" >/dev/null
+  done
+  unset material_bound
+fi
 (cd "$SNAPSHOT" && /usr/bin/shasum -a 256 -c Fulmar.app.zip.sha256)
 (cd "$SNAPSHOT" && /usr/bin/shasum -a 256 -c SHA256SUMS.txt)
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  # Beta material binding. The expected digest and source commit are the
+  # operator's operands, never the package's own sidecar, checksum list or
+  # binding. The checkout must be exactly the named revision; then the existing
+  # verify-archive runs on private snapshots of the checksum-verified material
+  # copies (the external package is not reopened) with that digest and commit,
+  # and only HTTPS-authoritative acquisition is accepted.
+  verify_source_commit_operand "$SOURCE_COMMIT_OPERAND"
+  /bin/mkdir -m 0700 "$TEMP_ROOT/materials"
+  "$NODE" "$ASSET_POLICY" admit-materials "$PROVENANCE_RECORD" "$SNAPSHOT" \
+    "$MATERIAL_SHA256" "$SOURCE_COMMIT_OPERAND" "$TEMP_ROOT/materials" "$TEMP_ROOT" \
+    > "$TEMP_ROOT/material-admission.json"
+  for name in "${MATERIAL_ASSET_NAMES[@]}"; do
+    /usr/bin/cmp -s "$SNAPSHOT/$name" "$TEMP_ROOT/materials/$name" || {
+      echo "Beta material asset changed between the checksum snapshot and its admission: $name" >&2; exit 1
+    }
+  done
+fi
 "$NODE" "$FIRST_PARTY_LICENSE_POLICY" state "$PROJECT_DIR" --require-selected >/dev/null
 "$NODE" "$SOURCE_INPUT_TOOL" verify "$PROJECT_DIR" "$SOURCE_INPUT_INVENTORY"
 "$NODE" "$STATIC_SECURITY_VERIFIER" \
@@ -393,7 +549,13 @@ PUBLIC_BUILD="$(/usr/bin/plutil -extract build raw -o - "$SNAPSHOT/release-manif
   "$PUBLIC_EXTERNAL_EVIDENCE" "$PUBLIC_CANDIDATE_SHA256" "$PUBLIC_VERSION" "$PUBLIC_BUILD" \
   "${EVIDENCE_PROFILE_ARGUMENTS[@]}"
 if [[ "$RELEASE_PROFILE" == "beta" ]]; then
-  echo "Public BETA distribution verification passed for the exact manifest-bound archive and Developer ID team $team (manual install, in-app updater disabled; not stable qualification)."
+  # The app candidate digest and the material archive digest identify different
+  # artefacts; an operator who supplied the ZIP digest as the material digest is
+  # refused above by verify-archive, and never accepted here by coincidence.
+  [[ "$MATERIAL_SHA256" != "$PUBLIC_CANDIDATE_SHA256" ]] || {
+    echo "The material archive digest equals the app candidate digest; they are different artefacts." >&2; exit 1
+  }
+  echo "Public BETA distribution verification passed for the exact manifest-bound archive, the verified third-party material archive (sha256 $MATERIAL_SHA256, bound to source commit $SOURCE_COMMIT_OPERAND) and Developer ID team $team (manual install, in-app updater disabled; not stable qualification; the material archive closes no licensing obligation)."
 else
   echo "Public distribution verification passed for the exact manifest-bound archive and Developer ID team $team."
 fi

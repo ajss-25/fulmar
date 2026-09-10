@@ -342,7 +342,10 @@ No unchecked provider item may be summarized as passed.
   review does not close this row.
 - [ ] Verify the application and all six local-plugin SBOM components carry the
   selected first-party SPDX expression and exact licence SHA-256; verify the signed app
-  and exact nine-asset public package contain byte-identical first-party terms.
+  and exact nine-asset public package (twelve under the explicit beta profile, whose
+  three extra assets are the verified third-party material archive, sidecar and
+  binding admitted with the reviewed digest and source commit) contain byte-identical
+  first-party terms.
 - [ ] Sign all nested code and app with the owner's Developer ID Application identity;
   require one team, a secure timestamp and hardened runtime on every executable,
   fixed app/helper identifiers, the exact reviewed app/Node entitlements, and no

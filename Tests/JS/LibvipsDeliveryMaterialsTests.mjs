@@ -1,9 +1,13 @@
 // Fixture-only tests for scripts/stage-libvips-delivery-materials.mjs: the
 // private delivery staging of verified corresponding-source archives, .crate
 // archives, external notice material, manifests, accompanying documentation
-// and the generated inventory, checksum list and status record. Every input is
-// synthetic and acquired through the materials tool's local-fixture transport;
-// no test contacts the network, extracts an archive, or claims clearance.
+// and the generated inventory, checksum list and status record, and for
+// scripts/package-libvips-delivery-materials.mjs: the deterministic ustar
+// archive, sidecar and binding built from such a set and their recipient-side
+// verification. Every input is synthetic and acquired through the materials
+// tool's local-fixture transport; no test contacts the network, extracts an
+// upstream archive, or claims clearance. The only archives extracted are the
+// small fixture delivery archives these tests build themselves.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
@@ -12,10 +16,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
+import { verify as verifyDeliverySetInProcess } from "../../scripts/stage-libvips-delivery-materials.mjs";
+import { verifyArchive as verifyArchiveInProcess } from "../../scripts/package-libvips-delivery-materials.mjs";
 
 const project = process.cwd();
 const stagingTool = join(project, "scripts", "stage-libvips-delivery-materials.mjs");
 const materialsTool = join(project, "scripts", "prepare-libvips-source-materials.mjs");
+const packagingTool = join(project, "scripts", "package-libvips-delivery-materials.mjs");
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function tarEntry(name, bytes, type = "0") {
@@ -705,4 +712,681 @@ test("malformed invocations are refused without touching the destination", async
   } finally {
     await rm(files.root, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// scripts/package-libvips-delivery-materials.mjs
+
+const TAR = "/usr/bin/tar";
+const ROOT_NAME = "fixture-delivery-materials";
+const ARCHIVE_NAME = `${ROOT_NAME}.tar`;
+const SIDECAR_NAME = `${ARCHIVE_NAME}.sha256`;
+const BINDING_NAME = `${ROOT_NAME}.binding.json`;
+const PACKAGE_SOURCE_COMMIT = "5".repeat(40);
+const OTHER_SOURCE_COMMIT = "7".repeat(40);
+const ARCHIVE_MTIME = 946684800;
+
+function expectedListing(paths) {
+  const directories = new Set();
+  for (const path of paths) {
+    const segments = path.split("/");
+    for (let depth = 1; depth < segments.length; depth += 1) directories.add(segments.slice(0, depth).join("/"));
+  }
+  const entries = [...[...directories].map((path) => ({ path, directory: true })), ...paths.map((path) => ({ path, directory: false }))]
+    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  return [`${ROOT_NAME}/`, ...entries.map((entry) => `${ROOT_NAME}/${entry.path}${entry.directory ? "/" : ""}`)];
+}
+const EXPECTED_LISTING = expectedListing(EXPECTED_FILES);
+
+function runPackaging(args) {
+  return spawnSync(process.execPath, [packagingTool, ...args], { cwd: project, encoding: "utf8", timeout: 120_000 });
+}
+
+function packageSet(files, output, { sourceCommit = PACKAGE_SOURCE_COMMIT, deliveryDirectory = files.destination } = {}) {
+  return runPackaging(["package", files.provenancePath, deliveryDirectory, output, sourceCommit]);
+}
+
+function verifyArchive(files, { archive, binding, digest: expected, sourceCommit = PACKAGE_SOURCE_COMMIT, unpack }) {
+  return runPackaging(["verify-archive", files.provenancePath, archive, binding, expected, sourceCommit, unpack]);
+}
+
+function listTar(path) {
+  const result = spawnSync(TAR, ["-t", "-f", path], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" } });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.split("\n").slice(0, -1);
+}
+
+async function packagedOutputs(directory) {
+  assert.deepEqual((await readdir(directory)).sort(), [ARCHIVE_NAME, SIDECAR_NAME, BINDING_NAME].sort());
+  const archive = await readFile(join(directory, ARCHIVE_NAME));
+  const bindingText = await readFile(join(directory, BINDING_NAME), "utf8");
+  return { archive, sidecar: await readFile(join(directory, SIDECAR_NAME), "utf8"), bindingText, binding: JSON.parse(bindingText), archivePath: join(directory, ARCHIVE_NAME), bindingPath: join(directory, BINDING_NAME) };
+}
+
+// Stages and packages one fixture set; returns the outputs and the walked tree.
+async function stagedAndPackaged(files, output = join(files.root, "out", "pkg")) {
+  const staged = stage(files);
+  assert.equal(staged.status, 0, staged.stderr);
+  const tree = await walk(files.destination);
+  const packaged = packageSet(files, output);
+  assert.equal(packaged.status, 0, packaged.stderr);
+  return { tree, packaged, outputs: await packagedOutputs(output), output };
+}
+
+// A raw ustar member for hostile archives. Every field defaults to the
+// packager's own contract (POSIX ustar magic, owner 0:0, mtime 946684800,
+// modes 0700/0600) so that each case exercises exactly one deviation: type,
+// link name, mode, declared size, raw size field, magic or version.
+function hostileEntry(name, bytes, { type = "0", linkName = "", mode = type === "5" ? "0000700" : "0000600", mtime = ARCHIVE_MTIME.toString(8).padStart(11, "0"), declaredSize, sizeField, magic = "ustar\0", version = "00" } = {}) {
+  const entry = tarEntry(name, bytes, type);
+  const header = entry.subarray(0, 512);
+  header.write(`${mode}\0`, 100, "latin1");
+  header.write(`${mtime}\0`, 136, "latin1");
+  header.write(linkName, 157, 100, "latin1");
+  header.fill(0, 257, 265);
+  header.write(magic, 257, 6, "latin1");
+  header.write(version, 263, 2, "latin1");
+  if (declaredSize !== undefined) header.write(`${declaredSize.toString(8).padStart(11, "0")}\0`, 124, "latin1");
+  if (sizeField !== undefined) sizeField.copy(header, 124, 0, 12);
+  header.write("        ", 148, "latin1");
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "latin1");
+  return entry;
+}
+
+// Rebuilds the fixture archive from the staged tree with one transformation of
+// its member list, and writes it beside the fixture with a consistent binding.
+async function hostileArchive(files, packaged, transform) {
+  const entries = EXPECTED_LISTING.map((name) => (name.endsWith("/")
+    ? { name, bytes: Buffer.alloc(0), type: "5" }
+    : { name, bytes: packaged.tree.get(name.slice(ROOT_NAME.length + 1)), type: "0" }));
+  const archive = Buffer.concat([...transform(entries).map((entry) => hostileEntry(entry.name, entry.bytes, entry)), Buffer.alloc(1024, 0)]);
+  const archivePath = join(files.root, "hostile.tar");
+  await writeFile(archivePath, archive);
+  const binding = JSON.parse(packaged.outputs.bindingText);
+  binding.archive.sha256 = digest(archive);
+  binding.archive.size = archive.byteLength;
+  const bindingPath = join(files.root, "hostile.binding.json");
+  await writeFile(bindingPath, `${JSON.stringify(binding, null, 2)}\n`);
+  return { archive: archivePath, binding: bindingPath, digest: digest(archive) };
+}
+
+// The location-independent part of a packaged output set, for byte comparisons.
+function comparable({ archive, sidecar, bindingText }) {
+  return { archive, sidecar, bindingText };
+}
+
+async function editedBinding(files, outputs, edit) {
+  const binding = JSON.parse(outputs.bindingText);
+  edit(binding);
+  const path = join(files.root, "edited.binding.json");
+  await writeFile(path, `${JSON.stringify(binding, null, 2)}\n`);
+  return path;
+}
+
+test("packaging turns a verified delivery set into one deterministic ustar archive, sidecar and binding that a recipient can verify and unpack exactly", async () => {
+  const files = await fixture();
+  try {
+    const first = await stagedAndPackaged(files, join(files.root, "out", "pkg-1"));
+    assert.match(first.packaged.stderr, /packaged 20 files \(\d+ bytes\) as .*\/pkg-1\/fixture-delivery-materials\.tar \(\d+ bytes, sha256:[a-f0-9]{64}, ustar, 28 members, mtime 946684800, bsdtar [^)]+\); binding fixture-delivery-materials\.binding\.json sha256:[a-f0-9]{64}; source commit 5{40}; upstream local-fixture \(NOT authoritative\), crates local-fixture \(NOT authoritative\); acquisition NOT authoritative; unresolved notices 1; not a source offer, not a release asset, not legal clearance/u);
+    assert.deepEqual(await listDirectory(join(files.root, "out")), ["fixture-delivery-materials", "pkg-1"], "no staging directory remains");
+    const { archive, sidecar, binding, bindingText } = first.outputs;
+    // Sidecar: GNU coreutils shape over the archive bytes.
+    assert.equal(sidecar, `${digest(archive)}  ${ARCHIVE_NAME}\n`);
+    // Archive: exactly the planned members, in order, and nothing else.
+    assert.deepEqual(listTar(first.outputs.archivePath), EXPECTED_LISTING);
+    assert.equal(archive.byteLength % 512, 0, "whole-block ustar stream");
+    assert.equal(archive.subarray(257, 262).toString("latin1"), "ustar");
+    // Binding: exact source commit, cohort, tracked digests, delivery inventory and archive identity.
+    assert.equal(binding.schemaVersion, 1);
+    assert.equal(binding.bindingType, "fulmar-libvips-delivery-materials-archive-binding");
+    assert.equal(binding.sourceCommit, PACKAGE_SOURCE_COMMIT);
+    assert.equal(binding.component.id, "combined-binary");
+    const { provenanceRecord: _provenanceRecord, ...validatedBinary } = files.crateManifest.binary;
+    assert.deepEqual(binding.binary, validatedBinary, "the validated binary record, as the manifests carry it");
+    assert.equal(binding.trackedBindings.provenanceRecord.sha256, digest(await readFile(files.provenancePath)));
+    assert.equal(binding.trackedBindings.sourceMaterials.sha256, digest(await readFile(join(files.config, "source-manifest.json"))));
+    assert.equal(binding.trackedBindings.rustCrateMaterials.sha256, digest(await readFile(join(files.config, "crate-manifest.json"))));
+    assert.equal(binding.trackedBindings.rustNoticeMaterials.sha256, digest(await readFile(join(files.config, "notice-materials.json"))));
+    assert.equal(binding.trackedBindings.accompanyingDocumentation.sha256, digest(Buffer.from(files.acknowledgements)));
+    assert.deepEqual(binding.acquisition, {
+      upstreamSource: { transport: "local-fixture", authoritative: false, itemCount: 3, totalBytes: files.sourceManifest.items.reduce((total, item) => total + item.size, 0) },
+      rustCrates: { transport: "local-fixture", authoritative: false, itemCount: 3, totalBytes: files.crateManifest.items.reduce((total, item) => total + item.size, 0) }
+    }, "fixture provenance is carried forward as NOT authoritative");
+    assert.equal(binding.status.dylibIncorporation, "unverified");
+    assert.equal(binding.deliverySet.rootDirectory, ROOT_NAME);
+    assert.equal(binding.deliverySet.fileCount, 20);
+    assert.deepEqual(binding.deliverySet.files, EXPECTED_FILES.map((path) => ({ path, size: first.tree.get(path).byteLength, sha256: digest(first.tree.get(path)) })));
+    assert.equal(binding.deliverySet.totalBytes, EXPECTED_FILES.reduce((total, path) => total + first.tree.get(path).byteLength, 0));
+    assert.equal(binding.deliverySet.inventory.sha256, digest(first.tree.get("DELIVERY_INVENTORY.json")));
+    assert.equal(binding.deliverySet.statusRecord.sha256, digest(first.tree.get("DELIVERY_STATUS.md")));
+    assert.equal(binding.deliverySet.checksumList.sha256, digest(first.tree.get("SHA256SUMS")));
+    assert.deepEqual({ ...binding.archive, metadata: undefined }, { fileName: ARCHIVE_NAME, format: "ustar", compression: "none", size: archive.byteLength, sha256: digest(archive), memberCount: 28, directoryCount: 8, fileCount: 20, metadata: undefined, sidecar: { fileName: SIDECAR_NAME, format: "sha256sum" } });
+    assert.deepEqual({ ...binding.archive.metadata, toolVersion: undefined, createOptions: undefined }, { uid: 0, gid: 0, uname: "", gname: "", mtimeEpochSeconds: ARCHIVE_MTIME, fileMode: "0600", directoryMode: "0700", tool: TAR, toolVersion: undefined, createOptions: undefined });
+    assert.match(binding.archive.metadata.toolVersion, /^bsdtar /u);
+    assert.match(binding.purpose, /not legal clearance/u);
+    assert.doesNotMatch(bindingText, new RegExp(files.root.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"), "no private absolute path is recorded");
+    assert.doesNotMatch(bindingText, /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/u, "no generation timestamp is recorded");
+    assert.doesNotMatch(bindingText, /cleared|compliant|legally (?:sufficient|satisfied)/iu);
+    // The stager's exported verifier returns the state the packager builds on.
+    const inProcess = await verifyDeliverySetInProcess(files.provenancePath, files.destination);
+    assert.equal(inProcess.expected.size, 20);
+    assert.deepEqual([...inProcess.expected.keys()].sort(), EXPECTED_FILES);
+    assert.equal(inProcess.inventory.inventoryType, "fulmar-libvips-delivery-materials");
+    assert.equal(inProcess.inventorySHA256, digest(first.tree.get("DELIVERY_INVENTORY.json")));
+    assert.equal(inProcess.statusSHA256, digest(first.tree.get("DELIVERY_STATUS.md")));
+    assert.equal(inProcess.sumsSHA256, digest(first.tree.get("SHA256SUMS")));
+    assert.equal(inProcess.inputs.crates.noticeMaterials.summary.unresolved.length, 1);
+    // Inputs are preserved byte-for-byte and still verify.
+    assert.deepEqual(await walk(files.destination), first.tree);
+    assert.equal(verify(files).status, 0);
+    // Determinism: an independent later staging (different input mtimes) packages to identical bytes.
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 1100));
+    await mkdir(join(files.root, "second"), { mode: 0o700 });
+    const secondSet = join(files.root, "second", ROOT_NAME);
+    assert.equal(stage(files, secondSet).status, 0);
+    const second = packageSet(files, join(files.root, "second", "pkg-2"), { deliveryDirectory: secondSet });
+    assert.equal(second.status, 0, second.stderr);
+    const secondOutputs = await packagedOutputs(join(files.root, "second", "pkg-2"));
+    assert.deepEqual(secondOutputs.archive, archive, "archive bytes are identical across independent packagings");
+    assert.equal(secondOutputs.sidecar, sidecar);
+    assert.equal(secondOutputs.bindingText, bindingText);
+    // Recipient verification with the externally supplied digest recovers the exact tree.
+    const unpack = join(files.root, "out", "unpack-1");
+    const verified = verifyArchive(files, { archive: first.outputs.archivePath, binding: first.outputs.bindingPath, digest: digest(archive), unpack });
+    assert.equal(verified.status, 0, verified.stderr);
+    assert.match(verified.stderr, /verified archive .*\/pkg-1\/fixture-delivery-materials\.tar \(\d+ bytes, sha256:[a-f0-9]{64}\) against source commit 5{40} and binding .*fixture-delivery-materials\.binding\.json \(sha256:[a-f0-9]{64}\); unpacked 20 files to .*\/unpack-1\/fixture-delivery-materials and re-verified them against the tracked manifests; upstream local-fixture \(NOT authoritative\), crates local-fixture \(NOT authoritative\); acquisition NOT authoritative; unresolved notices 1; dylib incorporation unverified; archive tool bsdtar [^;]+; not a legal conclusion/u);
+    assert.deepEqual(await listDirectory(join(files.root, "out")), ["fixture-delivery-materials", "pkg-1", "unpack-1"], "no unpack staging remains");
+    assert.deepEqual(await listDirectory(unpack), [ROOT_NAME]);
+    assert.deepEqual(await walk(join(unpack, ROOT_NAME)), first.tree, "the unpacked tree equals the staged set byte-for-byte");
+    assert.equal(verify(files, join(unpack, ROOT_NAME)).status, 0, "the stager verifier accepts the unpacked root");
+  } finally {
+    await rm(files.root, { recursive: true, force: true });
+  }
+});
+
+test("packaging fails closed, publishes nothing and preserves the delivery set and existing outputs", async (context) => {
+  const cases = [
+    { name: "packaging output directory already exists", mutate: async (files) => mkdir(join(files.root, "out", "pkg"), { mode: 0o700 }), message: /output directory already exists/u, keeps: ["pkg"] },
+    { name: "packaging output parent writable by other users", mutate: async (files) => chmod(join(files.root, "out"), 0o777), message: /writable by other users; a private destination is required/u },
+    { name: "packaging output parent reached through a symbolic link", mutate: async (files) => symlink(join(files.root, "out"), join(files.root, "linked-out")), output: (files) => join(files.root, "linked-out", "pkg"), message: /must not traverse aliases or symbolic links|is not a real directory/u },
+    { name: "packaging output inside the delivery set", output: (files) => join(files.destination, "pkg"), message: /output directory must not overlap the delivery directory/u },
+    { name: "packaging with a malformed source commit", sourceCommit: "5f2e6a6", message: /source commit must be one full 40-hex commit/u },
+    { name: "packaging a delivery set with the wrong name", mutate: async (files) => rename(files.destination, join(files.root, "out", "other-name")), deliveryDirectory: (files) => join(files.root, "out", "other-name"), message: /destination must be named fixture-delivery-materials/u, keeps: ["other-name"], renamed: true },
+    {
+      name: "packaging a delivery set with a substituted archive",
+      mutate: async (files) => {
+        const path = join(files.destination, "rust-crates", "fixture-rust-materials", "delta-0.1.0.crate");
+        const bytes = Buffer.from(await readFile(path));
+        bytes[bytes.byteLength - 1] ^= 0x01;
+        await writeFile(path, bytes);
+      },
+      message: /SHA-256 drifted: delta-0\.1\.0\.crate/u
+    },
+    { name: "packaging a delivery set with a deleted file", mutate: async (files) => rm(join(files.destination, "notices", "rust-external", "gamma-2.0.0-external-gamma-LICENSE")), message: /missing a listed file|ENOENT/u },
+    { name: "packaging a delivery set with an unlisted file", mutate: async (files) => writeFile(join(files.destination, "README.md"), "extra\n"), message: /unlisted file: README\.md/u },
+    {
+      name: "packaging a delivery set with a symbolic link",
+      mutate: async (files) => {
+        const path = join(files.destination, "notices", "ACKNOWLEDGEMENTS.md");
+        const target = join(files.root, "ack-target.md");
+        await writeFile(target, await readFile(path));
+        await unlink(path);
+        await symlink(target, path);
+      },
+      message: /carries a symbolic link: notices\/ACKNOWLEDGEMENTS\.md/u
+    },
+    {
+      name: "packaging after the tracked crate manifest changed",
+      mutate: async (files) => {
+        files.crateManifest.unretained.push({ id: "later-note", detail: "Fixture: a later edit to the tracked manifest." });
+        await files.saveCrateManifest();
+      },
+      message: /inventory does not describe this manifest/u
+    },
+    {
+      name: "packaging a delivery set whose inventory was edited",
+      mutate: async (files) => {
+        const path = join(files.destination, "DELIVERY_INVENTORY.json");
+        const inventory = JSON.parse(await readFile(path, "utf8"));
+        inventory.status.dylibIncorporation = "verified";
+        await writeFile(path, `${JSON.stringify(inventory, null, 2)}\n`);
+      },
+      message: /delivery inventory drifted from the verified inputs/u
+    }
+  ];
+  for (const current of cases) {
+    await context.test(current.name, async () => {
+      const files = await fixture();
+      try {
+        assert.equal(stage(files).status, 0);
+        const before = await walk(files.destination);
+        const sibling = join(files.root, "out", "unrelated-output");
+        await mkdir(sibling, { mode: 0o700 });
+        await writeFile(join(sibling, "keep.txt"), "keep\n");
+        if (current.mutate) await current.mutate(files);
+        const output = current.output ? current.output(files) : join(files.root, "out", "pkg");
+        const result = packageSet(files, output, { sourceCommit: current.sourceCommit, deliveryDirectory: current.deliveryDirectory?.(files) });
+        assert.notEqual(result.status, 0, `${current.name} must fail closed`);
+        assert.match(result.stderr, current.message);
+        const remaining = await listDirectory(join(files.root, "out"));
+        assert.deepEqual(remaining, [...(current.renamed ? [] : ["fixture-delivery-materials"]), "unrelated-output", ...(current.keeps ?? [])].sort(), "no output or staging directory remains");
+        assert.equal(await readFile(join(sibling, "keep.txt"), "utf8"), "keep\n");
+        if (current.keeps && !current.renamed) assert.deepEqual(await listDirectory(join(files.root, "out", "pkg")), [], "a pre-existing output directory is not touched");
+        if (!current.mutate) assert.deepEqual(await walk(files.destination), before, "the delivery set is untouched");
+      } finally {
+        await rm(files.root, { recursive: true, force: true });
+      }
+    });
+  }
+  await context.test("malformed packaging invocations are refused", async () => {
+    const files = await fixture();
+    try {
+      assert.equal(stage(files).status, 0);
+      for (const args of [
+        [],
+        ["package", files.provenancePath, files.destination, join(files.root, "out", "pkg")],
+        ["package", files.provenancePath, files.destination, join(files.root, "out", "pkg"), PACKAGE_SOURCE_COMMIT, "extra"],
+        ["verify-archive", files.provenancePath, join(files.root, "x.tar"), join(files.root, "x.json"), "0".repeat(64), PACKAGE_SOURCE_COMMIT],
+        ["pack", files.provenancePath, files.destination, join(files.root, "out", "pkg"), PACKAGE_SOURCE_COMMIT],
+        ["package", files.provenancePath, files.destination, join(files.root, "out", "pkg"), "--source-commit"]
+      ]) {
+        const result = runPackaging(args);
+        assert.notEqual(result.status, 0, JSON.stringify(args));
+        assert.match(result.stderr, /usage:/u, JSON.stringify(args));
+      }
+      assert.deepEqual(await listDirectory(join(files.root, "out")), ["fixture-delivery-materials"]);
+    } finally {
+      await rm(files.root, { recursive: true, force: true });
+    }
+  });
+});
+
+test("archive verification rejects a wrong digest, altered or truncated bytes, a mismatched binding, a wrong cohort, unsafe or extra members and an unsafe unpack destination without leaving an unpacked tree", async (context) => {
+  const cases = [
+    { name: "wrong expected digest", arrange: async () => ({ digest: "0".repeat(64) }), message: /archive SHA-256 is [a-f0-9]{64}, not the expected 0{64}; nothing was extracted/u },
+    {
+      name: "truncated archive with the original binding",
+      arrange: async (files, packaged) => {
+        const truncated = packaged.outputs.archive.subarray(0, 10240);
+        const archive = join(files.root, "truncated.tar");
+        await writeFile(archive, truncated);
+        return { archive, digest: digest(truncated) };
+      },
+      message: /binding archive digest differs from the externally supplied expected digest/u
+    },
+    {
+      name: "truncated archive with a consistent binding",
+      arrange: async (files, packaged) => {
+        const truncated = packaged.outputs.archive.subarray(0, 10240);
+        const archive = join(files.root, "truncated.tar");
+        await writeFile(archive, truncated);
+        const binding = await editedBinding(files, packaged.outputs, (value) => { value.archive.sha256 = digest(truncated); value.archive.size = truncated.byteLength; });
+        return { archive, binding, digest: digest(truncated) };
+      },
+      message: /archive ends without end-of-archive blocks|archive member \d+ \(.*\) payload or padding is truncated/u
+    },
+    {
+      name: "archive member payload altered with a consistent binding",
+      arrange: async (files, packaged) => {
+        const altered = Buffer.from(packaged.outputs.archive);
+        // Flip one byte inside the opaque upstream archive payload (lib-1.0.tar.gz), leaving every header intact.
+        const payload = altered.indexOf("fixture archive ");
+        assert.ok(payload > 0);
+        altered[payload + 20] ^= 0x01;
+        const archive = join(files.root, "altered.tar");
+        await writeFile(archive, altered);
+        const binding = await editedBinding(files, packaged.outputs, (value) => { value.archive.sha256 = digest(altered); });
+        return { archive, binding, digest: digest(altered) };
+      },
+      message: /SHA-256 drifted: lib-1\.0\.tar\.gz/u,
+      postExtraction: true
+    },
+    { name: "wrong source commit for the trusted checkout", arrange: async () => ({ sourceCommit: OTHER_SOURCE_COMMIT }), message: /binding names source commit 5{40}, not the trusted checkout's 7{40}/u },
+    { name: "binding delivery file digest edited", arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.deliverySet.files[5].sha256 = "1".repeat(64); }) }), message: /binding deliverySet does not equal the verified delivery inventory/u, postExtraction: true },
+    { name: "binding tracked manifest digest edited", arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.trackedBindings.rustNoticeMaterials.sha256 = "2".repeat(64); }) }), message: /binding trackedBindings rustNoticeMaterials digest does not match the trusted checkout/u },
+    { name: "binding binary cohort edited", arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.binary.version = "1.0.1"; }) }), message: /binding binary cohort does not match the trusted crate manifest/u },
+    { name: "binding component edited", arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.component.openObligations = []; }) }), message: /binding component does not match the trusted provenance record/u },
+    { name: "binding metadata relabelled", arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.archive.metadata.uid = 501; }) }), message: /binding archive metadata does not describe the deterministic ustar contract/u },
+    { name: "binding not JSON", arrange: async (files) => { const binding = join(files.root, "broken.binding.json"); await writeFile(binding, "{\n"); return { binding }; }, message: /binding is not valid JSON/u },
+    {
+      name: "tracked crate manifest changed after packaging",
+      arrange: async (files) => {
+        files.crateManifest.unretained.push({ id: "later-note", detail: "Fixture: a later edit to the tracked manifest." });
+        await files.saveCrateManifest();
+        return {};
+      },
+      message: /binding trackedBindings rustCrateMaterials digest does not match the trusted checkout/u
+    },
+    {
+      name: "archive with an extra member",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => [...entries, { name: `${ROOT_NAME}/EXTRA`, bytes: Buffer.from("extra\n"), type: "0" }]),
+      message: /archive member 28 \("fixture-delivery-materials\/EXTRA"\) is beyond the 28 planned members/u
+    },
+    {
+      name: "archive with a member escaping the root",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry) => (entry.name === `${ROOT_NAME}/notices/ACKNOWLEDGEMENTS.md` ? { ...entry, name: "../escape" } : entry))),
+      message: /archive member 10 carries an unsafe member name "\.\.\/escape"/u
+    },
+    {
+      name: "archive with a member out of the planned order",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => { const swapped = [...entries]; [swapped[1], swapped[2]] = [swapped[2], swapped[1]]; return swapped; }),
+      message: /archive member 1 is "fixture-delivery-materials\/DELIVERY_STATUS\.md", not the planned "fixture-delivery-materials\/DELIVERY_INVENTORY\.json"/u
+    },
+    {
+      name: "archive with a listed file replaced by a symbolic link",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry) => (entry.name === `${ROOT_NAME}/notices/ACKNOWLEDGEMENTS.md` ? { name: entry.name, bytes: Buffer.alloc(0), type: "2", linkName: "/etc/hosts" } : entry))),
+      message: /archive member 10 \("fixture-delivery-materials\/notices\/ACKNOWLEDGEMENTS\.md"\) has unsupported type "2"; only regular files and directories are accepted/u
+    },
+    {
+      name: "archive with a listed file replaced by a hard link",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry) => (entry.name === `${ROOT_NAME}/notices/ACKNOWLEDGEMENTS.md` ? { name: entry.name, bytes: Buffer.alloc(0), type: "1", linkName: `${ROOT_NAME}/DELIVERY_STATUS.md` } : entry))),
+      message: /archive member 10 \("fixture-delivery-materials\/notices\/ACKNOWLEDGEMENTS\.md"\) has unsupported type "1"/u
+    },
+    {
+      name: "archive with a directory member stored without traversal rights",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry) => (entry.name === `${ROOT_NAME}/notices/` ? { ...entry, mode: "0000600" } : entry))),
+      message: /archive member 9 \("fixture-delivery-materials\/notices\/"\) has mode 0600, not the required 0700/u
+    },
+    {
+      name: "archive with a file member stored with permissive mode",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry) => (entry.name === `${ROOT_NAME}/DELIVERY_STATUS.md` ? { ...entry, mode: "0000755" } : entry))),
+      message: /archive member 2 \("fixture-delivery-materials\/DELIVERY_STATUS\.md"\) has mode 0755, not the required 0600/u
+    },
+    // R2 — the actual stream format is enforced before extraction.
+    {
+      name: "compressed stream named .tar with a binding declaring compression none",
+      arrange: async (files, packaged) => {
+        const compressed = gzipSync(packaged.outputs.archive);
+        const archive = join(files.root, "compressed.tar");
+        await writeFile(archive, compressed);
+        const binding = await editedBinding(files, packaged.outputs, (value) => { value.archive.sha256 = digest(compressed); value.archive.size = compressed.byteLength; });
+        return { archive, binding, digest: digest(compressed) };
+      },
+      message: /archive is a compressed stream \(gzip\); only a plain ustar stream is accepted/u
+    },
+    {
+      name: "member declaring a size larger than the bound inventory size",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry) => (entry.name === `${ROOT_NAME}/DELIVERY_STATUS.md` ? { ...entry, declaredSize: entry.bytes.byteLength + 1 } : entry))),
+      message: /archive member 2 \("fixture-delivery-materials\/DELIVERY_STATUS\.md"\) declares \d+ bytes, not the bound inventory size \d+/u
+    },
+    {
+      name: "non-zero bytes after the end-of-archive blocks",
+      arrange: async (files, packaged) => {
+        const hostile = await hostileArchive(files, packaged, (entries) => entries);
+        const bytes = Buffer.concat([await readFile(hostile.archive), Buffer.alloc(512, 0x41)]);
+        await writeFile(hostile.archive, bytes);
+        const binding = await editedBinding(files, packaged.outputs, (value) => { value.archive.sha256 = digest(bytes); value.archive.size = bytes.byteLength; });
+        return { archive: hostile.archive, binding, digest: digest(bytes) };
+      },
+      message: /archive carries non-zero bytes after its end-of-archive blocks/u
+    },
+    {
+      name: "pax extended header record",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => [{ name: "PaxHeaders/fixture", bytes: Buffer.from("30 mtime=946684800.0\n"), type: "x" }, ...entries]),
+      message: /archive member 0 \("PaxHeaders\/fixture"\) has unsupported type "x"/u
+    },
+    {
+      name: "GNU sparse member",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry) => (entry.name === `${ROOT_NAME}/DELIVERY_STATUS.md` ? { ...entry, type: "S" } : entry))),
+      message: /archive member 2 \("fixture-delivery-materials\/DELIVERY_STATUS\.md"\) has unsupported type "S"/u
+    },
+    {
+      name: "GNU tar magic instead of POSIX ustar",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry, index) => (index === 0 ? { ...entry, magic: "ustar ", version: " \0" } : entry))),
+      message: /archive member 0 is not a POSIX ustar header \(magic "ustar ", version " \\u0000"\); GNU, pax and other tar variants are refused/u
+    },
+    {
+      name: "base-256 size encoding",
+      arrange: async (files, packaged) => hostileArchive(files, packaged, (entries) => entries.map((entry) => {
+        if (entry.name !== `${ROOT_NAME}/DELIVERY_STATUS.md`) return entry;
+        const sizeField = Buffer.alloc(12, 0);
+        sizeField[0] = 0x80;
+        sizeField.writeUIntBE(entry.bytes.byteLength, 6, 6);
+        return { ...entry, sizeField };
+      })),
+      message: /archive member 2 carries a non-octal size field; base-256 and other extended encodings are refused/u
+    },
+    // R3 — the whole factual binding is validated, not only its key names.
+    {
+      name: "binding status replaced by a string (review witness shape)",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.status = "SYNTHETIC REVIEW PROBE: this is not the verified delivery status object"; }) }),
+      message: /binding status has an unexpected shape/u
+    },
+    {
+      name: "binding status promoting dylib incorporation",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.status.dylibIncorporation = "verified"; }) }),
+      message: /binding status dylibIncorporation must remain unverified/u
+    },
+    {
+      name: "binding status understating the unresolved notices",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.status.unresolvedNoticeCount = 0; }) }),
+      message: /binding status unresolvedNoticeCount 0 does not match the trusted notice-materials manifest \(1\)/u
+    },
+    {
+      name: "binding status dropping open obligations",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.status.openObligations = ["legal-clearance"]; }) }),
+      message: /binding status openObligations do not match the trusted provenance record/u
+    },
+    {
+      name: "binding acquisition relabelled authoritative for a fixture transport",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.acquisition.upstreamSource.authoritative = true; }) }),
+      message: /binding acquisition upstreamSource authoritative flag contradicts its transport/u
+    },
+    {
+      name: "binding acquisition item count edited",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.acquisition.rustCrates.itemCount = 4; }) }),
+      message: /binding acquisition rustCrates itemCount 4 does not match the trusted manifest \(3\)/u
+    },
+    {
+      name: "binding acquisition claiming an HTTPS transport for fixture material",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.acquisition.upstreamSource.transport = "https"; value.acquisition.upstreamSource.authoritative = true; }) }),
+      message: /binding acquisition does not match the verified material set \(upstream local-fixture, NOT authoritative\)/u,
+      postExtraction: true
+    },
+    {
+      name: "binding sidecar declaration edited",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.archive.sidecar.fileName = "SHA256SUMS.txt"; }) }),
+      message: /binding archive sidecar must declare fixture-delivery-materials\.tar\.sha256 in sha256sum format/u
+    },
+    {
+      name: "binding inventory record path edited",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.deliverySet.inventory.path = "INVENTORY.json"; }) }),
+      message: /binding deliverySet inventory must name DELIVERY_INVENTORY\.json/u
+    },
+    {
+      name: "binding inventory record digest disagreeing with its file entry",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.deliverySet.statusRecord.sha256 = "3".repeat(64); }) }),
+      message: /binding deliverySet statusRecord digest disagrees with its file entry/u
+    },
+    {
+      name: "binding archive tool edited",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.archive.metadata.tool = "/opt/homebrew/bin/gtar"; }) }),
+      message: /binding archive metadata does not describe the deterministic ustar contract/u
+    },
+    {
+      name: "binding create options edited",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.archive.metadata.createOptions = value.archive.metadata.createOptions.filter((option) => option !== "--no-xattrs"); }) }),
+      message: /binding archive metadata does not describe the deterministic ustar contract/u
+    },
+    {
+      name: "binding statement asserting clearance",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.statement = "This archive is legally sufficient corresponding source and the binary is cleared for release."; }) }),
+      message: /binding must not read as a legal conclusion/u
+    },
+    {
+      name: "binding component lockfile path edited",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.component.lockfilePath = "node_modules/@fixture/other"; }) }),
+      message: /binding component does not match the trusted provenance record/u
+    },
+    {
+      name: "binding recording another archive tool version is reported, not rejected",
+      arrange: async (files, packaged) => ({ binding: await editedBinding(files, packaged.outputs, (value) => { value.archive.metadata.toolVersion = "bsdtar 9.9.9 - libarchive 9.9.9 (fixture)"; }) }),
+      message: /binding recorded bsdtar 9\.9\.9 - libarchive 9\.9\.9 \(fixture\); byte-identical re-packaging is only claimed for that build/u,
+      succeeds: true
+    },
+    { name: "unpack directory already exists", arrange: async (files) => { await mkdir(join(files.root, "out", "unpack"), { mode: 0o700 }); return {}; }, message: /unpack directory already exists/u, keepsUnpack: true },
+    { name: "unpack directory parent writable by other users", arrange: async (files) => { await mkdir(join(files.root, "loose"), { mode: 0o777 }); await chmod(join(files.root, "loose"), 0o777); return { unpack: join(files.root, "loose", "unpack") }; }, message: /writable by other users; a private destination is required/u }
+  ];
+  for (const current of cases) {
+    await context.test(current.name, async () => {
+      const files = await fixture();
+      try {
+        const packaged = await stagedAndPackaged(files);
+        const override = await current.arrange(files, packaged);
+        const unpack = override.unpack ?? join(files.root, "out", "unpack");
+        const result = verifyArchive(files, {
+          archive: override.archive ?? packaged.outputs.archivePath,
+          binding: override.binding ?? packaged.outputs.bindingPath,
+          digest: override.digest ?? digest(packaged.outputs.archive),
+          sourceCommit: override.sourceCommit,
+          unpack
+        });
+        if (current.succeeds) {
+          assert.equal(result.status, 0, result.stderr);
+          assert.match(result.stderr, current.message);
+          assert.deepEqual(await listDirectory(join(files.root, "out")), ["fixture-delivery-materials", "pkg", "unpack"]);
+          assert.deepEqual(await walk(join(unpack, ROOT_NAME)), packaged.tree);
+        } else {
+          assert.notEqual(result.status, 0, `${current.name} must fail`);
+          assert.match(result.stderr, current.message);
+          // The extraction marker is written immediately before the system tar
+          // runs; a rejection that must happen before extraction leaves no marker.
+          if (current.postExtraction) {
+            assert.match(result.stderr, /extracting validated snapshot/u, `${current.name} is only detectable after extraction`);
+          } else {
+            assert.doesNotMatch(result.stderr, /extracting validated snapshot/u, `${current.name} must be rejected before extraction`);
+          }
+          const remaining = await listDirectory(join(files.root, "out"));
+          assert.deepEqual(remaining, ["fixture-delivery-materials", "pkg", ...(current.keepsUnpack ? ["unpack"] : [])], "no unpacked tree or unpack staging remains");
+          if (current.keepsUnpack) assert.deepEqual(await listDirectory(unpack), [], "a pre-existing unpack directory is not touched");
+        }
+        // The packaged outputs themselves are never modified by verification.
+        assert.deepEqual(await packagedOutputs(packaged.output), packaged.outputs);
+      } finally {
+        await rm(files.root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+
+// In-process observer hooks of the packaging tool (function values only; the
+// CLI passes none and no environment variable can enable them). They let these
+// tests interrupt or observe the tool at exact, deterministic points.
+function driveInterruptedPackaging(files, output) {
+  const script = [
+    `import { packageArchive } from ${JSON.stringify(packagingTool)};`,
+    `await packageArchive(${JSON.stringify(files.provenancePath)}, ${JSON.stringify(files.destination)}, ${JSON.stringify(output)}, ${JSON.stringify(PACKAGE_SOURCE_COMMIT)}, {`,
+    "  beforePublish: async ({ publish }) => {",
+    "    const { readdirSync } = await import(\"node:fs\");",
+    "    process.stderr.write(`INTERRUPTION POINT beforePublish: ${JSON.stringify(readdirSync(publish).sort())}\\n`);",
+    "    process.kill(process.pid, \"SIGKILL\");",
+    "    await new Promise(() => {});",
+    "  }",
+    "});",
+    "process.stderr.write(\"UNEXPECTED: packaging completed\\n\");"
+  ].join("\n");
+  return spawnSync(process.execPath, ["--input-type=module", "-e", script], { cwd: project, encoding: "utf8", timeout: 120_000 });
+}
+
+test("an interruption at the exact pre-publication point publishes nothing partial, leaves the delivery set intact and a later packaging succeeds byte-for-byte", async (context) => {
+  const files = await fixture();
+  try {
+    assert.equal(stage(files).status, 0);
+    const before = await walk(files.destination);
+    const reference = join(files.root, "out", "pkg-reference");
+    assert.equal(packageSet(files, reference).status, 0);
+    const referenceOutputs = await packagedOutputs(reference);
+    const output = join(files.root, "out", "pkg-interrupted");
+    // Deterministic: the tool is killed by its own beforePublish observer after
+    // the archive, binding and sidecar exist in staging and before the rename.
+    const interrupted = driveInterruptedPackaging(files, output);
+    assert.equal(interrupted.signal, "SIGKILL", `expected SIGKILL at the pre-publication point: ${interrupted.stderr}`);
+    assert.equal(interrupted.status, null);
+    assert.match(interrupted.stderr, /INTERRUPTION POINT beforePublish: \["fixture-delivery-materials\.binding\.json","fixture-delivery-materials\.tar","fixture-delivery-materials\.tar\.sha256"\]/u, "all three outputs were staged when the interruption happened");
+    assert.doesNotMatch(interrupted.stderr, /UNEXPECTED|packaged 20 files/u, "the tool never reached publication");
+    const remaining = await listDirectory(join(files.root, "out"));
+    const leftovers = remaining.filter((name) => name.startsWith(".pkg-interrupted.staging."));
+    context.diagnostic(`interrupted by SIGKILL at beforePublish; output ${remaining.includes("pkg-interrupted") ? "PUBLISHED (defect)" : "absent"}; identifiable staging leftovers ${leftovers.length}`);
+    assert.equal(leftovers.length, 1, "exactly this invocation's identifiable staging directory remains");
+    assert.deepEqual(remaining.filter((name) => !name.startsWith(".")), ["fixture-delivery-materials", "pkg-reference"], "no partial or complete output directory exists");
+    // The leftover is a recognisable staging tree, never a look-alike output.
+    assert.deepEqual((await readdir(join(files.root, "out", leftovers[0]))).sort(), ["check", "members.list", "payload", "publish"]);
+    await rm(join(files.root, "out", leftovers[0]), { recursive: true, force: true });
+    assert.deepEqual(await walk(files.destination), before, "the delivery set is untouched");
+    assert.equal(verify(files).status, 0);
+    const after = join(files.root, "out", "pkg-after");
+    const rerun = packageSet(files, after);
+    assert.equal(rerun.status, 0, rerun.stderr);
+    assert.deepEqual(comparable(await packagedOutputs(after)), comparable(referenceOutputs), "a later packaging reproduces the reference bytes");
+  } finally {
+    await rm(files.root, { recursive: true, force: true });
+  }
+});
+
+test("archive verification consumes its own admitted snapshot, never the external path, and fails closed when the input changes while it is snapshotted", async (context) => {
+  await context.test("external archive replaced after snapshot admission: the verified snapshot is what gets extracted", async () => {
+    const files = await fixture();
+    try {
+      const packaged = await stagedAndPackaged(files);
+      const external = join(files.root, "download.tar");
+      await writeFile(external, packaged.outputs.archive);
+      const originalDigest = digest(packaged.outputs.archive);
+      // A different, internally consistent archive that would extract cleanly on
+      // its own (an extra member) — if the external path were reopened, this is
+      // what tar would see.
+      const swapped = await hostileArchive(files, packaged, (entries) => [...entries, { name: `${ROOT_NAME}/EXTRA`, bytes: Buffer.from("extra\n"), type: "0" }]);
+      const swappedBytes = await readFile(swapped.archive);
+      const unpack = join(files.root, "out", "unpack");
+      const observed = {};
+      const result = await verifyArchiveInProcess(files.provenancePath, external, packaged.outputs.bindingPath, originalDigest, PACKAGE_SOURCE_COMMIT, unpack, {
+        afterSnapshotAdmitted: async ({ snapshotPath, snapshotSHA256, externalPath }) => {
+          observed.admitted = { snapshotPath, snapshotSHA256, externalPath };
+          await writeFile(externalPath, swappedBytes);
+          observed.externalAfterSwap = digest(await readFile(externalPath));
+        },
+        beforeExtraction: async ({ snapshotPath }) => {
+          observed.extractedFrom = snapshotPath;
+          observed.extractedDigest = digest(await readFile(snapshotPath));
+        }
+      });
+      assert.equal(observed.admitted.externalPath, external);
+      assert.equal(observed.admitted.snapshotSHA256, originalDigest);
+      assert.ok(observed.admitted.snapshotPath.startsWith(`${join(files.root, "out")}/.unpack.unpack.`), `the snapshot lives in invocation-owned staging: ${observed.admitted.snapshotPath}`);
+      assert.equal(observed.externalAfterSwap, digest(swappedBytes), "the external input really was replaced before extraction");
+      assert.equal(observed.extractedFrom, observed.admitted.snapshotPath, "extraction consumed the admitted snapshot path, not the external path");
+      assert.equal(observed.extractedDigest, originalDigest, "the bytes handed to extraction are the admitted, digest-checked bytes");
+      assert.equal(result.archiveSHA256, originalDigest);
+      assert.equal(result.snapshotSHA256, originalDigest);
+      assert.equal(result.extractedFrom, observed.admitted.snapshotPath);
+      assert.equal(result.fileCount, 20);
+      assert.deepEqual(await walk(join(unpack, ROOT_NAME)), packaged.tree, "the unpacked tree is the original set, not the swapped archive's");
+      assert.deepEqual(await listDirectory(join(files.root, "out")), ["fixture-delivery-materials", "pkg", "unpack"], "the snapshot staging was removed after publication");
+      assert.equal(digest(await readFile(external)), digest(swappedBytes), "the external file is left as the caller changed it; it is never written by the verifier");
+    } finally {
+      await rm(files.root, { recursive: true, force: true });
+    }
+  });
+  await context.test("external archive replaced while it is being snapshotted: rejected before extraction", async () => {
+    const files = await fixture();
+    try {
+      const packaged = await stagedAndPackaged(files);
+      const external = join(files.root, "download.tar");
+      await writeFile(external, packaged.outputs.archive);
+      const replacement = join(files.root, "replacement.tar");
+      await writeFile(replacement, Buffer.concat([packaged.outputs.archive, Buffer.alloc(512, 0)]));
+      const unpack = join(files.root, "out", "unpack");
+      let extractionReached = false;
+      await assert.rejects(verifyArchiveInProcess(files.provenancePath, external, packaged.outputs.bindingPath, digest(packaged.outputs.archive), PACKAGE_SOURCE_COMMIT, unpack, {
+        afterSnapshotOpened: async () => { await rename(replacement, external); },
+        beforeExtraction: async () => { extractionReached = true; }
+      }), /archive path changed before its bytes were read|archive changed while its bytes were read/u);
+      assert.equal(extractionReached, false, "nothing reached extraction");
+      assert.deepEqual(await listDirectory(join(files.root, "out")), ["fixture-delivery-materials", "pkg"], "no unpack directory or staging remains");
+    } finally {
+      await rm(files.root, { recursive: true, force: true });
+    }
+  });
 });

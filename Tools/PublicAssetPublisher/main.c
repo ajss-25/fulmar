@@ -23,6 +23,30 @@ static const char *const asset_names[] = {
     "static-security-summary.json"
 };
 
+// Only the explicit beta operations admit these three additional names. Their
+// exact spelling is checked against the tracked delivery-material provenance by
+// the native publisher fixture; callers cannot supply an extra-file allowlist.
+static const char *const beta_material_names[] = {
+    "sharp-libvips-1.3.3-delivery-materials.tar",
+    "sharp-libvips-1.3.3-delivery-materials.tar.sha256",
+    "sharp-libvips-1.3.3-delivery-materials.binding.json"
+};
+
+enum {
+    asset_capacity = sizeof(asset_names) / sizeof(asset_names[0])
+        + sizeof(beta_material_names) / sizeof(beta_material_names[0])
+};
+
+static size_t asset_count(const bool beta) {
+    return sizeof(asset_names) / sizeof(asset_names[0])
+        + (beta ? sizeof(beta_material_names) / sizeof(beta_material_names[0]) : 0);
+}
+
+static const char *asset_name(const size_t index) {
+    const size_t stable_count = sizeof(asset_names) / sizeof(asset_names[0]);
+    return index < stable_count ? asset_names[index] : beta_material_names[index - stable_count];
+}
+
 static int fail(const char *message) {
     (void)fprintf(stderr, "Atomic public-asset publication failed: %s\n", message);
     return 1;
@@ -33,10 +57,10 @@ static bool safe_name(const char *name) {
         && strcmp(name, "..") != 0 && strchr(name, '/') == NULL;
 }
 
-static int asset_index(const char *name) {
-    const size_t count = sizeof(asset_names) / sizeof(asset_names[0]);
+static int asset_index(const char *name, const bool beta) {
+    const size_t count = asset_count(beta);
     for (size_t index = 0; index < count; index += 1) {
-        if (strcmp(name, asset_names[index]) == 0) {
+        if (strcmp(name, asset_name(index)) == 0) {
             return (int)index;
         }
     }
@@ -83,7 +107,7 @@ static bool exact_private_staging(const struct stat *value) {
 }
 
 static int inspect_assets(const int staging_descriptor, const bool allow_partial,
-                          bool present[sizeof(asset_names) / sizeof(asset_names[0])]) {
+                          const bool beta, bool present[asset_capacity]) {
     const int enumeration_descriptor = dup(staging_descriptor);
     if (enumeration_descriptor < 0) {
         return -1;
@@ -100,7 +124,7 @@ static int inspect_assets(const int staging_descriptor, const bool allow_partial
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        const int index = asset_index(entry->d_name);
+        const int index = asset_index(entry->d_name, beta);
         if (index < 0 || present[(size_t)index]) {
             (void)closedir(directory);
             return -1;
@@ -140,7 +164,7 @@ static int inspect_assets(const int staging_descriptor, const bool allow_partial
     }
 
     if (!allow_partial) {
-        const size_t count = sizeof(asset_names) / sizeof(asset_names[0]);
+        const size_t count = asset_count(beta);
         for (size_t index = 0; index < count; index += 1) {
             if (!present[index]) {
                 return -1;
@@ -151,7 +175,7 @@ static int inspect_assets(const int staging_descriptor, const bool allow_partial
 }
 
 static int publish(const char *parent_path, const char *staging_name,
-                   const char *destination_name) {
+                   const char *destination_name, const bool beta) {
     if (!safe_name(staging_name) || !safe_name(destination_name)
         || strcmp(staging_name, destination_name) == 0) {
         return fail("unsafe publication name");
@@ -183,10 +207,10 @@ static int publish(const char *parent_path, const char *staging_name,
         O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
     );
     struct stat opened_staging_identity;
-    bool present[sizeof(asset_names) / sizeof(asset_names[0])] = { false };
+    bool present[asset_capacity] = { false };
     if (staging_descriptor < 0 || fstat(staging_descriptor, &opened_staging_identity) != 0
         || !same_identity(&staging_identity, &opened_staging_identity)
-        || inspect_assets(staging_descriptor, false, present) != 0
+        || inspect_assets(staging_descriptor, false, beta, present) != 0
         || fsync(staging_descriptor) != 0
         || !parent_path_still_matches(parent_path, &parent_identity)) {
         if (staging_descriptor >= 0) {
@@ -235,7 +259,7 @@ static bool parse_identity_component(const char *text, uint64_t *value) {
 }
 
 static int cleanup_staging(const char *parent_path, const char *staging_name,
-                           const char *device_text, const char *inode_text) {
+                           const char *device_text, const char *inode_text, const bool beta) {
     uint64_t expected_device;
     uint64_t expected_inode;
     if (!safe_name(staging_name)
@@ -264,10 +288,10 @@ static int cleanup_staging(const char *parent_path, const char *staging_name,
         O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
     );
     struct stat opened_identity;
-    bool present[sizeof(asset_names) / sizeof(asset_names[0])] = { false };
+    bool present[asset_capacity] = { false };
     if (staging_descriptor < 0 || fstat(staging_descriptor, &opened_identity) != 0
         || !same_identity(&staging_identity, &opened_identity)
-        || inspect_assets(staging_descriptor, true, present) != 0) {
+        || inspect_assets(staging_descriptor, true, beta, present) != 0) {
         if (staging_descriptor >= 0) {
             (void)close(staging_descriptor);
         }
@@ -275,9 +299,9 @@ static int cleanup_staging(const char *parent_path, const char *staging_name,
         return fail("cleanup refused an unreviewed staging tree");
     }
 
-    const size_t count = sizeof(asset_names) / sizeof(asset_names[0]);
+    const size_t count = asset_count(beta);
     for (size_t index = 0; index < count; index += 1) {
-        if (present[index] && unlinkat(staging_descriptor, asset_names[index], 0) != 0) {
+        if (present[index] && unlinkat(staging_descriptor, asset_name(index), 0) != 0) {
             (void)close(staging_descriptor);
             (void)close(parent_descriptor);
             return fail("cleanup could not remove a reviewed staged asset");
@@ -301,10 +325,16 @@ static int cleanup_staging(const char *parent_path, const char *staging_name,
 
 int main(const int argc, char *const argv[]) {
     if (argc == 5 && strcmp(argv[1], "publish") == 0) {
-        return publish(argv[2], argv[3], argv[4]);
+        return publish(argv[2], argv[3], argv[4], false);
     }
     if (argc == 6 && strcmp(argv[1], "cleanup") == 0) {
-        return cleanup_staging(argv[2], argv[3], argv[4], argv[5]);
+        return cleanup_staging(argv[2], argv[3], argv[4], argv[5], false);
     }
-    return fail("usage: publisher publish <parent> <staging-name> <destination-name> | publisher cleanup <parent> <staging-name> <device> <inode>");
+    if (argc == 5 && strcmp(argv[1], "publish-beta") == 0) {
+        return publish(argv[2], argv[3], argv[4], true);
+    }
+    if (argc == 6 && strcmp(argv[1], "cleanup-beta") == 0) {
+        return cleanup_staging(argv[2], argv[3], argv[4], argv[5], true);
+    }
+    return fail("usage: publisher publish|publish-beta <parent> <staging-name> <destination-name> | publisher cleanup|cleanup-beta <parent> <staging-name> <device> <inode>");
 }

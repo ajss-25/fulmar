@@ -28,7 +28,9 @@
 // - `verify` re-checks a published directory against the tracked manifests
 //   (not against copies inside the directory), rejects deletion, substitution,
 //   extra files, a manifest that no longer matches, a truncated archive and
-//   any edit to the generated files.
+//   any edit to the generated files. It returns the verified state (the exact
+//   expected file map, the parsed inventory and the verified inputs) so the
+//   archive packaging tool can build on it without re-implementing the walk.
 // - Existing local-fixture / non-authoritative acquisition flags are carried
 //   forward truthfully. Nothing here publishes a source offer, adds a release
 //   asset or asserts legal clearance.
@@ -675,6 +677,16 @@ async function verify(provenanceArgument, destinationArgument) {
   expected.set(SUMS_NAME, { size: sumsBytes.byteLength, sha256: sha256(sumsBytes) });
   await hashTree(destination, expected, "delivery set");
   process.stderr.write(`verified ${expected.size} files in ${destination}; ${INVENTORY_NAME} sha256:${sha256(inventoryBytes)}; upstream ${inputs.upstream.transport}${inputs.upstream.authoritative ? "" : " (NOT authoritative)"}, crates ${inputs.crates.transport}${inputs.crates.authoritative ? "" : " (NOT authoritative)"}; unresolved notices ${inputs.crates.noticeMaterials.summary.unresolved.length}; dylib incorporation ${inputs.crates.manifest.provenanceStatuses.incorporatedIntoShippedBinary}\n`);
+  return {
+    provenance,
+    destination,
+    inputs,
+    expected,
+    inventory,
+    inventorySHA256: sha256(inventoryBytes),
+    statusSHA256: sha256(statusBytes),
+    sumsSHA256: sha256(sumsBytes)
+  };
 }
 
 function isEntryPoint() {

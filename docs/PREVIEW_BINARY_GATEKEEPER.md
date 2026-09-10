@@ -92,5 +92,7 @@ absence of a notarisation ticket under the builder's private `build/` evidence. 
 candidate log must not be reused for changed source, and private build logs are not
 included in the source package. Even a passing local frozen-candidate check does not
 make those app bytes publishable: public binary distribution remains NO-GO until the
-libvips LGPL/GPL obligations, Developer ID, notarisation, clean-Mac and update/rollback
-gates pass against one exact archive.
+libvips LGPL/GPL obligations, Developer ID, notarisation and clean-Mac gates pass
+against one exact archive. The manual-install beta additionally requires its manual
+reinstall/recovery gates with the in-app updater disabled; the automatic two-version
+update/rollback gate belongs to the stable release profile.
