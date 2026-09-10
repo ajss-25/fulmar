@@ -21,7 +21,17 @@ captured="$2"
 source "$helper"
 fulmar_require_clean_release_environment public "$0" "$@"
 /usr/bin/env | /usr/bin/sort > "$captured"
+# Every operand after the helper and capture paths must survive the clean
+# re-execution byte for byte, in order; the beta asset operands travel this way.
+shift 2
+print -r -- "FORWARDED_OPERANDS=\${(j:|:)@}" >> "$captured"
 `, { mode: 0o700 });
+  const forwardedOperands = [
+    "--profile", "beta",
+    "--material-sha256", "f9706a277cc7759ae94f3ca31e1787de99eae3e352e1f2c46d46b996b164c620",
+    "--source-commit", "d0292cd8c2bc15ce4d2f793bcc6fe04ee7fab54f",
+    "/private/tmp/fulmar fixture path with spaces"
+  ];
   try {
     const hostile = {
       ...process.env,
@@ -40,11 +50,14 @@ fulmar_require_clean_release_environment public "$0" "$@"
       CURL_CA_BUNDLE: "/private/tmp/fulmar-hostile-ca.pem",
       FULMAR_UNREVIEWED: "must disappear"
     };
-    const result = spawnSync("/bin/zsh", ["-f", wrapper, helper, captured], rootWatchdogChildOptions({
+    const result = spawnSync("/bin/zsh", ["-f", wrapper, helper, captured, ...forwardedOperands], rootWatchdogChildOptions({
       env: hostile, encoding: "utf8", timeout: 20_000
     }));
     assert.equal(result.status, 0, result.stderr || result.error?.message);
     const environment = await readFile(captured, "utf8");
+    const forwardedLine = environment.split("\n").find((line) => line.startsWith("FORWARDED_OPERANDS="));
+    assert.equal(forwardedLine, `FORWARDED_OPERANDS=${forwardedOperands.join("|")}`,
+      "operands survive the clean re-execution exactly and in order");
     for (const name of ["NODE_OPTIONS", "NODE_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
       "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE",
       "FULMAR_UNREVIEWED"]) assert.doesNotMatch(environment, new RegExp(`^${name}=`, "mu"));
