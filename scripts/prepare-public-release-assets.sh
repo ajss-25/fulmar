@@ -135,6 +135,14 @@ PUBLIC_STAGING=""
 PUBLIC_STAGING_IDENTITY=""
 OUTPUT_PARENT=""
 OUTPUT_NAME=""
+# Select both native operations before installing traps or creating any staging,
+# so a partially copied beta package is retired under the same exact policy.
+PUBLISH_OPERATION="publish"
+CLEANUP_OPERATION="cleanup"
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  PUBLISH_OPERATION="publish-beta"
+  CLEANUP_OPERATION="cleanup-beta"
+fi
 verify_expected_candidate_binding() {
   local manifest_path="$1"
   local archive_path="$2"
@@ -155,7 +163,7 @@ cleanup() {
   local exit_code="${1:-$?}"
   if [[ -n "$PUBLIC_STAGING" && -n "$PUBLIC_STAGING_IDENTITY" \
      && -x "$ATOMIC_PUBLISHER" ]]; then
-    if ! "$ATOMIC_PUBLISHER" cleanup "$OUTPUT_PARENT" "${PUBLIC_STAGING:t}" \
+    if ! "$ATOMIC_PUBLISHER" "$CLEANUP_OPERATION" "$OUTPUT_PARENT" "${PUBLIC_STAGING:t}" \
       "${PUBLIC_STAGING_IDENTITY%%:*}" "${PUBLIC_STAGING_IDENTITY##*:}"; then
       print -u2 "Private public-asset staging could not be retired safely: $PUBLIC_STAGING"
     fi
@@ -457,7 +465,7 @@ done
 "$NODE" "$PROJECT_DIR/scripts/verify-retained-release-evidence.mjs" \
   "$RELEASE_IDENTITY" "$MANIFEST" "$PROJECT_DIR/build"
 verify_expected_candidate_binding "$MANIFEST" "$ARCHIVE"
-"$ATOMIC_PUBLISHER" publish "$OUTPUT_PARENT" "${PUBLIC_STAGING:t}" "$OUTPUT_NAME"
+"$ATOMIC_PUBLISHER" "$PUBLISH_OPERATION" "$OUTPUT_PARENT" "${PUBLIC_STAGING:t}" "$OUTPUT_NAME"
 PUBLIC_STAGING=""
 PUBLIC_STAGING_IDENTITY=""
 if [[ "$RELEASE_PROFILE" == "beta" ]]; then

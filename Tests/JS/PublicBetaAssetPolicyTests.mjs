@@ -66,8 +66,8 @@ function runPreparer(arguments_) {
   return spawnSync("/bin/zsh", ["-f", preparer, ...arguments_], rootWatchdogChildOptions({ cwd: root, encoding: "utf8", timeout: 20_000 }));
 }
 
-function runVerifier(arguments_) {
-  return spawnSync("/bin/zsh", ["-f", verifier, ...arguments_], rootWatchdogChildOptions({ cwd: root, encoding: "utf8", timeout: 120_000 }));
+function runVerifier(arguments_, { script = verifier, timeout = 120_000 } = {}) {
+  return spawnSync("/bin/zsh", ["-f", script, ...arguments_], rootWatchdogChildOptions({ cwd: root, encoding: "utf8", timeout }));
 }
 
 // A synthetic material package: a whole-block byte stream that is not a
@@ -321,7 +321,7 @@ test("material admission snapshots the package before verification, binds the op
   }
 });
 
-test("the asset preparer validates beta material operands before any watchdog, lock or expensive work", () => {
+test("the asset preparer and distribution verifier validate beta material operands before any watchdog, lock or expensive work", async () => {
   const validDigest = syntheticDigest("material");
   for (const [label, arguments_, rejection] of [
     ["beta without material operands", ["--profile", "beta"], /The beta profile requires --material-package, --material-sha256 and --source-commit/u],
@@ -347,6 +347,104 @@ test("the asset preparer validates beta material operands before any watchdog, l
   }
   const usage = runPreparer(["--profile", "beta", "--profile", "beta"]).stderr;
   assert.match(usage, /--profile beta --material-package \/absolute\/package --material-sha256 <sha256> --source-commit <commit>/u);
+
+  const temporary = await privateTemporary("fulmar-beta-verifier-arguments");
+  try {
+    const scripts = join(temporary, "scripts");
+    await mkdir(scripts, { mode: 0o700 });
+    const copiedVerifier = join(scripts, "verify-public-distribution.sh");
+    const watchdogHelper = join(scripts, "watchdog-root.zsh");
+    await copyFile(verifier, copiedVerifier);
+    // The copied source cannot enter any real watchdog or lock: sourcing its
+    // first helper is an immediate sentinel failure. Check the copy first so
+    // an ordering regression fails before any production-path invocation.
+    await writeFile(watchdogHelper, 'print -u2 "fixture: blocked watchdog entered"\nexit 79\n', { mode: 0o600 });
+    const packageDirectory = join(temporary, "package never inspected");
+    const malformed = [
+      ["beta without material operands", [packageDirectory, "--profile", "beta"], /The beta profile requires --material-sha256 and --source-commit/u],
+      ["beta missing the commit", ["--profile", "beta", "--material-sha256", validDigest], /The beta profile requires --material-sha256 and --source-commit/u],
+      ["stable with a material digest", [packageDirectory, "--material-sha256", validDigest], /Material operands are accepted only with --profile beta/u],
+      ["stable with a source commit", ["--profile", "stable", "--source-commit", headCommit], /Material operands are accepted only with --profile beta/u],
+      ["beta with a malformed commit", [packageDirectory, "--profile", "beta", "--material-sha256", validDigest, "--source-commit", "abc"], /one lowercase SHA-256 and one full 40-hex source commit/u],
+      ["beta with an uppercase digest", ["--profile", "beta", "--material-sha256", validDigest.toUpperCase(), "--source-commit", headCommit], /one lowercase SHA-256 and one full 40-hex source commit/u],
+      ["duplicate profile", ["--profile", "beta", "--profile", "beta"], /^Usage: verify-public-distribution\.sh/u],
+      ["duplicate material digest", ["--profile", "beta", "--material-sha256", validDigest, "--material-sha256", validDigest, "--source-commit", headCommit], /^Usage:/u],
+      ["duplicate source commit", ["--profile", "beta", "--material-sha256", validDigest, "--source-commit", headCommit, "--source-commit", headCommit], /^Usage:/u],
+      ["unknown profile", ["--profile", "alpha"], /accepts only the exact release profiles stable or beta/u],
+      ["profile without a value", ["--profile"], /^Usage:/u],
+      ["digest without a value", ["--profile", "beta", "--material-sha256"], /^Usage:/u],
+      ["commit without a value", ["--profile", "beta", "--material-sha256", validDigest, "--source-commit"], /^Usage:/u],
+      ["unknown option", [packageDirectory, "--profile", "beta", "--material-package", packageDirectory], /^Usage:/u],
+      ["three positional operands", ["a", "b", "c"], /^Usage:/u],
+      ["more than the bounded argument count", Array(9).fill(packageDirectory), /^Usage:/u]
+    ];
+    for (const [label, arguments_, rejection] of malformed) {
+      for (const script of [copiedVerifier, verifier]) {
+        const result = runVerifier(arguments_, { script, timeout: 5_000 });
+        assert.equal(result.error, undefined, `${label}: ${result.error?.message}`);
+        assert.equal(result.signal, null, label);
+        assert.equal(result.status, 64, `${label}: ${result.stdout}\n${result.stderr}`);
+        assert.match(result.stderr, rejection, label);
+        assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /fixture: blocked watchdog entered|supervisor-owned root lock|clean environment|Public .*verification passed/u,
+          `${label}: rejected before the watchdog even if the shared lock is held`);
+      }
+    }
+
+    // A syntactically valid invocation must reach the blocked watchdog, proving
+    // the negative cases did not merely exercise a broken or unreachable copy.
+    const originalArguments = [packageDirectory, "--profile", "beta", "--material-sha256", validDigest,
+      join(temporary, "evidence with spaces.json"), "--source-commit", headCommit];
+    let result = runVerifier(originalArguments, { script: copiedVerifier, timeout: 5_000 });
+    assert.equal(result.status, 79, result.stderr);
+    assert.match(result.stderr, /fixture: blocked watchdog entered/u);
+
+    // Replace only private helpers with built-in-only recording stubs. They
+    // exercise both real re-execution callsites, preserve byte boundaries with
+    // NUL-delimited records, and stop before any file processing or real lock.
+    await writeFile(watchdogHelper, `fulmar_root_watchdog_state() {
+  [[ "\${FULMAR_FIXTURE_WATCHDOG_REEXEC:-}" == 1 ]] && return 0
+  return 1
+}
+`, { mode: 0o600 });
+    await writeFile(join(scripts, "run-with-watchdog.sh"), `#!/bin/zsh -f
+set -euo pipefail
+while (( $# > 0 )) && [[ "$1" != -- ]]; do shift; done
+[[ "\${1:-}" == -- ]] || exit 80
+shift
+printf '%s\\0' "$@" > "\${0:A:h:h}/watchdog-argv"
+export FULMAR_FIXTURE_WATCHDOG_REEXEC=1
+exec "$@"
+`, { mode: 0o700 });
+    await writeFile(join(scripts, "clean-release-environment.zsh"), `fulmar_require_clean_release_environment() {
+  local mode="$1" script="$2"
+  shift 2
+  [[ "$mode" == public ]] || exit 81
+  printf '%s\\0' "$@" > "$PROJECT_DIR/clean-argv"
+  if [[ "\${FULMAR_FIXTURE_CLEAN_REEXEC:-}" != 1 ]]; then
+    export FULMAR_FIXTURE_CLEAN_REEXEC=1
+    exec /bin/zsh -f "$script" "$@"
+  fi
+}
+`, { mode: 0o600 });
+    await writeFile(join(scripts, "release-lock.zsh"), `printf '%s\\0' "$RELEASE_PROFILE" "$MATERIAL_SHA256" "$SOURCE_COMMIT_OPERAND" "\${POSITIONAL_OPERANDS[@]}" > "$PROJECT_DIR/parsed-argv"
+print -u2 "fixture: stopped before real lock or file processing"
+exit 79
+`, { mode: 0o600 });
+    result = runVerifier(originalArguments, { script: copiedVerifier, timeout: 5_000 });
+    assert.equal(result.error, undefined, result.error?.message);
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 79, result.stderr);
+    assert.match(result.stderr, /fixture: stopped before real lock or file processing/u);
+    const nulDelimited = (values) => Buffer.from(`${values.join("\0")}\0`);
+    assert.deepEqual(await readFile(join(temporary, "watchdog-argv")), nulDelimited([join("/bin", "zsh"), "-f", copiedVerifier, ...originalArguments]),
+      "watchdog re-execution preserves every original operand and its order");
+    assert.deepEqual(await readFile(join(temporary, "clean-argv")), nulDelimited(originalArguments),
+      "clean-environment re-execution preserves every original operand and its order");
+    assert.deepEqual(await readFile(join(temporary, "parsed-argv")), nulDelimited(["beta", validDigest, headCommit, packageDirectory, originalArguments[5]]),
+      "both re-executions parse the exact beta digest, source commit and positional operands again");
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
 });
 
 test("the distribution verifier binds the beta package to twelve provenance-named assets, eleven checksum entries and the operator's digest and commit", async () => {
@@ -362,20 +460,6 @@ test("the distribution verifier binds the beta package to twelve provenance-name
       return writeSyntheticPackage(packageDirectory, profile, rootName, options);
     };
     const beta = (digestOperand, commit = headCommit, extra = []) => runVerifier([packageDirectory, "--profile", "beta", "--material-sha256", digestOperand, "--source-commit", commit, ...extra]);
-
-    // Operand boundary, before the package is even inspected.
-    await freshPackage("beta");
-    for (const [label, arguments_, rejection] of [
-      ["beta without material operands", [packageDirectory, "--profile", "beta"], /The beta profile requires --material-sha256 and --source-commit/u],
-      ["stable with a material operand", [packageDirectory, "--material-sha256", syntheticDigest("x")], /Material operands are accepted only with --profile beta/u],
-      ["beta with a malformed commit", [packageDirectory, "--profile", "beta", "--material-sha256", syntheticDigest("x"), "--source-commit", "abc"], /one lowercase SHA-256 and one full 40-hex source commit/u],
-      ["duplicate material digest", [packageDirectory, "--profile", "beta", "--material-sha256", syntheticDigest("x"), "--material-sha256", syntheticDigest("x"), "--source-commit", headCommit], /^Usage: verify-public-distribution\.sh/u],
-      ["unknown option", [packageDirectory, "--profile", "beta", "--material-package", packageDirectory], /^Usage:/u]
-    ]) {
-      const result = runVerifier(arguments_);
-      assert.equal(result.status, 64, `${label}: ${result.stderr}`);
-      assert.match(result.stderr, rejection, label);
-    }
 
     // Topology: beta demands exactly twelve assets; stable still demands exactly nine.
     const nineOnly = await freshPackage("stable");

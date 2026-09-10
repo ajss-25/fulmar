@@ -1,23 +1,6 @@
 #!/bin/zsh -f
 set -euo pipefail
 
-PROJECT_DIR="${0:A:h:h}"
-source "$PROJECT_DIR/scripts/watchdog-root.zsh"
-ROOT_WATCHDOG_STATE=0
-fulmar_root_watchdog_state || ROOT_WATCHDOG_STATE=$?
-if (( ROOT_WATCHDOG_STATE == 1 )); then
-  exec "$PROJECT_DIR/scripts/run-with-watchdog.sh" \
-    --seconds 1800 --max-rss-bytes 4294967296 --rss-grace-seconds 5 \
-    --emergency-rss-bytes 6442450944 --lock-dir /private/tmp/LocalHarnessBuild.lock \
-    --label "complete public-distribution verification" -- \
-    /bin/zsh -f "$0" "$@"
-elif (( ROOT_WATCHDOG_STATE == 2 )); then
-  print -u2 "Public-distribution verification inherited an invalid root-watchdog capability."
-  exit 1
-fi
-source "${0:A:h}/clean-release-environment.zsh"
-fulmar_require_clean_release_environment public "$0" "$@"
-
 # An explicit `--profile stable|beta` may follow the positional operands. The
 # default remains the unchanged stable contract; the beta profile binds the
 # verifier to the separately identifiable beta evidence record and requires the
@@ -26,6 +9,15 @@ fulmar_require_clean_release_environment public "$0" "$@"
 # Neither may come from the package's own sidecar, checksum list or binding, and
 # nothing is read from the environment.
 USAGE="Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable | --profile beta --material-sha256 <sha256> --source-commit <commit>]"
+# Syntax checks use shell built-ins only and precede all watchdog, environment
+# and lock setup. Retain the untouched argv because both guarded re-execution
+# paths must parse the same operands again after this loop consumes "$@".
+typeset -a ORIGINAL_ARGUMENTS
+ORIGINAL_ARGUMENTS=("$@")
+(( $# <= 8 )) || {
+  print -u2 "$USAGE"
+  exit 64
+}
 RELEASE_PROFILE="stable"
 typeset -a EVIDENCE_PROFILE_ARGUMENTS
 EVIDENCE_PROFILE_ARGUMENTS=()
@@ -102,6 +94,24 @@ else
   }
 fi
 unset PROFILE_SELECTED MATERIAL_SHA256_SELECTED SOURCE_COMMIT_SELECTED
+
+PROJECT_DIR="${0:A:h:h}"
+source "$PROJECT_DIR/scripts/watchdog-root.zsh"
+ROOT_WATCHDOG_STATE=0
+fulmar_root_watchdog_state || ROOT_WATCHDOG_STATE=$?
+if (( ROOT_WATCHDOG_STATE == 1 )); then
+  exec "$PROJECT_DIR/scripts/run-with-watchdog.sh" \
+    --seconds 1800 --max-rss-bytes 4294967296 --rss-grace-seconds 5 \
+    --emergency-rss-bytes 6442450944 --lock-dir /private/tmp/LocalHarnessBuild.lock \
+    --label "complete public-distribution verification" -- \
+    /bin/zsh -f "$0" "${ORIGINAL_ARGUMENTS[@]}"
+elif (( ROOT_WATCHDOG_STATE == 2 )); then
+  print -u2 "Public-distribution verification inherited an invalid root-watchdog capability."
+  exit 1
+fi
+source "${0:A:h}/clean-release-environment.zsh"
+fulmar_require_clean_release_environment public "$0" "${ORIGINAL_ARGUMENTS[@]}"
+unset ORIGINAL_ARGUMENTS
 
 source "$PROJECT_DIR/scripts/release-lock.zsh"
 RELEASE_IDENTITY="$PROJECT_DIR/Config/ReleaseIdentity.json"

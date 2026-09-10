@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, copyFile, link, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, link, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -54,11 +54,11 @@ async function sha(path) {
   return createHash("sha256").update(await readFile(path)).digest("hex");
 }
 
-async function makePublisherStage(parent, name, marker) {
+async function makePublisherStage(parent, name, marker, names = packageAssetNames) {
   const stage = join(parent, name);
   await mkdir(stage, { mode: 0o700 });
   await chmod(stage, 0o700);
-  for (const assetName of packageAssetNames) {
+  for (const assetName of names) {
     await writeFile(join(stage, assetName), `${marker}:${assetName}\n`, { mode: 0o644 });
     await chmod(join(stage, assetName), 0o644);
   }
@@ -163,9 +163,13 @@ test("public distribution scripts pin every Apple trust and immutable-asset gate
   assert.equal(prepare.match(/verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"/gu)?.length, 2,
     "the live candidate must be bound before snapshot and immediately before publish");
   assert.match(prepare, /snapshot-regular-file\.mjs" "\$MANIFEST" "\$MANIFEST_SNAPSHOT" 1048576 >\/dev\/null\nverify_expected_candidate_binding "\$MANIFEST_SNAPSHOT" "\$ARCHIVE_SNAPSHOT"/u);
-  assert.match(prepare, /"\$ATOMIC_PUBLISHER" publish "\$OUTPUT_PARENT" "\$\{PUBLIC_STAGING:t\}" "\$OUTPUT_NAME"/u);
-  assert.match(prepare, /verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"\n"\$ATOMIC_PUBLISHER" publish/u);
-  assert.ok(prepare.indexOf('"$ATOMIC_PUBLISHER" publish') > prepare.lastIndexOf("verify-retained-release-evidence.mjs"),
+  assert.match(prepare, /PUBLISH_OPERATION="publish"\nCLEANUP_OPERATION="cleanup"\nif \[\[ "\$RELEASE_PROFILE" == "beta" \]\]; then\n  PUBLISH_OPERATION="publish-beta"\n  CLEANUP_OPERATION="cleanup-beta"\nfi/u);
+  assert.ok(prepare.indexOf('CLEANUP_OPERATION="cleanup-beta"') < prepare.indexOf("cleanup()"),
+    "the exact beta cleanup operation must be selected before traps or partial staging");
+  assert.match(prepare, /"\$ATOMIC_PUBLISHER" "\$CLEANUP_OPERATION" "\$OUTPUT_PARENT" "\$\{PUBLIC_STAGING:t\}"/u);
+  assert.match(prepare, /"\$ATOMIC_PUBLISHER" "\$PUBLISH_OPERATION" "\$OUTPUT_PARENT" "\$\{PUBLIC_STAGING:t\}" "\$OUTPUT_NAME"/u);
+  assert.match(prepare, /verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"\n"\$ATOMIC_PUBLISHER" "\$PUBLISH_OPERATION"/u);
+  assert.ok(prepare.indexOf('"$ATOMIC_PUBLISHER" "$PUBLISH_OPERATION"') > prepare.lastIndexOf("verify-retained-release-evidence.mjs"),
     "the private sibling must be published only after the final retained-evidence recheck");
   assert.doesNotMatch(prepare, /mkdir -m 0755 "\$OUTPUT"/u);
   assert.match(verify, /codesign --verify --deep --strict/u);
@@ -733,6 +737,115 @@ test("public assets publish once by exclusive durable rename and failures leave 
     assert.equal(published.status, 0, published.stderr);
     assert.deepEqual((await readdir(join(temporary, "assets"))).sort(), [...packageAssetNames].sort());
     assert.equal(await readFile(join(temporary, "assets", "LICENSE"), "utf8"), "success:LICENSE\n");
+
+    const provenance = JSON.parse(await readFile(join(root, "Config", "ThirdPartyBinaryProvenance.json"), "utf8"));
+    const components = provenance.components.filter((component) => component.id === "sharp-libvips-darwin-arm64");
+    assert.equal(components.length, 1);
+    const materialRoot = components[0].deliveryMaterials.outputDirectoryName;
+    const materialNames = [`${materialRoot}.tar`, `${materialRoot}.tar.sha256`, `${materialRoot}.binding.json`];
+    const publisherSource = await readFile(publicAssetPublisherSource, "utf8");
+    const materialStart = publisherSource.indexOf("static const char *const beta_material_names[] = {");
+    const materialEnd = publisherSource.indexOf("};", materialStart);
+    assert.ok(materialStart >= 0 && materialEnd > materialStart);
+    const nativeMaterialNames = [...publisherSource.slice(materialStart, materialEnd).matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
+    assert.deepEqual(nativeMaterialNames, materialNames, "native beta names must remain bound to the tracked delivery-material provenance");
+    const betaNames = [...packageAssetNames, ...materialNames];
+    assert.equal(betaNames.length, 12);
+    const invokePublisher = (args) => {
+      const result = spawnSync(publisher, args, { encoding: "utf8", timeout: 5_000 });
+      assert.equal(result.error, undefined);
+      assert.equal(result.signal, null);
+      return result;
+    };
+    const cleanupArguments = async (operation, name) => {
+      const identity = await stat(join(temporary, name), { bigint: true });
+      return [operation, temporary, name, identity.dev.toString(), identity.ino.toString()];
+    };
+    const assertUnpublished = async (name) => {
+      await assert.rejects(stat(join(temporary, name)), { code: "ENOENT" });
+    };
+
+    await makePublisherStage(temporary, ".assets.beta.success", "beta-success", betaNames);
+    const betaPublished = invokePublisher(["publish-beta", temporary, ".assets.beta.success", "beta-assets"]);
+    assert.equal(betaPublished.status, 0, betaPublished.stderr);
+    assert.deepEqual((await readdir(join(temporary, "beta-assets"))).sort(), [...betaNames].sort());
+    for (const name of betaNames) assert.equal(await readFile(join(temporary, "beta-assets", name), "utf8"), `beta-success:${name}\n`);
+
+    // Stable rejects beta's extra names both at publication and cleanup. Beta
+    // publication rejects nine files; beta cleanup may retire that partial set.
+    await makePublisherStage(temporary, ".assets.beta.cross-profile", "beta-cross", betaNames);
+    assert.notEqual(invokePublisher(["publish", temporary, ".assets.beta.cross-profile", "wrong-stable"]).status, 0);
+    assert.notEqual(invokePublisher(await cleanupArguments("cleanup", ".assets.beta.cross-profile")).status, 0);
+    assert.deepEqual((await readdir(join(temporary, ".assets.beta.cross-profile"))).sort(), [...betaNames].sort());
+    await assertUnpublished("wrong-stable");
+    assert.equal(invokePublisher(await cleanupArguments("cleanup-beta", ".assets.beta.cross-profile")).status, 0);
+    await assertUnpublished(".assets.beta.cross-profile");
+    await makePublisherStage(temporary, ".assets.stable.cross-profile", "stable-cross");
+    assert.notEqual(invokePublisher(["publish-beta", temporary, ".assets.stable.cross-profile", "wrong-beta"]).status, 0);
+    await assertUnpublished("wrong-beta");
+    assert.equal(invokePublisher(await cleanupArguments("cleanup-beta", ".assets.stable.cross-profile")).status, 0);
+    await assertUnpublished(".assets.stable.cross-profile");
+
+    for (const [index, missing] of materialNames.entries()) {
+      const name = `.assets.beta.missing-${index}`;
+      await makePublisherStage(temporary, name, "missing", betaNames.filter((asset) => asset !== missing));
+      assert.notEqual(invokePublisher(["publish-beta", temporary, name, `missing-final-${index}`]).status, 0);
+      await assertUnpublished(`missing-final-${index}`);
+      assert.equal(invokePublisher(await cleanupArguments("cleanup-beta", name)).status, 0);
+      await assertUnpublished(name);
+    }
+    const partial = ".assets.beta.partial";
+    await makePublisherStage(temporary, partial, "partial", ["LICENSE", materialNames[0], materialNames[2]]);
+    await chmod(join(temporary, partial, materialNames[0]), 0o600);
+    const partialIdentity = await cleanupArguments("cleanup-beta", partial);
+    assert.notEqual(invokePublisher([...partialIdentity.slice(0, 4), (BigInt(partialIdentity[4]) + 1n).toString()]).status, 0);
+    assert.notEqual(invokePublisher([...partialIdentity.slice(0, 3), (BigInt(partialIdentity[3]) + 1n).toString(), partialIdentity[4]]).status, 0);
+    assert.deepEqual((await readdir(join(temporary, partial))).sort(), ["LICENSE", materialNames[0], materialNames[2]].sort());
+    assert.equal(invokePublisher(partialIdentity).status, 0);
+    await assertUnpublished(partial);
+
+    const extra = ".assets.beta.extra";
+    await makePublisherStage(temporary, extra, "extra", [...betaNames, "unreviewed.txt"]);
+    assert.notEqual(invokePublisher(["publish-beta", temporary, extra, "extra-final"]).status, 0);
+    assert.notEqual(invokePublisher(await cleanupArguments("cleanup-beta", extra)).status, 0);
+    await assertUnpublished("extra-final");
+    assert.equal(await readFile(join(temporary, extra, "unreviewed.txt"), "utf8"), "extra:unreviewed.txt\n");
+    await unlink(join(temporary, extra, "unreviewed.txt"));
+    assert.equal(invokePublisher(await cleanupArguments("cleanup-beta", extra)).status, 0);
+
+    const externalMarker = join(temporary, "material-owner-data");
+    await writeFile(externalMarker, "do not change this fixture owner's data\n", { mode: 0o644 });
+    for (const kind of ["symbolic", "hard"]) {
+      const name = `.assets.beta.${kind}-material`;
+      await makePublisherStage(temporary, name, kind, betaNames);
+      const linkedMaterial = join(temporary, name, materialNames[0]);
+      await unlink(linkedMaterial);
+      if (kind === "symbolic") await symlink("../material-owner-data", linkedMaterial);
+      else await link(externalMarker, linkedMaterial);
+      assert.notEqual(invokePublisher(["publish-beta", temporary, name, `${kind}-material-final`]).status, 0);
+      assert.notEqual(invokePublisher(await cleanupArguments("cleanup-beta", name)).status, 0);
+      await assertUnpublished(`${kind}-material-final`);
+      assert.equal(await readFile(externalMarker, "utf8"), "do not change this fixture owner's data\n");
+      await unlink(linkedMaterial);
+      assert.equal(invokePublisher(await cleanupArguments("cleanup-beta", name)).status, 0);
+    }
+
+    const betaRoot = join(temporary, "beta-real-parent");
+    await mkdir(betaRoot, { mode: 0o700 });
+    await makePublisherStage(betaRoot, ".beta-stage", "beta-parent", betaNames);
+    await symlink(betaRoot, join(temporary, "beta-parent-link"));
+    assert.notEqual(invokePublisher(["publish-beta", join(temporary, "beta-parent-link"), ".beta-stage", "linked-final"]).status, 0);
+    await assert.rejects(stat(join(betaRoot, "linked-final")), { code: "ENOENT" });
+    const betaStageIdentity = await stat(join(betaRoot, ".beta-stage"), { bigint: true });
+    assert.notEqual(invokePublisher(["cleanup-beta", join(temporary, "beta-parent-link"), ".beta-stage", betaStageIdentity.dev.toString(), betaStageIdentity.ino.toString()]).status, 0);
+    assert.deepEqual((await readdir(join(betaRoot, ".beta-stage"))).sort(), [...betaNames].sort());
+    await symlink(".beta-stage", join(betaRoot, ".beta-stage-link"));
+    assert.notEqual(invokePublisher(["publish-beta", betaRoot, ".beta-stage-link", "linked-stage-final"]).status, 0);
+    assert.notEqual(invokePublisher(["cleanup-beta", betaRoot, ".beta-stage-link", betaStageIdentity.dev.toString(), betaStageIdentity.ino.toString()]).status, 0);
+    await assert.rejects(stat(join(betaRoot, "linked-stage-final")), { code: "ENOENT" });
+    await writeFile(join(betaRoot, "occupied"), "preserve beta destination\n", { mode: 0o600 });
+    assert.notEqual(invokePublisher(["publish-beta", betaRoot, ".beta-stage", "occupied"]).status, 0);
+    assert.equal(await readFile(join(betaRoot, "occupied"), "utf8"), "preserve beta destination\n");
 
     await makePublisherStage(temporary, ".assets.staging.preexisting", "preexisting");
     await writeFile(join(temporary, "occupied"), "do not replace", { mode: 0o600 });
