@@ -1,4 +1,4 @@
-.PHONY: app build private-release private-install-qualified private-rollback-status private-recovery-resume private-recovery-finalize private-recovery-cancel private-recovery-reconcile private-rollback-retire build-and-smoke frozen-smoke frozen-candidate-check frozen-installed-candidate-check run clean test tracked-index-policy dsh-promotion-provenance-verify source-contract-test deepseek-contract-test static-security-scan security-test web-rpc-canary web-live-canary installed-web-live-canary sandbox-test runtime-lease-test cloned-state-security credential-test credential-crash-test dependency-audit provider-contract-test provider-matrix-test agent-route-test deep-agent-test realistic-agent-test app-owned-ollama-generation toolbar-render-macos26 status-item-compile status-item-live status-item-normal-actions status-item-headless-handoff status-item-physical-background-handoff installed-status-item-live installed-status-item-normal-actions installed-status-item-headless-handoff installed-status-item-physical-background-handoff runtime-inventory-verify runtime-inventory-test deterministic-release-verify release-verify public-release public-release-finalize public-assets public-external-evidence-verify public-distribution-verify public-beta-release public-beta-release-finalize public-beta-external-evidence-verify public-beta-distribution-verify
+.PHONY: app build private-release private-install-qualified private-rollback-status private-recovery-resume private-recovery-finalize private-recovery-cancel private-recovery-reconcile private-rollback-retire build-and-smoke frozen-smoke frozen-candidate-check frozen-installed-candidate-check run clean test tracked-index-policy dsh-promotion-provenance-verify source-contract-test deepseek-contract-test static-security-scan security-test web-rpc-canary web-live-canary installed-web-live-canary sandbox-test runtime-lease-test cloned-state-security credential-test credential-crash-test dependency-audit provider-contract-test provider-matrix-test agent-route-test deep-agent-test realistic-agent-test app-owned-ollama-generation toolbar-render-macos26 status-item-compile status-item-live status-item-normal-actions status-item-headless-handoff status-item-physical-background-handoff installed-status-item-live installed-status-item-normal-actions installed-status-item-headless-handoff installed-status-item-physical-background-handoff runtime-inventory-verify runtime-inventory-test deterministic-release-verify release-verify public-release public-release-finalize public-assets public-external-evidence-verify public-distribution-verify public-beta-release public-beta-release-finalize public-beta-assets public-beta-external-evidence-verify public-beta-distribution-verify
 
 app: build
 
@@ -195,14 +195,45 @@ public-distribution-verify: dsh-promotion-provenance-verify
 	/bin/zsh -f scripts/verify-public-distribution.sh
 
 # Explicit manual-install beta profile (docs/PUBLIC_BETA_RELEASE_CONTRACT.md).
-# These entry points never build in finalize mode, never upload, tag, sign on
-# their own or notarize, and never consume stable evidence. They are not stable
-# qualification.
+# A fresh `public-beta-release` builds, signs, submits to Apple and retains one
+# candidate when the three signing variables are configured, then pauses; the
+# finalize target never builds. Neither uploads, tags or publishes, and neither
+# consumes stable evidence. They are not stable qualification.
+#
+# The beta package carries twelve assets: the nine stable assets plus the
+# verified third-party material archive, its sha256sum sidecar and its binding.
+# Three explicit operands are required and forwarded verbatim to the operator,
+# the asset preparer and the distribution verifier; they are never read from
+# the environment by any script:
+#   BETA_MATERIAL_PACKAGE  absolute path of the private verified material package
+#                          directory produced by
+#                          scripts/package-libvips-delivery-materials.mjs package
+#   BETA_MATERIAL_SHA256   the material archive SHA-256 from the independently
+#                          reviewed release record (not the app ZIP digest, and
+#                          not read from the package's own sidecar or binding)
+#   BETA_SOURCE_COMMIT     this checkout's exact HEAD commit, which the binding
+#                          must name
+# Example: make public-beta-release-finalize BETA_MATERIAL_PACKAGE=/private/…/run-1 \
+#   BETA_MATERIAL_SHA256=<64 hex> BETA_SOURCE_COMMIT=<40 hex>
+BETA_MATERIAL_PACKAGE ?=
+BETA_MATERIAL_SHA256 ?=
+BETA_SOURCE_COMMIT ?=
+unexport BETA_MATERIAL_PACKAGE BETA_MATERIAL_SHA256 BETA_SOURCE_COMMIT
 public-beta-release: dsh-promotion-provenance-verify
-	/bin/zsh -f scripts/run-public-release.sh --profile beta
+	/bin/zsh -f scripts/run-public-release.sh --profile beta --material-package "$(BETA_MATERIAL_PACKAGE)" --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)"
 
 public-beta-release-finalize: dsh-promotion-provenance-verify
-	/bin/zsh -f scripts/run-public-release.sh --profile beta --finalize
+	/bin/zsh -f scripts/run-public-release.sh --profile beta --material-package "$(BETA_MATERIAL_PACKAGE)" --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)" --finalize
+
+public-beta-assets: dsh-promotion-provenance-verify
+	@set -eu; \
+	  candidate_sha="$$(/usr/bin/plutil -extract sha256 raw -o - build/release-manifest.json)"; \
+	  version="$$(/usr/bin/plutil -extract version raw -o - build/release-manifest.json)"; \
+	  build="$$(/usr/bin/plutil -extract build raw -o - build/release-manifest.json)"; \
+	  /bin/zsh -f scripts/prepare-public-release-assets.sh \
+	    "$(CURDIR)/build/Fulmar.app.zip" "$(CURDIR)/build/release-manifest.json" \
+	    "$(CURDIR)/build/public-release-assets" "$$candidate_sha" "$$version" "$$build" \
+	    --profile beta --material-package "$(BETA_MATERIAL_PACKAGE)" --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)"
 
 public-beta-external-evidence-verify: frozen-candidate-check
 	@set -eu; \
@@ -213,4 +244,4 @@ public-beta-external-evidence-verify: frozen-candidate-check
 	    "$(CURDIR)/build/public-beta-external-evidence.json" "$$candidate_sha" "$$version" "$$build" --profile beta
 
 public-beta-distribution-verify: dsh-promotion-provenance-verify
-	/bin/zsh -f scripts/verify-public-distribution.sh --profile beta
+	/bin/zsh -f scripts/verify-public-distribution.sh --profile beta --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)"

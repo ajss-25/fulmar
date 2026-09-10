@@ -435,19 +435,43 @@ test("finalize stays non-building and refuses a changed candidate under either p
   assert.match(distribution, /verify-public-external-evidence\.mjs" \\\n\s+"\$PUBLIC_EXTERNAL_EVIDENCE" "\$PUBLIC_CANDIDATE_SHA256" "\$PUBLIC_VERSION" "\$PUBLIC_BUILD" \\\n\s+"\$\{EVIDENCE_PROFILE_ARGUMENTS\[@\]\}"/u);
   assert.ok(distribution.lastIndexOf("verify-public-external-evidence.mjs") < distribution.lastIndexOf("Public BETA distribution verification passed"));
   assert.ok(distribution.lastIndexOf("verify-public-external-evidence.mjs") < distribution.lastIndexOf("Public distribution verification passed"));
-  assert.match(distribution, /must contain exactly the nine reviewed release assets/u, "the beta keeps the nine-asset topology");
-  assert.doesNotMatch(distribution, /FULMAR_PUBLIC_RELEASE_PROFILE/u);
+  assert.match(distribution, /must contain exactly the nine reviewed release assets/u, "the stable nine-asset topology is unchanged");
+  assert.match(distribution, /Public beta package must contain exactly the twelve reviewed beta release assets/u,
+    "the beta package is the nine stable assets plus the verified material archive, sidecar and binding");
+  assert.match(distribution, /The beta profile requires --material-sha256 and --source-commit/u);
+  assert.match(distribution, /Material operands are accepted only with --profile beta/u);
+  assert.match(distribution, /admit-materials "\$PROVENANCE_RECORD" "\$SNAPSHOT"/u,
+    "the verifier admits the checksum-verified material snapshots, never the external package path");
+  assert.doesNotMatch(distribution, /FULMAR_PUBLIC_RELEASE_PROFILE|FULMAR_BETA_MATERIAL|MATERIAL_SHA256="\$\{[A-Z_]+:-/u,
+    "the material operands are never read from the environment");
+
+  // The operator validates the beta material operands before any signing or
+  // build step and forwards them verbatim to the preparer and the verifier.
+  assert.match(operator, /ASSET_PROFILE_ARGUMENTS=\(--profile beta --material-package "\$MATERIAL_PACKAGE" --material-sha256 "\$MATERIAL_SHA256" --source-commit "\$SOURCE_COMMIT_OPERAND"\)/u);
+  assert.match(operator, /MATERIAL_VERIFY_ARGUMENTS=\(--material-sha256 "\$MATERIAL_SHA256" --source-commit "\$SOURCE_COMMIT_OPERAND"\)/u);
+  assert.match(operator, /prepare-public-release-assets\.sh" \\\n\s+"\$ARCHIVE" "\$MANIFEST" "\$PUBLIC_ASSETS" \\\n\s+"\$CANDIDATE_SHA256" "\$CANDIDATE_VERSION" "\$CANDIDATE_BUILD" \\\n\s+"\$\{ASSET_PROFILE_ARGUMENTS\[@\]\}"/u);
+  assert.match(operator, /verify-public-distribution\.sh" \\\n\s+"\$PUBLIC_ASSETS" "\$PUBLIC_EXTERNAL_EVIDENCE" "\$\{EVIDENCE_PROFILE_ARGUMENTS\[@\]\}" \\\n\s+"\$\{MATERIAL_VERIFY_ARGUMENTS\[@\]\}"/u);
+  assert.match(operator, /Material operands are accepted only with --profile beta/u, "stable refuses beta-only operands");
+  assert.ok(operator.indexOf("The beta profile requires --material-package") < operator.indexOf("security find-identity"),
+    "material operands are validated before the signing identity is even consulted");
+  assert.match(operator, /"\$MATERIAL_SHA256" == "\$CANDIDATE_SHA256" \]\]; then\n\s+print -u2 "The expected material digest equals the retained app candidate digest/u,
+    "the app ZIP digest can never stand in for the material digest");
 
   const makefile = await readFile(makefilePath, "utf8");
   assert.match(makefile, /^public-release: dsh-promotion-provenance-verify\n\t\/bin\/zsh -f scripts\/run-public-release\.sh$/mu);
   assert.match(makefile, /^public-release-finalize: dsh-promotion-provenance-verify\n\t\/bin\/zsh -f scripts\/run-public-release\.sh --finalize$/mu);
-  assert.match(makefile, /^public-beta-release: dsh-promotion-provenance-verify\n\t\/bin\/zsh -f scripts\/run-public-release\.sh --profile beta$/mu);
-  assert.match(makefile, /^public-beta-release-finalize: dsh-promotion-provenance-verify\n\t\/bin\/zsh -f scripts\/run-public-release\.sh --profile beta --finalize$/mu);
+  assert.match(makefile, /^public-distribution-verify: dsh-promotion-provenance-verify\n\t\/bin\/zsh -f scripts\/verify-public-distribution\.sh$/mu, "the stable verifier recipe carries no material operands");
+  const betaOperands = '--material-package "\\$\\(BETA_MATERIAL_PACKAGE\\)" --material-sha256 "\\$\\(BETA_MATERIAL_SHA256\\)" --source-commit "\\$\\(BETA_SOURCE_COMMIT\\)"';
+  assert.match(makefile, new RegExp(`^public-beta-release: dsh-promotion-provenance-verify\\n\\t/bin/zsh -f scripts/run-public-release\\.sh --profile beta ${betaOperands}$`, "mu"));
+  assert.match(makefile, new RegExp(`^public-beta-release-finalize: dsh-promotion-provenance-verify\\n\\t/bin/zsh -f scripts/run-public-release\\.sh --profile beta ${betaOperands} --finalize$`, "mu"));
+  assert.match(makefile, new RegExp(`^public-beta-assets: dsh-promotion-provenance-verify\\n[\\s\\S]*?prepare-public-release-assets\\.sh \\\\\\n[\\s\\S]*?--profile beta ${betaOperands}$`, "mu"));
   assert.match(makefile, /^public-beta-external-evidence-verify: frozen-candidate-check$/mu);
   assert.match(makefile, /public-beta-external-evidence\.json" "\$\$candidate_sha" "\$\$version" "\$\$build" --profile beta$/mu);
-  assert.match(makefile, /^public-beta-distribution-verify: dsh-promotion-provenance-verify\n\t\/bin\/zsh -f scripts\/verify-public-distribution\.sh --profile beta$/mu);
+  assert.match(makefile, /^public-beta-distribution-verify: dsh-promotion-provenance-verify\n\t\/bin\/zsh -f scripts\/verify-public-distribution\.sh --profile beta --material-sha256 "\$\(BETA_MATERIAL_SHA256\)" --source-commit "\$\(BETA_SOURCE_COMMIT\)"$/mu);
+  assert.match(makefile, /^unexport BETA_MATERIAL_PACKAGE BETA_MATERIAL_SHA256 BETA_SOURCE_COMMIT$/mu,
+    "make variables reach the scripts only as explicit operands, never through the environment");
   const phony = makefile.match(/^\.PHONY: (.*)$/mu)?.[1].split(" ") ?? [];
-  for (const target of ["public-beta-release", "public-beta-release-finalize", "public-beta-external-evidence-verify", "public-beta-distribution-verify"]) {
+  for (const target of ["public-beta-release", "public-beta-release-finalize", "public-beta-assets", "public-beta-external-evidence-verify", "public-beta-distribution-verify"]) {
     assert.ok(phony.includes(target), `${target} is declared .PHONY`);
   }
 });

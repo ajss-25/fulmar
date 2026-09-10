@@ -27,14 +27,27 @@ MODE="fresh"
 # The release profile is explicit and positional-order independent. `stable` is
 # the unchanged default; `beta` selects the separately identifiable manual-install
 # beta contract (docs/PUBLIC_BETA_RELEASE_CONTRACT.md). It is never read from the
-# environment and never inferred from evidence contents.
+# environment and never inferred from evidence contents. The beta profile also
+# requires the three material operands — the operator's private verified material
+# package, the expected material archive SHA-256 taken from the independently
+# reviewed release record, and this checkout's exact source commit — which are
+# validated here, before any signing, build or verification, and forwarded
+# verbatim to the asset preparer and the distribution verifier. They are refused
+# under the stable profile.
+USAGE="Usage: run-public-release.sh [--profile stable | --profile beta --material-package /absolute/package --material-sha256 <sha256> --source-commit <commit>] [--finalize]"
 RELEASE_PROFILE="stable"
 PROFILE_SELECTED=0
+MATERIAL_PACKAGE=""
+MATERIAL_PACKAGE_SELECTED=0
+MATERIAL_SHA256=""
+MATERIAL_SHA256_SELECTED=0
+SOURCE_COMMIT_OPERAND=""
+SOURCE_COMMIT_SELECTED=0
 while (( $# > 0 )); do
   case "$1" in
     --finalize)
       [[ "$MODE" == "fresh" ]] || {
-        print -u2 "Usage: run-public-release.sh [--profile stable|beta] [--finalize]"
+        print -u2 "$USAGE"
         exit 64
       }
       MODE="finalize"
@@ -42,7 +55,7 @@ while (( $# > 0 )); do
       ;;
     --profile)
       (( $# >= 2 && PROFILE_SELECTED == 0 )) || {
-        print -u2 "Usage: run-public-release.sh [--profile stable|beta] [--finalize]"
+        print -u2 "$USAGE"
         exit 64
       }
       case "$2" in
@@ -55,13 +68,65 @@ while (( $# > 0 )); do
       PROFILE_SELECTED=1
       shift 2
       ;;
+    --material-package)
+      (( $# >= 2 && MATERIAL_PACKAGE_SELECTED == 0 )) || {
+        print -u2 "$USAGE"
+        exit 64
+      }
+      MATERIAL_PACKAGE="$2"
+      MATERIAL_PACKAGE_SELECTED=1
+      shift 2
+      ;;
+    --material-sha256)
+      (( $# >= 2 && MATERIAL_SHA256_SELECTED == 0 )) || {
+        print -u2 "$USAGE"
+        exit 64
+      }
+      MATERIAL_SHA256="$2"
+      MATERIAL_SHA256_SELECTED=1
+      shift 2
+      ;;
+    --source-commit)
+      (( $# >= 2 && SOURCE_COMMIT_SELECTED == 0 )) || {
+        print -u2 "$USAGE"
+        exit 64
+      }
+      SOURCE_COMMIT_OPERAND="$2"
+      SOURCE_COMMIT_SELECTED=1
+      shift 2
+      ;;
     *)
-      print -u2 "Usage: run-public-release.sh [--profile stable|beta] [--finalize]"
+      print -u2 "$USAGE"
       exit 64
       ;;
   esac
 done
-unset PROFILE_SELECTED
+# Asset operands forwarded to the preparer (profile plus material operands) and
+# material operands forwarded to the distribution verifier. Empty under stable.
+typeset -a ASSET_PROFILE_ARGUMENTS
+ASSET_PROFILE_ARGUMENTS=()
+typeset -a MATERIAL_VERIFY_ARGUMENTS
+MATERIAL_VERIFY_ARGUMENTS=()
+if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  (( MATERIAL_PACKAGE_SELECTED == 1 && MATERIAL_SHA256_SELECTED == 1 && SOURCE_COMMIT_SELECTED == 1 )) || {
+    print -u2 "The beta profile requires --material-package, --material-sha256 and --source-commit: the private verified material package, its expected archive SHA-256 from the reviewed release record, and this checkout's exact source commit."
+    exit 64
+  }
+  [[ "$MATERIAL_PACKAGE" == /* && "$MATERIAL_PACKAGE" != *$'\n'* && "$MATERIAL_PACKAGE" != *$'\r'* \
+     && "${#MATERIAL_SHA256}" == 64 && "$MATERIAL_SHA256" != *[^a-f0-9]* \
+     && "${#SOURCE_COMMIT_OPERAND}" == 40 && "$SOURCE_COMMIT_OPERAND" != *[^a-f0-9]* ]] || {
+    print -u2 "Beta material operands must be one absolute package directory, one lowercase SHA-256 and one full 40-hex source commit."
+    exit 64
+  }
+  ASSET_PROFILE_ARGUMENTS=(--profile beta --material-package "$MATERIAL_PACKAGE" --material-sha256 "$MATERIAL_SHA256" --source-commit "$SOURCE_COMMIT_OPERAND")
+  MATERIAL_VERIFY_ARGUMENTS=(--material-sha256 "$MATERIAL_SHA256" --source-commit "$SOURCE_COMMIT_OPERAND")
+else
+  (( MATERIAL_PACKAGE_SELECTED == 0 && MATERIAL_SHA256_SELECTED == 0 && SOURCE_COMMIT_SELECTED == 0 )) || {
+    print -u2 "Material operands are accepted only with --profile beta; the stable package carries no material assets."
+    exit 64
+  }
+fi
+unset PROFILE_SELECTED MATERIAL_PACKAGE_SELECTED MATERIAL_SHA256_SELECTED SOURCE_COMMIT_SELECTED
 
 umask 077
 export PATH="$SAFE_PATH"
@@ -319,6 +384,11 @@ if (( TEST_MODE == 1 )); then
     }
   done
   unset confined_path
+  if [[ -n "$MATERIAL_PACKAGE" ]]; then
+    [[ "$MATERIAL_PACKAGE" == "$PROJECT_DIR/"* ]] || {
+      fail_configuration "The public-release test seam only accepts a material package inside its temporary root."
+    }
+  fi
 fi
 
 # Fail before a costly timestamped build when the owner has not selected the
@@ -343,6 +413,10 @@ verify_public_candidate
 CANDIDATE_SHA256="$(read_candidate_field sha256)"
 CANDIDATE_VERSION="$(read_candidate_field version)"
 CANDIDATE_BUILD="$(read_candidate_field build)"
+if [[ "$RELEASE_PROFILE" == "beta" && "$MATERIAL_SHA256" == "$CANDIDATE_SHA256" ]]; then
+  print -u2 "The expected material digest equals the retained app candidate digest $CANDIDATE_SHA256; the material archive and Fulmar.app.zip are different artefacts. Supply the material archive digest from the reviewed release record."
+  exit 64
+fi
 if [[ ! -f "$PUBLIC_EXTERNAL_EVIDENCE" || -L "$PUBLIC_EXTERNAL_EVIDENCE" ]]; then
   print -u2 "Retained notarized Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256 ($RELEASE_PROFILE profile)."
   print -u2 "Public release is intentionally paused: $GATE_DESCRIPTION and create owner-private build/${PUBLIC_EXTERNAL_EVIDENCE:t} for this exact candidate, then run '$FINALIZE_TARGET'. Do not rebuild."
@@ -358,12 +432,14 @@ fi
 if [[ ! -e "$PUBLIC_ASSETS" && ! -L "$PUBLIC_ASSETS" ]]; then
   run_clean_script "$PROJECT_DIR/scripts/prepare-public-release-assets.sh" \
     "$ARCHIVE" "$MANIFEST" "$PUBLIC_ASSETS" \
-    "$CANDIDATE_SHA256" "$CANDIDATE_VERSION" "$CANDIDATE_BUILD"
+    "$CANDIDATE_SHA256" "$CANDIDATE_VERSION" "$CANDIDATE_BUILD" \
+    "${ASSET_PROFILE_ARGUMENTS[@]}"
 fi
 run_clean_script "$PROJECT_DIR/scripts/verify-public-distribution.sh" \
-  "$PUBLIC_ASSETS" "$PUBLIC_EXTERNAL_EVIDENCE" "${EVIDENCE_PROFILE_ARGUMENTS[@]}"
+  "$PUBLIC_ASSETS" "$PUBLIC_EXTERNAL_EVIDENCE" "${EVIDENCE_PROFILE_ARGUMENTS[@]}" \
+  "${MATERIAL_VERIFY_ARGUMENTS[@]}"
 if [[ "$RELEASE_PROFILE" == "beta" ]]; then
-  print "Public BETA release qualification passed for retained Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256 (manual install, in-app updater disabled). This is not stable qualification. No upload or publication was performed."
+  print "Public BETA release qualification passed for retained Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256 with the verified third-party material archive $MATERIAL_SHA256 bound to source commit $SOURCE_COMMIT_OPERAND (manual install, in-app updater disabled). This is not stable qualification and closes no licensing obligation. No upload or publication was performed."
 else
   print "Public release qualification passed for retained Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256. No upload or publication was performed."
 fi
