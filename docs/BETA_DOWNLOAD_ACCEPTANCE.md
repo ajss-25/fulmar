@@ -17,6 +17,16 @@ developer of the candidate). Automatic updates remain **disabled** throughout;
 this profile is **clean-install-only** unless the retained-state migration gate
 is separately closed, which this runbook does not attempt.
 
+What has and has not been checked (10/09/2026 correction lane): the
+non-mutating `# runnable` entry points were exercised locally — the bare frozen
+verifier fails closed with `requires an authenticated root watchdog` (status
+126), GNU Make 3.81 wraps a recipe's `exit 78` as `Error 78` with make status 2,
+and the `plutil`/`shasum` invocations run as written. Nothing that builds,
+signs, notarizes, stages an upload, queries a Keychain or needs a physical
+tester was executed; every `# procedure` block and every step marked `[Owner]`
+or `[Tester]` remains unexecuted, and the `security` not-found status (44) is
+documented from the tool's behaviour, not from a live query.
+
 ## 0. Inputs that do not exist yet
 
 | Input | Owner of the decision | Constraint the existing tooling enforces |
@@ -25,7 +35,7 @@ is separately closed, which this runbook does not attempt.
 | Developer ID Application identity | `[Owner]` | `LOCAL_HARNESS_SIGN_IDENTITY="Developer ID Application: <UNRESOLVED: name> (<UNRESOLVED: 10-character Team ID>)"`, matched exactly and uniquely by `security find-identity -v -p codesigning` in the signing Keychain (`scripts/run-public-release.sh`). An ad-hoc or private self-signed identity is refused and would not be public trust evidence even if accepted. |
 | Signing Keychain | `[Owner]` | `LOCAL_HARNESS_SIGNING_KEYCHAIN=<UNRESOLVED: absolute path>` — one owner-controlled regular file (uid = operator, link count 1). The login Keychain is not the intended value; provisioning is the owner's interactive step. |
 | notarytool profile | `[Owner]` | `LOCAL_HARNESS_NOTARY_PROFILE=<UNRESOLVED: profile name>` created beforehand with `xcrun notarytool store-credentials` (interactive; Apple ID/app-specific password or App Store Connect API key never appear in this repository, its logs or this runbook). |
-| Clean test Macs | `[Owner]` | One Apple-silicon Mac on the current supported macOS and one on macOS 15.x, each with **no** source checkout, Xcode/Swift toolchain, Fulmar Application Support, Fulmar Keychain items, Harness backups, local signing certificate or reconstructed VendorRuntime. A test user account that has never run Fulmar satisfies "no retained state" only if `~/Library/Application Support/Local Harness`, `~/.dsh` and the two Keychain services listed in `docs/PUBLIC_INSTALLATION.md` are absent **before** the test; nothing is deleted to make that true. |
+| Clean test Macs | `[Owner]` | One Apple-silicon Mac on the current supported macOS and one on macOS 15.x, each with **no** source checkout, Xcode/Swift toolchain, Fulmar Application Support, Fulmar Keychain items, Harness backups, local signing certificate or reconstructed VendorRuntime. A test user account that has never run Fulmar satisfies "no retained state" only if `~/Library/Application Support/Local Harness`, `~/.dsh` and all four Keychain item families in step 5.1 (provider credentials, backup authentication, device attestation, credential-migration receipt) are confirmed absent **before** the test by the scoped predicates there; an unknown Keychain answer is not absence, and nothing is deleted to make the account clean. |
 | Disposable funded DeepSeek account | `[Owner]` | A key created for this exercise with a small balance, revoked afterwards. Never a production key, never a key seen in earlier conversation text or logs. |
 | Ollama and model on the tester Mac | `[Tester]` | Official Ollama.app 0.33.2–0.33.x and `ollama pull qwen3.8:27b-mlx` (manifest SHA-256 `5642e97495e1a088883805981563dcdc4a040c2f53388b7a41d1f24d3622cf7e`) on a ≥ 48 GB Mac for the qualified route. A smaller Mac may exercise only the labelled Compatibility route with another installed model; that is recorded as Compatibility, never as the qualified route, and no default here requires the owner's 48 GB host. |
 
@@ -42,11 +52,29 @@ commit, the tree and each command's exit status and log digest.
 make source-contract-test
 make deepseek-contract-test
 make dependency-audit
-# runnable — complete JavaScript source gate (uses the shared watchdog lock)
-/bin/zsh -f scripts/run-js-tests.sh --test Tests/JS/*.mjs
-# runnable — Swift gate
+# runnable — Swift gate FIRST: it compiles the SwiftPM debug product and test
+# bundle under .build/ that two JavaScript tests inspect
 make test
+# runnable — complete JavaScript source gate, after native qualification
+# (uses the shared watchdog lock)
+/bin/zsh -f scripts/run-js-tests.sh --test Tests/JS/*.mjs
 ```
+
+The order matters and is the one `scripts/verify-release.sh` uses: the Swift
+gate produces the SwiftPM debug products that
+`Tests/JS/SwiftPMDeploymentTargetTests.mjs` reads, so on a clean checkout the
+JavaScript gate run first fails closed with two deployment-target failures
+(observed in the 09/09/2026 lane). Run the Swift gate before the JavaScript
+gate; if only the prerequisite is wanted without executing the native suite,
+run the same debug build `scripts/run-swift-tests.sh` performs (its
+`/usr/bin/swift build --package-path <checkout> --disable-sandbox --jobs <1–4>
+--build-tests` invocation with the Command Line Tools framework search path
+and `-Xswiftc -warnings-as-errors`, under a private `HOME`/module cache) and
+record that no Swift test was executed. Never skip or relabel those two
+JavaScript tests. The JavaScript gate
+passes only when the wrapper prints `JavaScript event accounting passed` for
+the exact frozen topology of the candidate commit and exits 0; read the count
+line from the log rather than assuming it.
 
 Stop if any command fails. Do not proceed to a build from a tree with a
 failing gate, and do not edit a frozen count or a skip list to make one pass.
@@ -54,51 +82,99 @@ failing gate, and do not edit a frozen count or a skip list to make one pass.
 ## 2. Build, sign, notarize and retain one candidate `[Owner]` + `[Integrator]`
 
 ```sh
-# runnable — the only build-producing beta operator; pauses with exit 78
+# runnable — the only build-producing beta operator; its deliberate pause is
+# the operator's own exit status 78, which GNU make reports as "Error 78" and
+# wraps in make's exit status 2
 LOCAL_HARNESS_SIGN_IDENTITY="Developer ID Application: <UNRESOLVED: name> (<UNRESOLVED: TEAMID>)" \
 LOCAL_HARNESS_SIGNING_KEYCHAIN="<UNRESOLVED: absolute keychain path>" \
 LOCAL_HARNESS_NOTARY_PROFILE="<UNRESOLVED: notarytool profile>" \
-make public-beta-release
+make public-beta-release; echo "make status: $?"
 ```
 
 Expected outcome: static scan, one timestamped hardened-runtime build, Apple
 submission, `Accepted` receipt and issue-free log retained as
 `build/notarization-submission.json` / `build/notarization-log.json`, stapling,
 regenerated `build/Fulmar.app.zip`, the full-hardware candidate verifier, then
-**exit 78** printing `Retained notarized Fulmar <version> build <build>
-candidate <sha256> (beta profile)`. Record those three values verbatim; they
+the operator's deliberate pause. The pause is recognised only by **all** of:
+
+- the operator (`scripts/run-public-release.sh --profile beta`) printed
+  `Retained notarized Fulmar <version> build <build> candidate <sha256> (beta
+  profile).` followed by `Public release is intentionally paused: complete the
+  ten manual beta gates …`, and nothing after it;
+- make printed `make: *** [public-beta-release] Error 78` and `make status: 2`
+  — `2` is GNU make's wrapper status for any failing recipe, so a status of 2
+  on its own proves nothing; `Error 78` names the operator's status;
+- the retained candidate record exists and agrees with the printed values:
+
+```sh
+# runnable — retained-candidate evidence that must agree with the pause lines
+/usr/bin/plutil -extract sha256 raw -o - build/release-manifest.json
+/usr/bin/plutil -extract version raw -o - build/release-manifest.json
+/usr/bin/plutil -extract build raw -o - build/release-manifest.json
+/usr/bin/shasum -a 256 build/Fulmar.app.zip
+```
+
+Any other outcome — a different `Error N`, an operator message about a missing
+identity, Keychain, notary profile, static-scan finding or existing asset set,
+a status 1, or a status 2 without the pause lines — is a failure to record and
+stop on, never "the expected pause". Record the three values verbatim; they
 bind every later record. The interactive parts (Keychain unlock, notarytool
 authentication) are the owner's. Do **not** rebuild while collecting evidence;
 any rebuild produces a different candidate and voids collected records.
 
 ```sh
-# runnable — candidate byte checks on the retained archive and app
-/bin/zsh -f scripts/verify-frozen-candidate.sh /private/tmp/LocalHarnessBuild/Fulmar.app
+# runnable — candidate byte checks on the retained archive and app. The frozen
+# verifier requires the repository's authenticated root watchdog and fails
+# closed ("requires an authenticated root watchdog") when run bare; use the
+# supported wrapper and target exactly as README.md and docs/TROUBLESHOOTING.md do.
+./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
+  --emergency-rss-bytes 17179869184 --label "Fulmar frozen-candidate check" -- /usr/bin/make frozen-candidate-check
+echo "frozen-candidate check status: $?"
 /usr/bin/codesign --verify --deep --strict --verbose=4 /private/tmp/LocalHarnessBuild/Fulmar.app
 /usr/bin/xcrun stapler validate /private/tmp/LocalHarnessBuild/Fulmar.app
 /usr/bin/shasum -a 256 build/Fulmar.app.zip
 ```
 
-The ZIP digest must equal the candidate `sha256` printed at the pause.
+Each command's own exit status is recorded; the ZIP digest must equal the
+candidate `sha256` printed at the pause and read from the manifest above.
 
 ## 3. Updater-disabled proof on the shipped bytes `[Integrator]`
 
-Gate: `inAppUpdaterDisabledInCandidate`. The source contract already refuses a
-public menu item or programmatic selector for the updater
-(`scripts/verify-source-product-contract.mjs`); the gate additionally wants the
-check made on the exact shipped bytes and recorded.
+Gate: `inAppUpdaterDisabledInCandidate`. What the boundary actually is: the
+selector `installVerifiedUpdate(_:)` still exists in
+`Sources/LocalHarness/LocalHarnessApp.swift`, behind
+`private static let verifiedInAppUpdatesEnabled = false` and the guard
+`guard Self.verifiedInAppUpdatesEnabled else { … return }`, which shows the
+alert "In-app updates are not available in this build" and performs nothing;
+no public menu item is wired to it. The source contract
+(`scripts/verify-source-product-contract.mjs`) and
+`Tests/JS/ProductIdentitySurfaceTests.mjs` fail closed if the constant, the
+guard or the menu-exposure rule changes. The proof therefore has three parts,
+and none of them is a string search: absence of the menu title from the binary
+would not show that the selector is absent or unreachable (it is neither), and
+the guard's alert strings are legitimately present in the shipped executable.
 
 ```sh
-# runnable — source contract on the exact commit
-make source-contract-test
-# runnable — no updater menu title in the shipped main executable (CFBundleExecutable is LocalHarness) or bundled resources
-/usr/bin/strings -a /private/tmp/LocalHarnessBuild/Fulmar.app/Contents/MacOS/LocalHarness | /usr/bin/grep -c 'Install Verified Update' ; echo "expected count: 0"
-/usr/bin/grep -rl 'Install Verified Update' /private/tmp/LocalHarnessBuild/Fulmar.app/Contents/Resources ; echo "expected: no output (exit 1)"
+# runnable — 1. the programmatic boundary and menu-exposure rule on the exact candidate commit
+make source-contract-test; echo "source contract status: $?"
+/bin/zsh -f scripts/run-js-tests.sh --test Tests/JS/ProductIdentitySurfaceTests.mjs; echo "identity surface status: $?"
+# runnable — 2. the shipped bytes are the retained candidate (binds the app under test to the recorded sha256)
+./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
+  --emergency-rss-bytes 17179869184 --label "Fulmar frozen-candidate check" -- /usr/bin/make frozen-candidate-check
+echo "frozen-candidate check status: $?"
+/usr/bin/plutil -extract CFBundleExecutable raw -o - /private/tmp/LocalHarnessBuild/Fulmar.app/Contents/Info.plist
+test -f /private/tmp/LocalHarnessBuild/Fulmar.app/Contents/MacOS/LocalHarness; echo "main executable present status: $?"
 ```
 
-Record the commands, their output and the candidate `sha256`. Then, on the
-clean Mac in step 5, a person confirms that no menu, Settings pane or keyboard
-shortcut offers an update action. The retained helper binary
+Every status is recorded as printed; a non-zero status anywhere is a failure,
+not a note. Part 3 is the exact-candidate UI observation on the clean Mac in
+step 5 (steps 5–7 and 8–10 there): a person confirms, on the installed copy
+whose archive digest equals the recorded candidate `sha256`, that no main-menu
+item, status-item menu, Settings pane, context menu or keyboard shortcut offers
+an update or "Install Verified Update…" action, and records what was traversed.
+Until that observation has been made on the notarized candidate, the record for
+this gate says **physical proof pending**; the source contract and the frozen
+check are prerequisites, not the proof. The retained helper binary
 `LocalHarnessUpdateHelper` is expected to exist (it is part of the reviewed
 tree); its presence is not an entry point and must not be recorded as one.
 
@@ -132,22 +208,57 @@ does not count.
 
 ```sh
 # procedure — before anything is installed
-1. Prove the Mac is clean: in Terminal run
-     ls -d ~/Library/Application\ Support/Local\ Harness ~/.dsh 2>&1
-     security find-generic-password -s app.localharness.credentials 2>&1 | head -1
-     security find-generic-password -s com.angadjairath.localharness.backup-authentication 2>&1 | head -1
-   Every command must report "No such file" / "could not be found". If any state
-   exists, this Mac is an upgrade test, not a clean install: stop, do not delete
-   anything, use another Mac or account.
+1. Prove the Mac is clean with scoped, read-only predicates (no dumps, no
+   deletion). Files:
+     ls -d ~/Library/Application\ Support/Local\ Harness ~/.dsh; echo "status: $?"
+   Both paths must be reported "No such file or directory".
+   Keychain: one query per item family, each scoped to the exact service (and
+   account where the app uses a fixed one); the names are the ones the shipped
+   helpers use (Tools/CredentialHelper, Tools/CredentialBrokerService,
+   Tools/CredentialMigrationService, Sources/DeviceAttestationAuthority):
+     security find-generic-password -s app.localharness.credentials; echo "status: $?"
+       # provider credentials: any account in this service
+     security find-generic-password -s com.angadjairath.localharness.backup-authentication -a state-backup-manifest-v2; echo "status: $?"
+     security find-generic-password -s com.angadjairath.localharness.device-attestation -a device-attestation-signing-private-v1; echo "status: $?"
+     security find-generic-password -s com.angadjairath.localharness.device-attestation -a device-attestation-public-anchor-sha256-v1; echo "status: $?"
+     security find-generic-password -s com.angadjairath.localharness.credential-migration-receipt -a receipt-authentication-v1; echo "status: $?"
+   Read each outcome literally:
+     - status 44 with "The specified item could not be found" is the ONLY
+       result that counts as absent;
+     - status 0 means the item exists: this Mac is an upgrade test, not a clean
+       install — stop, delete nothing, use another Mac or account;
+     - any other status or message (locked keychain, interaction not allowed,
+       a cancelled prompt, a different error) is UNKNOWN, not absence: stop and
+       resolve it (for example unlock the login keychain and re-run the same
+       query) before recording anything.
+   Never add -w/-g or dump the keychain, and never delete items to make a
+   clean account.
 2. Record macOS version (sw_vers), model, memory, whether Xcode CLT is present.
 ```
 
 ```sh
 # procedure — download, verify, install, first launch
-3. Download Fulmar.app.zip and Fulmar.app.zip.sha256 with Safari from the
-   release page (quarantine must stay intact). Confirm:
+3. Obtain the exact frozen archive over HTTPS **before** anything is published:
+   acceptance happens on the candidate, so it cannot require the public release
+   page to exist. [Owner] places the retained `build/Fulmar.app.zip` (exact
+   bytes, unmodified, sha256 equal to the recorded candidate digest) at an
+   authorized owner-controlled HTTPS location that only the acceptance testers
+   can reach — for example a private, non-indexed release-draft asset or an
+   authenticated HTTPS share — and passes the tester the URL and, separately
+   (not beside the file), the expected sha256 from the step-2 record. Nothing
+   is uploaded as part of preparing this runbook; the staging upload is the
+   owner's action at acceptance time and is itself recorded (location, date,
+   who). The tester downloads with Safari so that the quarantine attribute is
+   attached exactly as a public download would carry it, then confirms:
      xattr -p com.apple.quarantine ~/Downloads/Fulmar.app.zip   # must print a value
-     cd ~/Downloads && shasum -a 256 -c Fulmar.app.zip.sha256    # must print OK
+     shasum -a 256 ~/Downloads/Fulmar.app.zip                    # must equal the recorded candidate sha256
+   The digest is compared against the value received out of band; a
+   `.sha256` file downloaded beside the archive is only a convenience copy of
+   the same number and does not authenticate the download. The signature and
+   the stapled ticket inside the archive are what Gatekeeper evaluates in step
+   5; the byte identity above is what binds this test to the candidate. The
+   same archive bytes are used later for the public release page; a re-export
+   or re-zip is a different candidate.
 4. Expand by double-clicking in Finder; drag Fulmar.app to /Applications. Do not
    run xattr -d, do not control-click "Open Anyway", do not disable Gatekeeper.
 5. Online first launch from /Applications. Gatekeeper must accept without a
@@ -163,14 +274,43 @@ does not count.
 
 ```sh
 # procedure — Keychain and permission matrix (allow, deny, later relaunch)
-8. Keychain: on the first credential-related prompt choose Deny; confirm the app
-   remains usable for local work and reports the credential as unconfigured
-   rather than crashing. Quit, relaunch, choose Allow on the next prompt. Record
-   which of the three item families prompted (device trust, backup
-   authentication, provider credentials) — they are distinct services and a
-   grant for one is not a grant for the others. Do not record or promise that
-   "Always Allow" prevents any future prompt; macOS may re-prompt after an
-   update or Keychain change.
+8. Keychain, by item family. The four families in step 1 are distinct services
+   with distinct consequences; a grant or denial for one says nothing about the
+   others, and the expected outcome of a denial differs per family. macOS
+   decides whether a prompt appears at all (a clean first launch usually
+   creates items without prompting); record exactly which prompts appeared and
+   for which family, and never force one.
+   - Device trust (`com.angadjairath.localharness.device-attestation`): read at
+     startup before the Harness home is prepared. If macOS prompts and the
+     tester chooses Deny or cancels, the runtime is intentionally kept
+     STOPPED: Fulmar must state that the permission was cancelled or denied and
+     that nothing was changed or reset, offer the explicit foreground action
+     "Allow Keychain Access" to decide again, and otherwise stay stopped
+     without crashing, looping or re-prompting in the background. Local tasks
+     are NOT expected to run in that state and their absence is not a
+     failure. Remedy: choose "Allow Keychain Access" in the foreground (or quit
+     and relaunch, and answer the prompt); the check is retried by request and
+     no credential is read automatically. Record the alert text observed and
+     that keeping Fulmar stopped is a bounded, recoverable end state.
+   - Provider credentials (`app.localharness.credentials`): exercised only when a
+     provider key is entered or read (step 7 of this runbook, or Models &
+     Providers). On Deny the app must remain usable for local work and report
+     the credential as unconfigured; on a later Allow the credential is stored.
+     A provider denial must never be recorded as, or confused with, the
+     device-trust outcome above.
+   - Backup authentication (`com.angadjairath.localharness.backup-authentication`
+     / `state-backup-manifest-v2`): read only when the tester asks to verify or
+     restore an authenticated backup, after Fulmar's own explanation that it
+     reads the existing key and replaces or deletes nothing. On Deny the backup
+     action stops and reports; no item is created, replaced or deleted. Not
+     applicable on a clean Mac unless a backup was made during the test.
+   - Credential-migration receipt
+     (`com.angadjairath.localharness.credential-migration-receipt` /
+     `receipt-authentication-v1`): belongs to the legacy plaintext-credential
+     migration; not applicable on a clean Mac with no legacy credential file,
+     and recorded as such.
+   Do not record or promise that "Always Allow" prevents any future prompt;
+   macOS may re-prompt after an update or Keychain change.
 9. Permissions, each first denied then separately allowed on a later attempt,
    with a quit/relaunch between: microphone, speech recognition, Screen
    Recording (Appshot), notifications, launch at login, background schedules.
@@ -288,7 +428,7 @@ the ten records:
 | `permissionAndAccessibilityMatrix` | Step 5.8–5.10 on both Macs |
 | `supportPrivacyAndExportReview` | Owner review of `docs/PRIVACY.md`, `SUPPORT.md`, `SECURITY.md`, privacy-manifest scope and export-compliance decision against the exact binary |
 | `manualInstallReinstallRecovery` | Step 6 (and 5.3–5.7) on the exact notarized candidate |
-| `inAppUpdaterDisabledInCandidate` | Step 3 commands plus the step-5 human confirmation |
+| `inAppUpdaterDisabledInCandidate` | Step 3 parts 1–2 (source contract, identity-surface test, watchdog-wrapped frozen check with their statuses) plus the step-5 exact-candidate UI observation; "physical proof pending" until that observation exists |
 | `thirdPartyBinaryLicenseMaterials` | Step 4 owner/legal record |
 
 Only when all ten records hold real digests, create the owner-private file
@@ -306,8 +446,12 @@ make public-beta-release-finalize
 Finalize revalidates the retained archive, Apple records, signer, tree and
 ticket, verifies the beta evidence for the exact SHA/version/build, creates or
 revalidates the unchanged nine-asset package and runs the distribution verifier
-with `--profile beta`. It never uploads, tags or publishes. Passing it proves
-record completeness and candidate binding; it does not make a reference true.
+with `--profile beta`. It never uploads, tags or publishes. Its statuses follow
+step 2: the operator's own exit 78 (shown by make as `Error 78`, make status 2)
+means the evidence file is missing, incomplete or bound to another candidate or
+profile — correct the evidence, do not rebuild; any other non-zero outcome is a
+failure. Passing it proves record completeness and candidate binding; it does
+not make a reference true.
 
 ## 9. Stop and rollback conditions
 
@@ -315,11 +459,17 @@ Stop the exercise, keep all records, and do not create pass evidence when:
 
 - any step-1 gate fails, or the candidate is rebuilt for any reason (start again
   from step 2 with a new identity record);
+- `make public-beta-release` ends without the exact pause lines and the
+  agreeing `build/release-manifest.json` (a bare make status 2 or any other
+  `Error N` is a failure, not the pause);
 - Gatekeeper, `spctl`, `stapler`, or the offline launch requires any workaround;
-- the "clean Mac" proves to hold prior Fulmar state (record as upgrade test, not
+- the "clean Mac" proves to hold prior Fulmar state, or any step-5.1 Keychain
+  predicate returns an unknown outcome (record as upgrade test or unknown, not
   clean install; never delete state);
-- a permission denial breaks an unrelated feature, or a Keychain denial crashes
-  or loops the app;
+- a permission denial breaks an unrelated feature, a provider-credential denial
+  stops local work, or a device-trust denial crashes, loops or silently
+  re-prompts instead of stating the denial and keeping the runtime stopped
+  with the foreground "Allow Keychain Access" remedy;
 - quit leaves an app-owned process running, or rollback leaves two visible
   `Fulmar.app` bundles;
 - the DeepSeek path only ever produces a no-credit or mocked result (record as
