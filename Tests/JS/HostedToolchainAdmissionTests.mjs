@@ -291,6 +291,91 @@ test("an exact active pin admits the pinned hosted tree into a clean capture, an
     await assert.rejects(cleanCapture(fixture), /does not equal the active pinned inventory/u);
     selectImage(inventory);
     assert.deepEqual(await cleanCapture(fixture), inventory);
+
+    // Schema 4 carries three complete reviewed images, two of which have the
+    // same OS/uid/Xcode selector and exactly equal captured identities. The
+    // sanitized capture has no image environment with which to choose them.
+    const equivalent = structuredClone(primary);
+    equivalent.hostedDiscovery.image.imageVersion = "20260910.0337.1";
+    equivalent.hostedDiscovery.github.commitSHA = "c".repeat(40);
+    equivalent.hostedDiscovery.github.runID = "3";
+    const threeImages = { ...primary, schemaVersion: 4, compatiblePins: [secondary, equivalent] };
+    const assertEnvironmentFreeCapture = async (expectedInventory) => inCleanEnvironment(fixture.sdk, async () => {
+      for (const name of ["GITHUB_ACTIONS", "CI", "RUNNER_OS", "RUNNER_ARCH", "GITHUB_REPOSITORY", "ImageOS", "ImageVersion"]) {
+        assert.equal(Object.hasOwn(process.env, name), false, `${name} must not select a compatible image`);
+      }
+      const captured = await captureToolchainInventory(true, { hostedToolchainPin: fixture.pinPath }, fixture.probes);
+      assert.deepEqual(captured, expectedInventory, "equivalent images preserve the entire schema-6 inventory");
+      return captured;
+    });
+    await writePin(fixture.pinPath, threeImages);
+    const equivalentAdmission = await resolveHostedToolchainAdmission({
+      pinPath: fixture.pinPath, trackedPinPath: fixture.pinPath, developerDirectory: fixture.developer,
+      effectiveUID: uid, operatingSystem: inventory.operatingSystem
+    });
+    assert.equal(equivalentAdmission.admitted, true);
+    assert.equal(equivalentAdmission.effectiveUID, uid);
+    assert.deepEqual(equivalentAdmission.toolchain, inventory);
+    assert.deepEqual(equivalentAdmission.pin.hostedDiscovery.xcode, primary.hostedDiscovery.xcode);
+    assert.deepEqual(equivalentAdmission.pin.hostedDiscovery.runner, primary.hostedDiscovery.runner);
+    const recorded = join(fixture.scratch, "three-image-inventory.json");
+    await writeToolchainInventory(recorded, await assertEnvironmentFreeCapture(inventory));
+    const recordedBytes = await readFile(recorded);
+
+    // A different ordering of the two equivalent images cannot alter capture.
+    await writePin(fixture.pinPath, { ...equivalent, schemaVersion: 4, compatiblePins: [secondary, primary] });
+    await assertEnvironmentFreeCapture(inventory);
+    await verifyToolchainInventory(recorded, { hostedToolchainPin: fixture.pinPath }, fixture.probes);
+    assert.deepEqual(await readFile(recorded), recordedBytes);
+    await writePin(fixture.pinPath, threeImages);
+
+    // The distinct third toolchain remains selected as a whole by its exact OS.
+    await writeFile(fixture.tools.clang, alternateClang, { mode: 0o755 });
+    selectImage(alternateInventory);
+    await assertEnvironmentFreeCapture(alternateInventory);
+    const selectedAlternate = await resolveHostedToolchainAdmission({
+      pinPath: fixture.pinPath, trackedPinPath: fixture.pinPath, developerDirectory: fixture.developer,
+      effectiveUID: uid, operatingSystem: alternateInventory.operatingSystem
+    });
+    assert.deepEqual(selectedAlternate.pin, secondary);
+    assert.deepEqual(selectedAlternate.toolchain, alternateInventory);
+
+    selectImage(inventory); // The equivalent pair must not admit another image's bytes.
+    fixture.commandCalls.length = 0;
+    await assert.rejects(cleanCapture(fixture), /tool clang does not match the active hosted toolchain pin/u);
+    assertNoVersionProbe();
+    await writeFile(fixture.tools.clang, originalClang, { mode: 0o755 });
+    fixture.table[clangVersionKey] = alternateInventory.versions.clang;
+    await assert.rejects(cleanCapture(fixture), /does not equal the active pinned inventory/u);
+    selectImage(inventory);
+    await assertEnvironmentFreeCapture(inventory);
+
+    for (const operatingSystem of [
+      undefined,
+      { productVersion: "26.9", buildVersion: "25Z99" },
+      { productVersion: inventory.operatingSystem.productVersion, buildVersion: alternateInventory.operatingSystem.buildVersion }
+    ]) {
+      await assert.rejects(resolveHostedToolchainAdmission({
+        pinPath: fixture.pinPath, trackedPinPath: fixture.pinPath, developerDirectory: fixture.developer,
+        effectiveUID: uid, operatingSystem
+      }), /no exact reviewed hosted OS, uid and Xcode identity matches/u);
+    }
+    for (const mutate of [
+      (value) => { value.compatiblePins[1].hostedDiscovery.toolchain.tools.clang.sha256 = "f".repeat(64); },
+      (value) => { value.compatiblePins[1].hostedDiscovery.xcode.version = "Xcode 26.6\nBuild version 17F114"; }
+    ]) {
+      const conflicting = structuredClone(threeImages);
+      mutate(conflicting);
+      // Bypass only the fixture writer's validation so the real capture's
+      // pin-reader boundary must reject conflicting, otherwise valid members.
+      await writePin(fixture.pinPath, conflicting, { canonical: false });
+      fixture.commandCalls.length = 0;
+      await assert.rejects(cleanCapture(fixture), undefined, `same-selector conflict must not admit a tree: ${mutate}`);
+      assertNoVersionProbe();
+    }
+    await writePin(fixture.pinPath, threeImages);
+    await assertEnvironmentFreeCapture(inventory);
+    assert.deepEqual(await readFile(recorded), recordedBytes, "rejected captures never rewrite retained inventory evidence");
   } finally {
     await fixture.remove();
   }
@@ -302,7 +387,7 @@ test("pin status, schema, repository, runner contract, uid and developer-directo
     const cases = [
       [(pin) => { pin.pinStatus = "review-required"; }, /remains root-only: the tracked hosted pin is review-required/u, true],
       [(pin) => { pin.pinStatus = "discovery-required"; pin.hostedDiscovery = null; }, /remains root-only: the tracked hosted pin is discovery-required/u, true],
-      [(pin) => { pin.schemaVersion = 4; }, /version or status is unsupported/u, false],
+      [(pin) => { pin.schemaVersion = 5; }, /version or status is unsupported/u, false],
       [(pin) => { pin.pinStatus = "released"; }, /version or status is unsupported/u, false],
       [(pin) => { pin.hostedDiscovery.github.repository = "someone-else/fulmar"; }, /unexpected GitHub repository/u, true],
       [(pin) => { pin.runnerContract.architecture = "X64"; }, /not GitHub-hosted macOS ARM64/u, false],

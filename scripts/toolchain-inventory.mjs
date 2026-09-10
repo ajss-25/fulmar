@@ -221,7 +221,7 @@ export async function resolveHostedToolchainAdmission({
   if (typeof pinPath !== "string" || resolve(pinPath) !== trackedPinPath) {
     throw new Error("hosted toolchain admission accepts only the literal tracked Config/HostedMacOSToolchainPin.json");
   }
-  const { readHostedMacOSToolchainPin, activeHostedMacOSToolchainPins } = await import("./hosted-macos-toolchain-pin.mjs");
+  const { readHostedMacOSToolchainPin, activeHostedMacOSToolchainPins, hostedCleanCaptureIdentity } = await import("./hosted-macos-toolchain-pin.mjs");
   const document = await readHostedMacOSToolchainPin(trackedPinPath);
   if (document.pinStatus !== "active") {
     return Object.freeze({ admitted: false, reason: `the tracked hosted pin is ${document.pinStatus}` });
@@ -234,18 +234,21 @@ export async function resolveHostedToolchainAdmission({
   if (document.hostedDiscovery.github.repository !== expectedHostedRepository) {
     throw new Error("the tracked hosted pin was discovered in an unexpected GitHub repository");
   }
-  // The sanitized build has no GitHub/Image environment. Select exactly one
-  // whole reviewed member using the system OS identity, uid and Xcode path;
-  // never combine descriptors across members with otherwise shared tools.
+  // The sanitized build has no GitHub/Image environment. Select one complete
+  // inventory using OS identity, uid and Xcode path. Schema-4 image aliases may
+  // share a representative only when all clean-capture fields are identical;
+  // this does not identify which image ran or combine fields across members.
   const members = activeHostedMacOSToolchainPins(document);
   const eligible = members.filter((member) => member.hostedDiscovery.runner.effectiveUID === effectiveUID
     && member.hostedDiscovery.toolchain.developerDirectory === developerDirectory);
   let pin = members[0];
-  if (document.schemaVersion === 3 && eligible.length > 0) {
+  if ((document.schemaVersion === 3 || document.schemaVersion === 4) && eligible.length > 0) {
     const matches = eligible.filter((member) => operatingSystem
       && member.hostedDiscovery.toolchain.operatingSystem.productVersion === operatingSystem.productVersion
       && member.hostedDiscovery.toolchain.operatingSystem.buildVersion === operatingSystem.buildVersion);
-    if (matches.length !== 1) {
+    if (matches.length === 0 || (document.schemaVersion === 3 && matches.length !== 1)
+        || matches.some((member) => JSON.stringify(hostedCleanCaptureIdentity(member))
+          !== JSON.stringify(hostedCleanCaptureIdentity(matches[0])))) {
       throw new Error("no exact reviewed hosted OS, uid and Xcode identity matches");
     }
     [pin] = matches;

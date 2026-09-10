@@ -193,8 +193,24 @@ function validateHostedDiscovery(value, runnerContract) {
   return value;
 }
 
+// The clean build has no ImageVersion environment. Two reviewed image records
+// can share a capture representative only when every non-image-version input
+// below is identical. The preceding hosted verifier still matches one complete
+// image record, including its exact ImageVersion, without using this projection.
+export function hostedCleanCaptureIdentity(document) {
+  return {
+    runnerContract: document.runnerContract,
+    repository: document.hostedDiscovery.github.repository,
+    imageOS: document.hostedDiscovery.image.imageOS,
+    runner: document.hostedDiscovery.runner,
+    xcode: document.hostedDiscovery.xcode,
+    toolchain: document.hostedDiscovery.toolchain
+  };
+}
+
 export function validateHostedMacOSToolchainPin(value) {
-  const compatible = value?.schemaVersion === 3;
+  const equivalentImages = value?.schemaVersion === 4;
+  const compatible = value?.schemaVersion === 3 || equivalentImages;
   exactKeys(
     value,
     ["schemaVersion", "pinStatus", "runnerContract", "hostedDiscovery", ...(compatible ? ["compatiblePins"] : [])],
@@ -204,8 +220,10 @@ export function validateHostedMacOSToolchainPin(value) {
     throw new Error("hosted macOS toolchain pin version or status is unsupported");
   }
   if (compatible && (value.pinStatus !== "active" || !Array.isArray(value.compatiblePins)
-      || value.compatiblePins.length !== 1)) {
-    throw new Error("a compatible pin requires exactly two complete active reviewed identities");
+      || value.compatiblePins.length !== (equivalentImages ? 2 : 1))) {
+    throw new Error(equivalentImages
+      ? "a schema-4 pin requires exactly three complete active reviewed identities"
+      : "a compatible pin requires exactly two complete active reviewed identities");
   }
   validateRunnerContract(value.runnerContract);
   if (value.pinStatus === "discovery-required") {
@@ -219,25 +237,38 @@ export function validateHostedMacOSToolchainPin(value) {
   }
   validateHostedDiscovery(value.hostedDiscovery, value.runnerContract);
   if (compatible) {
-    const secondary = value.compatiblePins[0];
-    // A bounded pair, not a recursive allowlist. Each member remains a whole
-    // reviewed identity; no descriptor, version, or image field is inherited.
-    if (secondary?.schemaVersion !== 2 || secondary.pinStatus !== "active") {
-      throw new Error("the compatible identity must be one complete schema-2 active pin");
-    }
-    validateHostedMacOSToolchainPin(secondary);
-    if (JSON.stringify(secondary.runnerContract) !== JSON.stringify(value.runnerContract)
-        || secondary.hostedDiscovery.github.repository !== value.hostedDiscovery.github.repository) {
-      throw new Error("compatible identities must bind the same runner contract and repository");
-    }
     const selectionKey = (pin) => JSON.stringify([
       pin.hostedDiscovery.runner.effectiveUID,
       pin.hostedDiscovery.toolchain.developerDirectory,
       pin.hostedDiscovery.toolchain.operatingSystem.productVersion,
       pin.hostedDiscovery.toolchain.operatingSystem.buildVersion
     ]);
-    if (selectionKey(secondary) === selectionKey(value)) {
-      throw new Error("compatible identities have an ambiguous clean-capture selection key");
+    const representatives = new Map([[selectionKey(value), value]]);
+    const identities = new Set([JSON.stringify(comparableIdentity(value))]);
+    // Schema 3 retains its exact pair. Schema 4 is an exact triple, not a
+    // recursive or unbounded allowlist. Every member carries its own complete
+    // reviewed inventory and discovery provenance; no fields are inherited.
+    for (const secondary of value.compatiblePins) {
+      if (secondary?.schemaVersion !== 2 || secondary.pinStatus !== "active") {
+        throw new Error("the compatible identity must be one complete schema-2 active pin");
+      }
+      validateHostedMacOSToolchainPin(secondary);
+      if (JSON.stringify(secondary.runnerContract) !== JSON.stringify(value.runnerContract)
+          || secondary.hostedDiscovery.github.repository !== value.hostedDiscovery.github.repository) {
+        throw new Error("compatible identities must bind the same runner contract and repository");
+      }
+      const identity = JSON.stringify(comparableIdentity(secondary));
+      if (identities.has(identity)) {
+        throw new Error("compatible identities repeat one complete hosted image identity");
+      }
+      identities.add(identity);
+      const key = selectionKey(secondary);
+      const representative = representatives.get(key);
+      if (representative && (!equivalentImages
+          || JSON.stringify(hostedCleanCaptureIdentity(representative)) !== JSON.stringify(hostedCleanCaptureIdentity(secondary)))) {
+        throw new Error("compatible identities have an ambiguous clean-capture selection key");
+      }
+      if (!representative) representatives.set(key, secondary);
     }
   }
   return value;

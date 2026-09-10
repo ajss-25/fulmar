@@ -157,6 +157,15 @@ function compatiblePinFixture() {
   return { ...primary, schemaVersion: 3, compatiblePins: [compatible] };
 }
 
+function threeImagePinFixture() {
+  const pair = compatiblePinFixture();
+  const equivalent = proposalFixture("active");
+  equivalent.hostedDiscovery.image.imageVersion = "20260910.1";
+  equivalent.hostedDiscovery.github.commitSHA = "c".repeat(40);
+  equivalent.hostedDiscovery.github.runID = "222222222";
+  return { ...pair, schemaVersion: 4, compatiblePins: [...pair.compatiblePins, equivalent] };
+}
+
 function freshProposal(pin) {
   const proposal = structuredClone(pin);
   proposal.pinStatus = "review-required";
@@ -167,12 +176,12 @@ function freshProposal(pin) {
 
 test("source pin is canonical, active, and retains fail-closed unresolved behavior", async () => {
   const pin = await readHostedMacOSToolchainPin(sourcePin);
-  assert.equal(pin.schemaVersion, 3);
+  assert.equal(pin.schemaVersion, 4);
   assert.equal(pin.pinStatus, "active");
   assert.notEqual(pin.hostedDiscovery, null);
 
   const activePins = activeHostedMacOSToolchainPins(pin);
-  assert.equal(activePins.length, 2);
+  assert.equal(activePins.length, 3);
   for (const selected of activePins) {
     assert.equal(selected.schemaVersion, 2);
     assert.equal(Object.hasOwn(selected, "compatiblePins"), false);
@@ -344,6 +353,69 @@ test("schema and path validation reject invented evidence and unsafe tool identi
     assert.throws(() => activeHostedMacOSToolchainPins(rejected), undefined, `invalid record must not yield any active pins: ${mutate}`);
   }
   assert.throws(() => activeHostedMacOSToolchainPins(proposalFixture()), /review-required/u);
+
+  const threeImages = threeImagePinFixture();
+  validateHostedMacOSToolchainPin(threeImages);
+  const members = activeHostedMacOSToolchainPins(threeImages);
+  assert.equal(members.length, 3);
+  assert.deepEqual(members, [proposalFixture("active"), ...threeImages.compatiblePins]);
+  for (const member of members) {
+    assert.equal(member.schemaVersion, 2);
+    assert.equal(Object.hasOwn(member, "compatiblePins"), false);
+    validateHostedMacOSToolchainPin(member);
+  }
+  assert.notDeepEqual(members[0].hostedDiscovery.image, members[2].hostedDiscovery.image);
+  for (const field of ["runner", "xcode", "toolchain"]) {
+    assert.deepEqual(members[0].hostedDiscovery[field], members[2].hostedDiscovery[field]);
+  }
+
+  // Schema 3 stays an exact, unambiguous pair: schema 4 must not silently
+  // loosen its old selection rule, even when the repeated toolchain is equal.
+  const legacyAmbiguous = { ...proposalFixture("active"), schemaVersion: 3, compatiblePins: [members[2]] };
+  assert.throws(() => validateHostedMacOSToolchainPin(legacyAmbiguous), /ambiguous clean-capture selection key/u);
+
+  for (const mutate of [
+    (value) => { value.compatiblePins.pop(); }, // Two total identities.
+    (value) => { value.compatiblePins.push(structuredClone(value.compatiblePins[0])); }, // Four total identities.
+    (value) => { value.compatiblePins = null; },
+    (value) => { delete value.compatiblePins; },
+    (value) => { value.pinStatus = "review-required"; },
+    (value) => { value.compatiblePins[1].pinStatus = "review-required"; },
+    (value) => { value.unreviewed = true; },
+    (value) => { value.compatiblePins[1].hostedDiscovery.unreviewed = true; },
+    (value) => { value.compatiblePins[1].hostedDiscovery.toolchain.tools.clang.unreviewed = true; },
+    (value) => { delete value.compatiblePins[1].hostedDiscovery.toolchain.sdk; },
+    (value) => { value.compatiblePins[1] = compatiblePinFixture(); },
+    (value) => { value.compatiblePins[1] = threeImagePinFixture(); },
+    (value) => { value.compatiblePins[1].hostedDiscovery.github.repository = "other/fulmar"; },
+    (value) => { value.compatiblePins[1].runnerContract.requestedLabel = "macos-26-large"; }
+  ]) {
+    const rejected = threeImagePinFixture();
+    mutate(rejected);
+    assert.throws(() => validateHostedMacOSToolchainPin(rejected), undefined, `invalid schema-4 record: ${mutate}`);
+    assert.throws(() => activeHostedMacOSToolchainPins(rejected), undefined, `invalid schema-4 record yields no active members: ${mutate}`);
+  }
+
+  for (const mutate of [
+    (value) => { value.hostedDiscovery.image = structuredClone(threeImages.hostedDiscovery.image); },
+    (value) => { value.hostedDiscovery.toolchain.tools.clang.sha256 = "f".repeat(64); },
+    (value) => { value.hostedDiscovery.toolchain.tools.clang.bytes += 1; },
+    (value) => { value.hostedDiscovery.toolchain.tools.codesign = structuredClone(members[1].hostedDiscovery.toolchain.tools.codesign); },
+    (value) => { value.hostedDiscovery.toolchain.sdk.settings.sha256 = "f".repeat(64); },
+    (value) => { value.hostedDiscovery.toolchain.versions.clang = "Apple clang version 17.0.1"; },
+    (value) => { value.hostedDiscovery.xcode.version = "Xcode 26.0\nBuild version 17A124"; },
+    (value) => { value.hostedDiscovery.xcode.executable.sha256 = "f".repeat(64); },
+    (value) => { value.hostedDiscovery.xcode.executable.bytes += 1; }
+  ]) {
+    const rejected = threeImagePinFixture();
+    mutate(rejected.compatiblePins[1]);
+    // Each complete member is still individually valid. Rejection must be
+    // caused by a duplicate image identity or conflicting same-selector bytes,
+    // not malformed evidence or a broad per-descriptor allowance.
+    for (const member of [proposalFixture("active"), ...rejected.compatiblePins]) validateHostedMacOSToolchainPin(member);
+    assert.throws(() => validateHostedMacOSToolchainPin(rejected), undefined, `duplicate or conflicting schema-4 identity: ${mutate}`);
+    assert.throws(() => activeHostedMacOSToolchainPins(rejected));
+  }
 });
 
 test("active comparison is exact and fails closed for image, Xcode, or tool drift", async () => {
@@ -369,46 +441,47 @@ test("active comparison is exact and fails closed for image, Xcode, or tool drif
     /review-required; hosted discovery and review remain mandatory/u
   );
 
-  const compatible = compatiblePinFixture();
-  const [primary, secondary] = activeHostedMacOSToolchainPins(compatible);
-  for (const selected of [primary, secondary]) {
-    assert.deepEqual(compareHostedMacOSToolchainIdentity(compatible, freshProposal(selected)), selected);
-    const identity = selected.hostedDiscovery;
-    const verified = await verifyHostedMacOSToolchainPin("macos-26", compatible, {
-      environment: hostedEnvironment({ ImageVersion: identity.image.imageVersion }),
-      effectiveUID: identity.runner.effectiveUID,
-      captureToolchain: async () => structuredClone(identity.toolchain),
-      runCommand: async (path, arguments_) => {
-        if (path === "/usr/bin/xcrun" && arguments_.join(" ") === "-f xcodebuild") return identity.xcode.executable.path;
-        if (path === "/usr/bin/xcodebuild" && arguments_.join(" ") === "-version") return identity.xcode.version;
-        throw new Error("unexpected compatibility verification command");
-      },
-      describeSystemFile: async () => structuredClone(identity.xcode.executable)
-    });
-    assert.equal(verified.schemaVersion, 2);
-    assert.equal(verified.pinStatus, "review-required");
-    assert.deepEqual(compareHostedMacOSToolchainIdentity(compatible, verified), selected);
-  }
-  for (const mutate of [
-    (value) => { value.hostedDiscovery.image = structuredClone(primary.hostedDiscovery.image); },
-    (value) => { value.hostedDiscovery.toolchain.tools.clang = structuredClone(primary.hostedDiscovery.toolchain.tools.clang); },
-    (value) => { value.hostedDiscovery.toolchain.tools.codesign = structuredClone(primary.hostedDiscovery.toolchain.tools.codesign); },
-    (value) => { value.hostedDiscovery.toolchain.operatingSystem = structuredClone(primary.hostedDiscovery.toolchain.operatingSystem); },
-    (value) => { value.hostedDiscovery.toolchain.versions.clang = primary.hostedDiscovery.toolchain.versions.clang; },
-    (value) => { value.hostedDiscovery.image.imageVersion = "20260999.1"; }
-  ]) {
-    const mixed = freshProposal(secondary);
-    mutate(mixed);
+  for (const compatible of [compatiblePinFixture(), threeImagePinFixture()]) {
+    const [primary, secondary, ...equivalentImages] = activeHostedMacOSToolchainPins(compatible);
+    for (const selected of [primary, secondary, ...equivalentImages]) {
+      assert.deepEqual(compareHostedMacOSToolchainIdentity(compatible, freshProposal(selected)), selected);
+      const identity = selected.hostedDiscovery;
+      const verified = await verifyHostedMacOSToolchainPin("macos-26", compatible, {
+        environment: hostedEnvironment({ ImageVersion: identity.image.imageVersion }),
+        effectiveUID: identity.runner.effectiveUID,
+        captureToolchain: async () => structuredClone(identity.toolchain),
+        runCommand: async (path, arguments_) => {
+          if (path === "/usr/bin/xcrun" && arguments_.join(" ") === "-f xcodebuild") return identity.xcode.executable.path;
+          if (path === "/usr/bin/xcodebuild" && arguments_.join(" ") === "-version") return identity.xcode.version;
+          throw new Error("unexpected compatibility verification command");
+        },
+        describeSystemFile: async () => structuredClone(identity.xcode.executable)
+      });
+      assert.equal(verified.schemaVersion, 2);
+      assert.equal(verified.pinStatus, "review-required");
+      assert.deepEqual(compareHostedMacOSToolchainIdentity(compatible, verified), selected);
+    }
+    for (const mutate of [
+      (value) => { value.hostedDiscovery.image = structuredClone(primary.hostedDiscovery.image); },
+      (value) => { value.hostedDiscovery.toolchain.tools.clang = structuredClone(primary.hostedDiscovery.toolchain.tools.clang); },
+      (value) => { value.hostedDiscovery.toolchain.tools.codesign = structuredClone(primary.hostedDiscovery.toolchain.tools.codesign); },
+      (value) => { value.hostedDiscovery.toolchain.operatingSystem = structuredClone(primary.hostedDiscovery.toolchain.operatingSystem); },
+      (value) => { value.hostedDiscovery.toolchain.versions.clang = primary.hostedDiscovery.toolchain.versions.clang; },
+      (value) => { value.hostedDiscovery.image.imageVersion = "20260999.1"; }
+    ]) {
+      const mixed = freshProposal(secondary);
+      mutate(mixed);
+      assert.throws(
+        () => compareHostedMacOSToolchainIdentity(compatible, mixed),
+        /identity drifted from the active source pin/u,
+        `complete identity matching must not combine independently accepted fields: ${mutate}`
+      );
+    }
     assert.throws(
-      () => compareHostedMacOSToolchainIdentity(compatible, mixed),
-      /identity drifted from the active source pin/u,
-      `complete identity matching must not combine independently accepted fields: ${mutate}`
+      () => compareHostedMacOSToolchainIdentity(compatible, compatible),
+      /fresh review-required discovery/u
     );
   }
-  assert.throws(
-    () => compareHostedMacOSToolchainIdentity(compatible, compatible),
-    /fresh review-required discovery/u
-  );
 });
 
 test("pin reader rejects non-canonical, linked, hard-linked, and writable documents", async () => {
@@ -421,6 +494,10 @@ test("pin reader rejects non-canonical, linked, hard-linked, and writable docume
     const bounded = join(root, "compatible.json");
     await writeFile(bounded, canonicalPinJSON(compatiblePinFixture()), { mode: 0o600 });
     assert.deepEqual(await readHostedMacOSToolchainPin(bounded), compatiblePinFixture());
+
+    const threeImages = join(root, "three-images.json");
+    await writeFile(threeImages, canonicalPinJSON(threeImagePinFixture()), { mode: 0o600 });
+    assert.deepEqual(await readHostedMacOSToolchainPin(threeImages), threeImagePinFixture());
 
     const noncanonical = join(root, "noncanonical.json");
     await writeFile(noncanonical, JSON.stringify(proposalFixture()), { mode: 0o600 });
