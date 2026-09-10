@@ -448,9 +448,10 @@ Because of items 8 and 9 (and the four unresolved crate notices),
 
 ## Packaging integration
 
-The current nine-asset public package contract is unchanged. The notice
-generation seam is wired; the delivery-set distribution remains Codex/owner
-work:
+The stable nine-asset public package contract is unchanged. The notice
+generation seam is wired, and the explicit beta profile now carries the
+delivery archive as three additional release assets; publication, hosting
+duration and legal disposition remain Codex/owner work:
 
 - **Notice generation (wired).** The verified crate materials are an internal
   build input cached at the literal checkout-local path
@@ -485,12 +486,26 @@ work:
   produces the verified `sharp-libvips-1.3.3-delivery-materials/` directory
   described above and `scripts/package-libvips-delivery-materials.mjs` turns it
   into one deterministic, recipient-verifiable archive with a sidecar and a
-  binding ("Delivery archive" above). Choosing a distribution mechanism, adding
-  the archive as a release asset and committing to a hosting duration remain
-  owner/Codex decisions; the packager does none of them.
+  binding ("Delivery archive" above).
+- **Beta release assets (wired, beta profile only).** Under the explicit
+  `--profile beta` of the public release operator, the archive, its sidecar and
+  its binding are the three additional release assets of the twelve-asset beta
+  package (`docs/PUBLIC_BETA_RELEASE_CONTRACT.md`, "Beta release assets"). Their
+  names derive only from the provenance record's `outputDirectoryName`
+  (`scripts/public-release-asset-policy.mjs`); the preparer and the
+  distribution verifier snapshot the material files through attested
+  descriptors and run `verify-archive` on those snapshots with the operator's
+  independently supplied expected digest and source commit, require the
+  checkout to be exactly that commit, and refuse any binding whose acquisition
+  is not HTTPS-authoritative. The stable nine-asset contract is unchanged, and
+  the archive digest is deliberately never committed to this tree. What this
+  does **not** decide: where the trusted archive digest is published (release
+  record), the hosting duration and written offer, and the legal disposition of
+  the open obligations — those remain owner/Codex decisions, and shipping the
+  material beside the app closes none of them.
 
-Two options for distribution, either of which is a Codex-integrated delta, not
-something this record enables on its own:
+Two options were considered for distribution; Option A is the one now wired
+for the beta profile, and its remaining owner commitments still hold:
 
 - **Option A — separate persistent artefact.** Publish the verified
   `sharp-libvips-1.3.3-delivery-materials/` set (the

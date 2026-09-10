@@ -21,6 +21,8 @@ source-only gates in `docs/PUBLIC_RELEASE_READINESS.md`.
 | Extra top-level fields | none | `releaseProfile: "beta"`, `distribution` |
 | Mandatory records | exactly eight, including `twoVersionNotarizedUpdateRollback` | exactly ten (eleven if retained-state migration is separately qualified); see below |
 | Automatic updater | two-version notarized update/rollback exercise required | must be **disabled** in the exact candidate and proven so; no updater exercise is required or accepted |
+| Release assets | exactly nine; `SHA256SUMS.txt` lists the other eight | exactly twelve: the nine plus the verified third-party material archive, its `.tar.sha256` sidecar and its `.binding.json`; `SHA256SUMS.txt` lists the other eleven; see "Beta release assets" |
+| Material operands | none accepted | `--material-package`, `--material-sha256` and `--source-commit` required by the operator and the preparer; `--material-sha256` and `--source-commit` required by the distribution verifier |
 
 The profile is never inferred from evidence contents, a file name, or the
 environment. The stable verifier refuses beta evidence and the beta verifier
@@ -66,9 +68,18 @@ Required gate records, all with exactly `status`, `evidenceSHA256` and
   verification, first install, quit, same-version reinstall, and manual rollback
   to a retained previous app were exercised on the exact notarized candidate on a
   clean Mac, and the retained record identifies each step and its outcome;
-- `inAppUpdaterDisabledInCandidate` — the exact candidate exposes no updater
-  menu item, automation entry point, or programmatic selector, and the record
-  identifies how that was checked on the shipped bytes;
+- `inAppUpdaterDisabledInCandidate` — the exact candidate exposes no
+  user-reachable updater entry point (no main-menu, status-item, Settings,
+  context-menu or keyboard-shortcut action) and its retained
+  `installVerifiedUpdate(_:)` selector is hard-disabled behind the reviewed
+  `verifiedInAppUpdatesEnabled = false` guard, which only shows an
+  "In-app updates are not available in this build" alert; the record identifies
+  how the guard was checked on the exact commit (source contract and identity
+  surface test), how the shipped bytes were bound to that commit (the
+  watchdog-wrapped frozen-candidate check) and how the UI was traversed on the
+  candidate. The selector's existence is a fact, not a finding; a string search
+  of the binary proves nothing either way (`docs/BETA_DOWNLOAD_ACCEPTANCE.md`
+  section 3);
 - `thirdPartyBinaryLicenseMaterials` — the redistributed-binary licence
   obligations recorded in `Config/ThirdPartyBinaryProvenance.json` were reviewed
   for the exact shipped payload and either closed with retained material or
@@ -92,9 +103,56 @@ if enabled. The stable contract keeps those claims behind
 `twoVersionNotarizedUpdateRollback`; the beta contract makes no such claim and
 release copy must not imply one.
 
-`inAppUpdaterDisabledInCandidate` proves absence of an entry point in the exact
-shipped bytes. It is not a code-review substitute and does not qualify the
-retained updater source.
+`inAppUpdaterDisabledInCandidate` proves that the exact shipped bytes offer no
+user-reachable updater entry point and carry the hard-disabled guard on the
+retained selector. It is not a code-review substitute, does not qualify the
+retained updater source, and does not claim the selector is absent.
+
+## Beta release assets
+
+The beta package is exactly twelve assets: the nine stable assets, unchanged,
+plus the verified third-party material archive `<root>.tar`, its `sha256sum`
+sidecar `<root>.tar.sha256` and its binding `<root>.binding.json`, where
+`<root>` is the tracked provenance record's `outputDirectoryName`
+(`sharp-libvips-1.3.3-delivery-materials` today) and never an operand. The
+material files are the exact outputs of
+`scripts/package-libvips-delivery-materials.mjs package` for the release's
+source commit (`docs/LIBVIPS_CORRESPONDING_SOURCE.md`, "Delivery archive").
+`SHA256SUMS.txt` lists the other eleven assets in C-locale byte order; the
+stable list keeps its eight. The exact names and order come from one policy,
+`scripts/public-release-asset-policy.mjs` (`names`/`checksum-names`), used by
+the preparer and the verifier; arbitrary or unrelated files are refused, and
+neither profile silently accepts the other's count.
+
+Three explicit operands carry the material facts. `make public-beta-release`,
+`make public-beta-release-finalize` and `make public-beta-assets` take
+`BETA_MATERIAL_PACKAGE` (the private package directory), `BETA_MATERIAL_SHA256`
+(the material archive digest) and `BETA_SOURCE_COMMIT` (this checkout's HEAD),
+and pass them as `--material-package`, `--material-sha256` and `--source-commit`;
+`make public-beta-distribution-verify` takes the last two. The operator validates
+them before signing, building or verifying anything and forwards them verbatim
+through its clean child invocations; they are refused under the stable profile,
+are never read from the environment, and the `unexport`ed make variables reach
+the scripts only as operands.
+
+Trust roots: the expected material digest comes from the operator's
+independently reviewed release record and the source commit from the operator's
+trusted checkout. The sidecar, the checksum list and the binding that travel
+beside the archive are payload to be checked, never the source of the expected
+digest — whoever can replace the archive can replace them. Preparation and
+verification snapshot the material files through attested descriptors, run the
+existing `verify-archive` on those snapshots (never on an external path that
+could be swapped afterwards) with the operand digest and commit, require the
+checkout to be exactly that commit with no modified tracked file, and require
+the binding to record HTTPS-authoritative acquisition for both material inputs;
+fixture or non-authoritative material is refused for distribution, and only the
+admitted snapshot bytes are copied into the package. The app candidate is bound
+by SHA/version/build exactly as before, and the material digest may never equal
+the candidate digest: they are different artefacts. The archive digest is not
+committed to the source tree (that would bind an artefact to a commit that
+embeds it); it belongs in the trusted release record. Verified material closes
+no licensing, source-offer or relinking obligation
+(`thirdPartyBinaryLicenseMaterials` stays an owner/legal gate).
 
 ## Retained state
 
@@ -117,19 +175,31 @@ Codex owns any runtime enforcement.
 
 ## Operator flow
 
-1. `make public-beta-release` with the same three Developer ID/notary variables
-   as the stable operator. It runs the identical static scan, single signed and
-   notarized build, retention and candidate verification, then pauses with exit
-   78 and prints the immutable candidate identity and the beta gate list.
-2. Complete the ten (or eleven) manual gates against that exact candidate.
+1. Package the verified material set for this exact source commit
+   (`scripts/package-libvips-delivery-materials.mjs package …`), record its
+   archive SHA-256 in the reviewed release record, and keep the private package
+   directory. This is source material, not an app.
+2. `make public-beta-release BETA_MATERIAL_PACKAGE=… BETA_MATERIAL_SHA256=…
+   BETA_SOURCE_COMMIT=…` with the same three Developer ID/notary variables as
+   the stable operator. A fresh run, when those variables are configured, really
+   does run the static scan, one signed and timestamped hardened-runtime build,
+   the Apple notarization submission, stapling, retention and candidate
+   verification, then pauses with its own exit 78 (shown by make as `Error 78`)
+   and prints the immutable candidate identity and the beta gate list. Malformed
+   or missing material operands stop it before any of that.
+3. Complete the ten (or eleven) manual gates against that exact candidate.
    Create owner-private `build/public-beta-external-evidence.json`. Run
    `make public-beta-external-evidence-verify`.
-3. `make public-beta-release-finalize`. Finalize never builds; it revalidates the
-   retained source inventory, archive, Apple records, signer, tree and stapled
-   ticket, verifies the beta evidence for the exact SHA/version/build, creates
-   or revalidates the unchanged nine-asset package, and runs the distribution
-   verifier with `--profile beta`.
-4. Nothing uploads, tags, releases, signs on its own or submits to Apple.
+4. `make public-beta-release-finalize` with the same material operands.
+   Finalize never builds, re-signs, re-notarizes or changes the candidate; it
+   revalidates the retained source inventory, archive, Apple records, signer,
+   tree and stapled ticket, verifies the beta evidence for the exact
+   SHA/version/build, creates the twelve-asset beta package if none is retained
+   (admitting the material as described above) or revalidates a retained one,
+   and runs the distribution verifier with `--profile beta --material-sha256 …
+   --source-commit …`. A retained package whose material does not match the
+   operands fails with that error; it is never silently rebuilt or replaced.
+5. Nothing uploads, tags, releases, signs on its own or submits to Apple.
 
 The success message names the profile ("Public BETA release qualification
 passed …") and states that it is not stable qualification. Stable messages are

@@ -81,14 +81,30 @@ failing gate, and do not edit a frozen count or a skip list to make one pass.
 
 ## 2. Build, sign, notarize and retain one candidate `[Owner]` + `[Integrator]`
 
+The beta package carries the verified third-party material archive beside the
+app (`docs/PUBLIC_BETA_RELEASE_CONTRACT.md`, "Beta release assets"), so the
+operator needs three material operands before it will build anything: the
+private package directory produced for the exact candidate commit by
+`scripts/package-libvips-delivery-materials.mjs package
+Config/ThirdPartyBinaryProvenance.json <verified delivery set> <new private
+directory> <commit>`, that archive's SHA-256 as recorded in the reviewed release
+record (it is the `.tar` digest, **not** the `Fulmar.app.zip` digest and not
+read from the package's own sidecar), and the checkout's HEAD commit. Missing,
+duplicated or malformed operands stop the operator before the signing identity
+is consulted.
+
 ```sh
-# runnable — the only build-producing beta operator; its deliberate pause is
-# the operator's own exit status 78, which GNU make reports as "Error 78" and
-# wraps in make's exit status 2
+# runnable — the only build-producing beta operator; when the three signing
+# variables are configured it really builds, signs, submits to Apple, staples
+# and retains one candidate, then pauses with its own exit status 78, which GNU
+# make reports as "Error 78" and wraps in make's exit status 2
 LOCAL_HARNESS_SIGN_IDENTITY="Developer ID Application: <UNRESOLVED: name> (<UNRESOLVED: TEAMID>)" \
 LOCAL_HARNESS_SIGNING_KEYCHAIN="<UNRESOLVED: absolute keychain path>" \
 LOCAL_HARNESS_NOTARY_PROFILE="<UNRESOLVED: notarytool profile>" \
-make public-beta-release; echo "make status: $?"
+make public-beta-release \
+  BETA_MATERIAL_PACKAGE="<UNRESOLVED: absolute private material package directory>" \
+  BETA_MATERIAL_SHA256="<UNRESOLVED: material archive sha256 from the reviewed release record>" \
+  BETA_SOURCE_COMMIT="$(git rev-parse HEAD)"; echo "make status: $?"
 ```
 
 Expected outcome: static scan, one timestamped hardened-runtime build, Apple
@@ -188,8 +204,14 @@ Gate: `thirdPartyBinaryLicenseMaterials`. What exists and what does not:
 - The verified delivery set can be packaged privately into one deterministic
   archive with a binding, and a recipient can verify and unpack it against the
   exact source commit (`scripts/package-libvips-delivery-materials.mjs`, same
-  document, "Delivery archive"). This is an engineering step. It is not a public
-  source offer, not a release asset and not clearance.
+  document, "Delivery archive"). Under the beta profile that archive, its
+  sidecar and its binding are the three additional release assets (twelve in
+  all; `docs/PUBLIC_BETA_RELEASE_CONTRACT.md`, "Beta release assets"), admitted
+  into the package only after the existing verifier accepts them for the exact
+  source commit with the operator-supplied digest and HTTPS-authoritative
+  acquisition. This is an engineering step. Shipping the material beside the
+  app is not by itself a corresponding-source offer with a duration, not
+  relinking information, and not clearance.
 - Four crate notices remain **unresolved**; `malloc_buf 0.0.6` has a
   later-revision upstream licence text recorded but not bound. The mechanism and
   duration of the corresponding-source offer, relinking/Installation Information
@@ -441,18 +463,33 @@ was really closed), then:
 ./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
   --emergency-rss-bytes 17179869184 --label "Fulmar beta external-evidence check" -- /usr/bin/make public-beta-external-evidence-verify
 LOCAL_HARNESS_SIGN_IDENTITY="…" LOCAL_HARNESS_SIGNING_KEYCHAIN="…" LOCAL_HARNESS_NOTARY_PROFILE="…" \
-make public-beta-release-finalize
+make public-beta-release-finalize \
+  BETA_MATERIAL_PACKAGE="<same private material package as step 2>" \
+  BETA_MATERIAL_SHA256="<same material archive sha256 from the reviewed release record>" \
+  BETA_SOURCE_COMMIT="$(git rev-parse HEAD)"; echo "make status: $?"
 ```
 
-Finalize revalidates the retained archive, Apple records, signer, tree and
-ticket, verifies the beta evidence for the exact SHA/version/build, creates or
-revalidates the unchanged nine-asset package and runs the distribution verifier
-with `--profile beta`. It never uploads, tags or publishes. Its statuses follow
-step 2: the operator's own exit 78 (shown by make as `Error 78`, make status 2)
-means the evidence file is missing, incomplete or bound to another candidate or
-profile — correct the evidence, do not rebuild; any other non-zero outcome is a
-failure. Passing it proves record completeness and candidate binding; it does
-not make a reference true.
+Finalize never builds, re-signs, re-notarizes or changes the candidate. It
+revalidates the retained archive, Apple records, signer, tree and ticket,
+verifies the beta evidence for the exact SHA/version/build, then creates the
+twelve-asset beta package if none is retained — admitting the material archive,
+sidecar and binding from the private package only after `verify-archive` accepts
+their snapshots for the exact source commit with the supplied digest — or
+revalidates a retained package, and runs the distribution verifier with
+`--profile beta --material-sha256 … --source-commit …`. A retained package whose
+material does not match the operands fails with that error and is never
+silently rebuilt or replaced. It never uploads, tags or publishes. Its statuses
+follow step 2: the operator's own exit 78 (shown by make as `Error 78`, make
+status 2) means the evidence file is missing, incomplete or bound to another
+candidate or profile — correct the evidence, do not rebuild; any other non-zero
+outcome is a failure. Passing it proves record completeness, candidate binding
+and material binding; it does not make a reference true and it does not close
+`thirdPartyBinaryLicenseMaterials`.
+
+The published beta release therefore carries twelve assets. Testers install
+from `Fulmar.app.zip` exactly as in step 5; the three material assets are
+third-party source material for reviewers and recipients, are never installed,
+and `SHA256SUMS.txt` lists eleven files in a beta release.
 
 ## 9. Stop and rollback conditions
 

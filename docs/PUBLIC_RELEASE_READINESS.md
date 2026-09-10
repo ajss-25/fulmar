@@ -155,7 +155,13 @@ A separately identifiable manual-install **beta** profile with its own evidence 
 (`build/public-beta-external-evidence.json`), evidence type, gate set and
 `make public-beta-*` entry points is specified in `docs/PUBLIC_BETA_RELEASE_CONTRACT.md`;
 the two profiles never accept each other's evidence, and neither has a qualified
-candidate today. Missing, deferred, placeholder, malformed, linked, non-private, or candidate-
+candidate today. The beta profile's package is twelve assets — the nine above
+plus the verified third-party material archive, its `.tar.sha256` sidecar and
+its `.binding.json`, with an eleven-entry `SHA256SUMS.txt` — supplied through
+explicit material operands (`BETA_MATERIAL_PACKAGE`, `BETA_MATERIAL_SHA256`,
+`BETA_SOURCE_COMMIT`) whose expected digest comes from the reviewed release
+record, never from files beside the archive; the stable nine-asset contract is
+unchanged. Missing, deferred, placeholder, malformed, linked, non-private, or candidate-
 stale records fail closed. Run `make public-external-evidence-verify` after recording
 the real results. `make public-distribution-verify` independently repeats this check
 against the manifest inside the reviewed package before emitting its success marker.
