@@ -6,17 +6,17 @@
     "alpha": {
       "version": "0.1.5-alpha.2",
       "disposition": "observed-not-promoted",
-      "note": "Observed from npm alpha on 2026-09-09T15:36Z with registry root integrity sha512-nzkfldYf3rIXeW0gfExtxoUdhaivsO+kAaKV4JpNLZC0OtxAUlnAZ0yHzf03IaOTNtAP/aXS7FOAr5O8Lckr1A==; latest and next remain 0.1.2-rc.1. Official GitHub prerelease 385585674, tag dsh-v0.1.5-alpha.2, was published 2026-09-09T14:23:10Z at commit b2e3b2a0125854567a4a5fcba75782e42fe84901. It changes file previews, feedback, provider URL validation, MCP pagination and plugin/Profile APIs; cumulative V3 no-downgrade and Agent/Inbox boundaries remain. This is a read-only metadata and release-note observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
+      "note": "Observed from npm alpha on 2026-09-09T15:36Z with registry root integrity sha512-nzkfldYf3rIXeW0gfExtxoUdhaivsO+kAaKV4JpNLZC0OtxAUlnAZ0yHzf03IaOTNtAP/aXS7FOAr5O8Lckr1A==; latest and next remain 0.1.2-rc.1. Official GitHub prerelease 385585674, tag dsh-v0.1.5-alpha.2, was published 2026-09-09T14:23:10Z at commit b2e3b2a0125854567a4a5fcba75782e42fe84901. It changes file previews, feedback, provider URL validation, MCP pagination and plugin/Profile APIs; cumulative V3 no-downgrade and Agent/Inbox boundaries remain. As re-observed on 2026-09-10T15:39Z, alpha still points here while latest and next have since advanced to 0.1.5-rc.1 and 0.1.5-rc.2. This is a read-only metadata and release-note observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
     },
     "latest": {
-      "version": "0.1.2-rc.1",
+      "version": "0.1.5-rc.1",
       "disposition": "observed-not-promoted",
-      "note": "Observed from npm on 2026-09-04T08:26Z as both latest and next; published 2026-09-03T06:21:52.107Z with root integrity sha512-RPq48TzxvwpdT9/7W1tbhZDBMmeK+bxDrX9cqQC27Wx/LqtgJF8PSa3b3xriU8oxtvhwYmk21w2cej3uMQrnVA==. Official GitHub prerelease 381777538 and tag dsh-v0.1.2-rc.1 were published 2026-09-03T06:06:07Z at commit a66e4702047846cdaa10c66c9d3df3951f5ea70d as the first 0.1.2 release candidate, cumulating the alpha-series user and developer changes since 0.1.1-rc.2. This is an observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
+      "note": "Observed from npm on 2026-09-10T15:39Z as latest, replacing the previously acknowledged 0.1.2-rc.1; published 2026-09-10T03:12:53.293Z with root integrity sha512-rmNmzQCg3oIc1z8xH7izRSOuy1TNzq+/NILyfM+7e8DKOyV+yBtg47WEsqR2SiIe1ATec3L/rUa1YhIcfQ2XEg==. Official GitHub prerelease 385978363 and tag dsh-v0.1.5-rc.1 were published 2026-09-10T03:09:00Z at commit 183f08e9c6dde7e36cd2318eaee70b0da08fb35e as the first 0.1.5 release candidate, cumulating every alpha-series change since 0.1.2-rc.1. This is a read-only metadata and release-note observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
     },
     "next": {
-      "version": "0.1.2-rc.1",
+      "version": "0.1.5-rc.2",
       "disposition": "observed-not-promoted",
-      "note": "Observed from npm on 2026-09-04T08:26Z as both latest and next; published 2026-09-03T06:21:52.107Z with root integrity sha512-RPq48TzxvwpdT9/7W1tbhZDBMmeK+bxDrX9cqQC27Wx/LqtgJF8PSa3b3xriU8oxtvhwYmk21w2cej3uMQrnVA==. Official GitHub prerelease 381777538 and tag dsh-v0.1.2-rc.1 were published 2026-09-03T06:06:07Z at commit a66e4702047846cdaa10c66c9d3df3951f5ea70d as the first 0.1.2 release candidate, cumulating the alpha-series user and developer changes since 0.1.1-rc.2. This is an observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
+      "note": "Observed from npm on 2026-09-10T15:39Z as next, replacing the previously acknowledged 0.1.2-rc.1; published 2026-09-10T14:57:10.790Z with root integrity sha512-8Xc8hCQHcIWRmTCVU/xZdp6/qMsWMeAd2ObChKDEsfhUPJFXx6H0lgeb1DxUMD86HZrrVN+1bCvn1ppjZ/fOxw==. Official GitHub prerelease 386391166 and tag dsh-v0.1.5-rc.2 were published 2026-09-10T15:09:34Z at commit fb2c4b9e698e30edb738bca4cf0618587db7d203. Its notes describe only feedback-dialog confirmation and delivered-file card presentation over 0.1.5-rc.1, so it inherits every 0.1.5-rc.1 boundary. This is an observation, not an exact-cohort assessment or promotion; Fulmar remains pinned to 0.1.1-rc.1 and does not ship it."
     }
   },
   "officialGitHub": {
@@ -136,6 +136,22 @@
         "commitSHA": "b2e3b2a0125854567a4a5fcba75782e42fe84901",
         "disposition": "observed-not-promoted",
         "note": "Official GitHub prerelease published 2026-09-09T14:23:10Z and observed on 2026-09-09T15:36Z, also on npm alpha. Release notes describe Sidebar file previews and explicit file delivery, detailed feedback, custom-provider Base URL validation, rejection of repeated MCP pagination cursors while preserving the last valid tool set, pi-ai settings repair, fs-ext installation fixes, Web panel API changes, and shell-only webminimal/Python sdkminimal defaults. Experimental Agent Teams remains explicit opt-in. Cumulative V3 no-downgrade, Agent/Inbox, privacy and migration boundaries still require separate exact-cohort qualification; it is not promoted or shipped."
+      },
+      "0.1.5-rc.1": {
+        "tag": "dsh-v0.1.5-rc.1",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/385978363",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1",
+        "commitSHA": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published 2026-09-10T03:09:00Z and observed on 2026-09-10T15:39Z, now also npm latest. As the first 0.1.5 release candidate it cumulates every alpha-series change since 0.1.2-rc.1: Session format V3 without downgrade reads, lifecycle-owned SessionHandle and per-Session locks, explicit Agent passing with a type-only Inbox, SDK/Headless/ACP read-write-edit defaults, shell-only Web minimal and Python sdk-minimal Profiles, a new DeepSeek-V41-Flash adapter default for new Sessions, arbitrary Web uploads with Sidebar previews and explicit file delivery, environment proxy variables honoured for all outbound requests, dynamic system prompts gated on declared model support, feedback submissions that include conversation content, and repeated-cursor MCP rejection. It requires a full exact-cohort requalification before any promotion; it is not promoted or shipped."
+      },
+      "0.1.5-rc.2": {
+        "tag": "dsh-v0.1.5-rc.2",
+        "releaseObjectAPIURL": "https://api.github.com/repos/deepseek-ai/deepseek-harness/releases/386391166",
+        "releaseURL": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.2",
+        "commitSHA": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+        "disposition": "observed-not-promoted",
+        "note": "Official GitHub prerelease published 2026-09-10T15:09:34Z and observed on 2026-09-10T15:39Z, now npm next. Its notes describe only feedback submission confirmed through a dialog that retains entered text when submission fails, and refreshed delivered-file card layouts, conversation spacing and code-file icons. It inherits every cumulative 0.1.5-rc.1 boundary, including V3 no-downgrade, Agent/Inbox, Profile tool defaults, feedback content disclosure and migration requirements, and still requires separate exact-cohort qualification; it is not promoted or shipped."
       }
     }
   }

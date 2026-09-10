@@ -16,11 +16,22 @@ unacknowledged GitHub version, promoted tag target, or promoted release-note bod
 fails the observation job. The watcher never edits the runtime pin, opens a pull
 request, or publishes an app.
 
-As observed on 2026-09-09T15:36Z, Fulmar remains pinned to reviewed `0.1.1-rc.1`,
-including guarded MCP. npm `latest`/`next` remain at observed-but-not-promoted
-`0.1.2-rc.1`; npm `alpha` now points to observed-but-not-promoted `0.1.5-alpha.2`.
-The recent official GitHub prereleases are `0.1.3-alpha.2` (release 384129524,
-tag `dsh-v0.1.3-alpha.2`, commit
+As observed on 2026-09-10T15:39Z, Fulmar remains pinned to reviewed `0.1.1-rc.1`,
+including guarded MCP. The 0.1.5 line has since reached release candidates on the
+default channels: npm `latest` now points to observed-but-not-promoted `0.1.5-rc.1`
+(published 2026-09-10T03:12:53.293Z) and npm `next` to observed-but-not-promoted
+`0.1.5-rc.2` (published 2026-09-10T14:57:10.790Z), while npm `alpha` still points to
+observed-but-not-promoted `0.1.5-alpha.2`. Both replaced the previously acknowledged
+`0.1.2-rc.1` on those two channels.
+
+The corresponding official GitHub prereleases are `0.1.5-rc.1` (release 385978363,
+tag `dsh-v0.1.5-rc.1`, commit
+`183f08e9c6dde7e36cd2318eaee70b0da08fb35e`, published
+2026-09-10T03:09:00Z) and `0.1.5-rc.2` (release 386391166,
+tag `dsh-v0.1.5-rc.2`, commit
+`fb2c4b9e698e30edb738bca4cf0618587db7d203`, published
+2026-09-10T15:09:34Z). They follow the previously recorded `0.1.3-alpha.2`
+(release 384129524, tag `dsh-v0.1.3-alpha.2`, commit
 `82a5fd61a7cf5c293cec4bdff68f455398d685e9`, published
 2026-09-07T13:59:29Z), `0.1.5-alpha.1` (release 384887562,
 tag `dsh-v0.1.5-alpha.1`, commit
@@ -32,8 +43,10 @@ tag `dsh-v0.1.5-alpha.2`, commit
 GitHub release/tag observations; none of these cohorts has been staged, assessed,
 promoted or shipped. The latest completed exact-cohort assessment remains the
 separate `0.1.2-alpha.3` cohort, and the promotion record still identifies only
-`0.1.1-rc.1`. npm's `latest` tag identifies its default package channel; it does
-not establish stability or Fulmar compatibility.
+`0.1.1-rc.1`, whose official release and immutable tag were re-observed unchanged at
+commit `528c682e061696f5a160f363f236ecbf53cbd006` in the same run. npm's `latest` tag
+identifies its default package channel; a release candidate reaching it does not
+establish stability, an end-of-life deadline for the pin, or Fulmar compatibility.
 
 These observations retain the earlier `0.1.3-alpha.1` SessionHandle/session-lock
 and Session format v2 boundaries. Upstream `0.1.3-alpha.2` reports reconnect and
@@ -52,6 +65,20 @@ not proof of a vulnerability in Fulmar's guarded routes or proof that an upgrade
 safe. The checked official notes and public advisories did not identify a mandatory
 migration or end-of-life deadline for the pin; that is not a security clearance.
 
+`0.1.5-rc.1` promotes that cumulative alpha line to a release candidate rather than
+introducing a separate migration path: its notes restate Session format V3 without
+downgrade reads, the lifecycle-owned `SessionHandle` and per-Session lock, explicit
+Agent passing with a type-only `Inbox`, changed SDK/Headless/ACP and minimal-Profile
+tool defaults, and repeated-cursor MCP rejection, and add a `DeepSeek-V41-Flash`
+adapter used by default for new Sessions, arbitrary Web uploads with Sidebar
+previews and explicit file delivery, environment proxy variables honoured on all
+outbound requests, dynamic system prompts gated on declared model support, and
+feedback submissions that carry conversation content. `0.1.5-rc.2` adds only a
+feedback confirmation dialog that retains entered text on failure and delivered-file
+card presentation changes, and therefore inherits every `0.1.5-rc.1` boundary.
+Reaching npm `latest` and `next` changes the channel these candidates occupy, not
+their qualification state for Fulmar.
+
 Official upstream records:
 
 - [DeepSeek Harness releases](https://github.com/deepseek-ai/deepseek-harness/releases)
@@ -64,6 +91,8 @@ Official upstream records:
 - [`dsh-v0.1.3-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.2)
 - [`dsh-v0.1.5-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.1)
 - [`dsh-v0.1.5-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.2)
+- [`dsh-v0.1.5-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1)
+- [`dsh-v0.1.5-rc.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.2)
 - [npm DSH channel metadata](https://registry.npmjs.org/-/package/@deepseek-ai%2Fdsh/dist-tags)
 - [DeepSeek Harness safety notice](https://github.com/deepseek-ai/deepseek-harness/blob/master/SAFETY.md)
 - [Official public security advisories](https://github.com/deepseek-ai/deepseek-harness/security/advisories)
@@ -108,6 +137,10 @@ enough; every earlier alpha boundary remains in the promotion matrix:
 | `0.1.5-alpha.1` | Dynamic system prompts require declared model support; Sidebar replaces Detail; absolute-path image rendering, paused-goal resume, project-root discovery and native fs-ext dependency behavior change | Requalify provider capability gating, Web/RPC/DOM and accessibility, path confinement including out-of-workspace images, user-owned goal resume, instruction-root errors, and the complete native dependency inventory/build |
 | `0.1.5-alpha.2` | Sidebar previews and explicit file delivery, detailed feedback, custom-provider Base URL validation/settings repair, repeated-cursor MCP rejection preserving the last valid tool set, and fs-ext installation fixes | Requalify preview/open/reveal path confinement, consent and content redaction, exact-origin discovery and credentials, guarded MCP startup/resync/cancellation, and the complete native dependency inventory; reported fixes do not establish pinned exposure or promotion readiness |
 | `0.1.5-alpha.2` | Web panels move to sidebar.panellist/main with conversation slots on main; webminimal/Python sdkminimal default to shell-only, editor tools need opt-in, persistent Bash reports exit/timeout, and experimental Agent Teams needs explicit Profile opt-in | Requalify local Web/RPC/DOM plugins, every shipped Profile's exact tools, subprocess termination, subagent guidance and opt-in boundaries while retaining all earlier V3, Agent/Inbox, privacy and rollback requirements |
+| `0.1.5-rc.1` | A new `DeepSeek-V41-Flash` (`deepseek-flash`) adapter becomes the default model for new Sessions unless the configuration file names a model explicitly, and supports in-history system-prompt updates | Prove Fulmar's pinned V4 catalog, model selection and configured-model precedence are unchanged for new and restored Sessions; requalify text, image, thinking and tool replay against the exact adapter rather than assuming the previous default |
+| `0.1.5-rc.1` | All outbound requests honour `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` from the startup environment | Requalify Fulmar's egress policy and approved fetch-only surface under set, empty, malformed and conflicting proxy variables; prove no provider, telemetry or local-session request escapes the reviewed origin policy through an inherited proxy |
+| `0.1.5-rc.1` | Dynamic system-prompt updates without invalidating KV cache when the configured model declares support | Prove capability gating cannot be asserted by an untrusted provider response, and requalify prompt disclosure in sanitized history, exports and support reports |
+| `0.1.5-rc.2` | Feedback likes and dislikes are confirmed through a dialog and retain entered text when submission fails; delivered-file cards and conversation spacing change | Prove explicit consent per submission, the exact submitted content and endpoint, retention of failed drafts, and that ordinary chat still reports nothing; requalify delivered-file rendering and path confinement with the earlier feedback-content disclosure boundary |
 
 These changes touch privacy, network egress, authentication, provider discovery,
 continuation and subagent behavior, history/security bridges, export and cloned-state
