@@ -240,10 +240,23 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
     print -u2 "The beta material package must be one existing canonical directory: $MATERIAL_PACKAGE"
     exit 1
   }
-  PACKAGE_ASSET_NAMES=("${(@f)$("$NODE" "$ASSET_POLICY" names beta "$PROVENANCE_RECORD")}") || exit 1
-  CHECKSUM_ENTRY_NAMES=("${(@f)$("$NODE" "$ASSET_POLICY" checksum-names beta "$PROVENANCE_RECORD")}") || exit 1
+  # One policy name per line; plain read loops keep this file parseable by the
+  # reviewed static scanner (zsh expansion flags are not).
+  policy_names="$("$NODE" "$ASSET_POLICY" names beta "$PROVENANCE_RECORD")" || exit 1
+  policy_checksum_names="$("$NODE" "$ASSET_POLICY" checksum-names beta "$PROVENANCE_RECORD")" || exit 1
+  PACKAGE_ASSET_NAMES=()
+  while IFS= read -r policy_name; do PACKAGE_ASSET_NAMES+=("$policy_name"); done <<< "$policy_names"
+  CHECKSUM_ENTRY_NAMES=()
+  while IFS= read -r policy_name; do CHECKSUM_ENTRY_NAMES+=("$policy_name"); done <<< "$policy_checksum_names"
   # The material assets are exactly the beta names that are not stable names.
-  MATERIAL_ASSET_NAMES=("${(@)PACKAGE_ASSET_NAMES:|STABLE_PACKAGE_ASSET_NAMES}")
+  MATERIAL_ASSET_NAMES=()
+  for policy_name in "${PACKAGE_ASSET_NAMES[@]}"; do
+    policy_name_is_stable=0
+    for stable_name in "${STABLE_PACKAGE_ASSET_NAMES[@]}"; do
+      [[ "$policy_name" == "$stable_name" ]] && policy_name_is_stable=1
+    done
+    (( policy_name_is_stable )) || MATERIAL_ASSET_NAMES+=("$policy_name")
+  done
   (( ${#PACKAGE_ASSET_NAMES[@]} == 12 && ${#CHECKSUM_ENTRY_NAMES[@]} == 11 && ${#MATERIAL_ASSET_NAMES[@]} == 3 )) || {
     print -u2 "The beta asset policy did not yield exactly twelve assets, eleven checksum entries and three material assets."
     exit 1
@@ -377,7 +390,10 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
     }
   done
   typeset -a MATERIAL_ARCHIVE_NAMES
-  MATERIAL_ARCHIVE_NAMES=("${(@M)MATERIAL_ASSET_NAMES:#*.tar}")
+  MATERIAL_ARCHIVE_NAMES=()
+  for name in "${MATERIAL_ASSET_NAMES[@]}"; do
+    [[ "$name" == *.tar ]] && MATERIAL_ARCHIVE_NAMES+=("$name")
+  done
   (( ${#MATERIAL_ARCHIVE_NAMES[@]} == 1 )) || {
     echo "Beta material assets must contain exactly one material archive." >&2; exit 1
   }

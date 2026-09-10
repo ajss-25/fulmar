@@ -209,9 +209,23 @@ verify_source_commit_operand() {
   }
 }
 if [[ "$RELEASE_PROFILE" == "beta" ]]; then
-  PACKAGE_ASSET_NAMES=("${(@f)$("$NODE" "$ASSET_POLICY" names beta "$PROVENANCE_RECORD")}") || exit 1
-  CHECKSUM_ENTRY_NAMES=("${(@f)$("$NODE" "$ASSET_POLICY" checksum-names beta "$PROVENANCE_RECORD")}") || exit 1
-  MATERIAL_ASSET_NAMES=("${(@)PACKAGE_ASSET_NAMES:|STABLE_PACKAGE_ASSET_NAMES}")
+  # One policy name per line; plain read loops keep this file parseable by the
+  # reviewed static scanner (zsh expansion flags are not).
+  policy_names="$("$NODE" "$ASSET_POLICY" names beta "$PROVENANCE_RECORD")" || exit 1
+  policy_checksum_names="$("$NODE" "$ASSET_POLICY" checksum-names beta "$PROVENANCE_RECORD")" || exit 1
+  PACKAGE_ASSET_NAMES=()
+  while IFS= read -r policy_name; do PACKAGE_ASSET_NAMES+=("$policy_name"); done <<< "$policy_names"
+  CHECKSUM_ENTRY_NAMES=()
+  while IFS= read -r policy_name; do CHECKSUM_ENTRY_NAMES+=("$policy_name"); done <<< "$policy_checksum_names"
+  # The material assets are exactly the beta names that are not stable names.
+  MATERIAL_ASSET_NAMES=()
+  for policy_name in "${PACKAGE_ASSET_NAMES[@]}"; do
+    policy_name_is_stable=0
+    for stable_name in "${STABLE_PACKAGE_ASSET_NAMES[@]}"; do
+      [[ "$policy_name" == "$stable_name" ]] && policy_name_is_stable=1
+    done
+    (( policy_name_is_stable )) || MATERIAL_ASSET_NAMES+=("$policy_name")
+  done
   (( ${#PACKAGE_ASSET_NAMES[@]} == 12 && ${#CHECKSUM_ENTRY_NAMES[@]} == 11 && ${#MATERIAL_ASSET_NAMES[@]} == 3 )) || {
     echo "The beta asset policy did not yield exactly twelve assets, eleven checksum entries and three material assets." >&2; exit 1
   }
@@ -233,7 +247,8 @@ SNAPSHOT="$TEMP_ROOT/package"
   echo "SHA256SUMS.txt has unexpected or unsafe entries." >&2; exit 1
 }
 checksum_names="$(/usr/bin/sed -E -n 's/^[0-9a-f]{64}  (.*)$/\1/p' "$SNAPSHOT/SHA256SUMS.txt")"
-[[ "$checksum_names" == "${(F)CHECKSUM_ENTRY_NAMES}" ]] || {
+expected_checksum_names="$(printf '%s\n' "${CHECKSUM_ENTRY_NAMES[@]}")"
+[[ "$checksum_names" == "$expected_checksum_names" ]] || {
   echo "SHA256SUMS.txt has unexpected or unsafe entries." >&2; exit 1
 }
 [[ "$(/usr/bin/wc -l < "$SNAPSHOT/Fulmar.app.zip.sha256" | /usr/bin/tr -d ' ')" == 1 \
