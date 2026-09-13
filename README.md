@@ -8,20 +8,27 @@ clearly labelled privacy boundary. Fulmar is **not affiliated with, endorsed by,
 supported by DeepSeek, OpenAI, Anthropic, Ollama, Alibaba, or the Qwen project.**
 Third-party names identify compatibility only.
 
-The 1.2.36 candidate is build 156. The visible product was renamed from Local Harness;
+The 1.2.37 candidate is build 157. The visible product was renamed from Local Harness;
 stable legacy technical identifiers (bundle ID, Keychain services, Application Support
 folder) remain in place so existing conversations, settings, credentials, schedules,
 backups and rollback continue to resolve. See
 [Brand and release identity](docs/BRAND_AND_RELEASE_IDENTITY.md). Fulmar does not
 promise feature parity with proprietary desktop applications or freedom from defects.
 
-> **MIT-licensed source preview.** The proposed first public tag is
-> `v1.2.36-preview.1`. Build and run locally using the [source instructions](#build-from-source).
+> **MIT-licensed source preview.** The next proposed manual-download beta tag is
+> `v1.2.37-beta.1`; it is not published or qualified yet. Build and run locally using the [source instructions](#build-from-source).
 > There is no supported DMG or app download, Developer ID signature, or Apple
 > notarisation. A usable local build uses a persistent self-signed identity; see
 > [Preview binary and Gatekeeper](docs/PREVIEW_BINARY_GATEKEEPER.md).
 > Exact-source hosted checks and the separate binary-release requirements are tracked
 > in [public-release readiness](docs/PUBLIC_RELEASE_READINESS.md).
+
+The planned direct-download beta uses the explicit **non-notarized** profile:
+no App Store or Apple Developer ID is claimed. It keeps a persistent private
+signing identity, disables automatic updates, and is clean-install-only until
+separate migration evidence exists. See the [beta candidate notes](docs/RELEASE_NOTES_v1.2.37-beta.1.md)
+and [distribution contract](docs/PUBLIC_BETA_RELEASE_CONTRACT.md). A private DMG
+or successful local test is not a public-download qualification.
 
 > **Upstream safety boundary:** [DeepSeek describes Harness](https://github.com/deepseek-ai/deepseek-harness/blob/main/SAFETY.md) as experimental
 > developer-preview software that has not undergone a security audit. Fulmar's

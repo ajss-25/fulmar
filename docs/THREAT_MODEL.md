@@ -1,4 +1,4 @@
-# Threat model — Fulmar 1.2.36 build 156
+# Threat model — Fulmar 1.2.37 build 157
 
 ## Protected assets
 

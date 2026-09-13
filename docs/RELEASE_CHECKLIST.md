@@ -1,4 +1,4 @@
-# Release checklist — Fulmar 1.2.36 build 156
+# Release checklist — Fulmar 1.2.37 build 157
 
 This is a candidate checklist. A checked implementation item means the capability is
 present in source; it is not release evidence. Qualification items remain unchecked

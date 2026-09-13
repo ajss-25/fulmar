@@ -1,9 +1,10 @@
 # Getting started with Fulmar
 
-Fulmar 1.2.36 build 156 is a source-only developer-preview candidate, not a supported
-public app-binary download. The current build still lacks Developer ID signing,
-Apple notarization, clean-Mac release qualification and binary-specific libvips
-licence/source/relink compliance. A future stable release also requires proven
+Fulmar 1.2.37 build 157 is a developer-preview candidate, not yet a supported
+public app-binary download. The planned direct-download beta is explicitly
+non-notarized and does not require Apple Developer ID or App Store distribution.
+Clean-Mac release qualification and binary-specific libvips licence/source/relink
+requirements remain prerequisites. A future stable release also requires proven
 two-version update/rollback and power-loss recovery; the separate manual-install
 binary beta requires its own acceptance evidence with the updater disabled. See
 [public-release readiness](PUBLIC_RELEASE_READINESS.md). Do not bypass Gatekeeper

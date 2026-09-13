@@ -4,7 +4,7 @@ Updated: 2026-09-13 (Europe/London)
 
 ## Release decision and immutable identity
 
-- Source identity: Fulmar `1.2.36` build `156`, Apple silicon, macOS `15.0` minimum.
+- Source identity: Fulmar `1.2.37` build `157`, Apple silicon, macOS `15.0` minimum.
 - Runtime pin: Node `22.23.1`; DeepSeek Harness and MCP client `0.1.1-rc.1`.
 - Current reconstruction: fifteen hash-bound runtime patches; 38,504 VendorRuntime
   entries / 395,130,487 file bytes, plus the verified Rust notice-material cache.
@@ -21,14 +21,34 @@ Updated: 2026-09-13 (Europe/London)
   `0b56cc122f6f83fd9f849d559a455e2ead50c53b6654f5abceca859bc6827efb`;
   the fresh dependency audit reports zero findings across 495 package names.
   Hosted qualification of this replacement remains required before merging.
-- Intended release lane: MIT-licensed **source beta**, explicitly not a generally
-  supported binary download.
+- Intended release lane: updated MIT source and a separately qualified
+  `nonnotarized-beta` manual download, proposed tag `v1.2.37-beta.1`. No public
+  binary qualification or publication is claimed. The updater remains disabled;
+  existing data must not be erased to manufacture clean-install acceptance.
 - Installed `/Applications/Fulmar.app` is Fulmar `1.2.36` build `156`, built from
   `d40a1ee107743bdc29ff0b7ee04e16af6c5de59c` and signed with the existing stable local
   identity. It passed the bounded acceptance below. There is no Developer ID
   signature, notarisation ticket or qualified public binary download.
 
 ## Latest local acceptance
+
+On 2026-09-13, the unchanged model-budget source `ffc7a5387664fc09b6479ac35cc2a23b6d8220c3`
+(1.2.36/156) passed 1,006 source JS tests (959 pass, 47 intentional skips),
+1,455 Swift functions plus 12 attestation scenarios, warning-clean compilation,
+static scan, frozen candidate verification and the isolated DSH/RPC startup canary
+using the repaired Apple CLT 26.6 / Swift 6.3.3 toolchain.
+
+That exact private candidate then completed real Write and Read calls using
+Qwen2.5:7b on the 16 GiB M4 Mini. The 19-byte output matched its independently
+computed SHA-256; a normal Quit drained all bundled processes, and relaunch
+returned to Ready with the selected model, history and file retained, without
+another Keychain prompt. The owner authorized existing Keychain access after the
+explained signer-changing private update. No keys or live state were reset.
+Evidence is retained privately under the September 13 Mini acceptance record.
+This does not qualify build 157, a clean browser download, every local model,
+LM Studio, live cloud providers, macOS 15 or sustained thermals.
+
+### Earlier build-156 baseline
 
 The retained private record `build/native-profile-stdin-fix-2026-09-09/ACCEPTANCE-STATUS.md`
 binds these results to source `d40a1ee` (tree

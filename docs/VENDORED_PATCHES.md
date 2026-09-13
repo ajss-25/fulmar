@@ -1,4 +1,4 @@
-# Vendored runtime patches — Fulmar 1.2.36 build 156
+# Vendored runtime patches — Fulmar 1.2.37 build 157
 
 Fulmar normally ships the pinned DeepSeek Harness packages unchanged. Any
 intentional divergence is recorded here, included in the signed runtime inventory,

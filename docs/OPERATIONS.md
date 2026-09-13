@@ -1,4 +1,4 @@
-# Operations and recovery — Fulmar 1.2.36 build 156
+# Operations and recovery — Fulmar 1.2.37 build 157
 
 ## Everyday operation
 

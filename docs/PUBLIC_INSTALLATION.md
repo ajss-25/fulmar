@@ -3,17 +3,46 @@
 Fulmar is unofficial, independent software and is not affiliated with or endorsed by
 DeepSeek, OpenAI, Anthropic, Ollama, Alibaba or the Qwen project.
 
-These instructions apply only to a Fulmar release whose public-distribution gate has
-passed. For the current source preview (`v1.2.36-preview.1`) there is no such release:
-build the app from source and read `PREVIEW_BINARY_GATEKEEPER.md` before running a
-locally certificate-signed preview build. An ad-hoc compile/review build cannot use
-the packaged cloud credential service. The **Uninstall and retained data** section below applies
-to preview builds as well. The current private candidate is not a public release: it is not Developer ID
-signed/notarized, has not passed clean-Mac/minimum-OS qualification, and its updater
-transaction has not passed the required two-version real-signed power-loss exercise.
-Do not publish the current app archive as an end-user download.
+These instructions distinguish release profiles; they do not announce a download.
+The 1.2.37 build 157 candidate is being prepared for a **nonnotarized-beta** direct
+download. It is not yet publicly qualified or published. Build from source using
+`GETTING_STARTED.md`, and read `PREVIEW_BINARY_GATEKEEPER.md` before running a
+locally certificate-signed preview. An ad-hoc compile/review build cannot use the
+packaged cloud credential service. The **Uninstall and retained data** section below
+applies to previews as well.
 
-## Download and verify
+## Planned direct-download beta (not yet available)
+
+This profile uses a persistent private certificate, not Developer ID or Apple
+notarization. It requires neither App Store distribution nor Apple Developer Program
+enrolment. It still requires clean current/minimum-macOS installation, real recipient
+acceptance, permissions/reinstall/recovery checks, and third-party binary requirements
+on the exact release. It is clean-install-only, with the in-app updater disabled.
+Do not delete or move an existing Fulmar account's data to simulate a clean install.
+
+Once qualified, its release page will provide `Fulmar.dmg`, `dmg-binding.json`, and
+`SHA256SUMS.txt` alongside the twelve beta assets described below: fourteen assets
+in total, with thirteen checksum entries. Compare the DMG's SHA-256 with the digest
+on the trusted release page before opening it. Checksums check integrity against a
+trusted reference; a checksum beside a download does not authenticate its publisher.
+The material archive is for recipients/reviewers, not an app installation input.
+
+Open the verified DMG and drag Fulmar to Applications. macOS may warn that Apple
+cannot verify this developer or check the app. Only if you trust this exact release,
+use **System Settings → Privacy & Security → Open Anyway** after trying to open it,
+then confirm the macOS prompt. This is Apple's per-app exception procedure, not a
+request to disable Gatekeeper. See [Apple's explanation](https://support.apple.com/en-gb/102445).
+Do not strip quarantine, import/trust a certificate, weaken global security settings,
+or override a malware/damaged-app warning. Stop if the documented per-app route is
+unavailable. First-run helper/Keychain permission and relaunch behavior must be
+recorded in the exact candidate's recipient test; private-certificate signing does
+not promise that macOS will never ask again.
+
+The notarized instructions below are for the separate `stable`/`beta` profiles;
+their automatic Gatekeeper acceptance and notarized updater requirements are not
+claims about this planned direct-download beta.
+
+## Notarized profiles: download and verify
 
 For an ordinary installation, download only `Fulmar.app.zip` and
 `Fulmar.app.zip.sha256` from the same immutable GitHub release. In Terminal, change
@@ -29,19 +58,21 @@ Security reviewers can additionally download `Fulmar.dSYMs.zip`,
 `release-manifest.json`, `static-security-summary.json`, `LocalHarness.sbom.cdx.json`,
 `THIRD_PARTY_NOTICES.md`, `LICENSE`, and `SHA256SUMS.txt`. Those seven reviewer assets
 plus the two ordinary-download assets form the exact nine-asset release set.
-`SHA256SUMS.txt` authenticates the other eight files when run with
+`SHA256SUMS.txt` checks the integrity of the other eight files when run with
 `shasum -a 256 -c SHA256SUMS.txt`; the manifest-bound dSYM archive
 is for crash symbolication and is never installed into the app. The manifest-bound
 static-security summary is reviewer evidence and is likewise not installed. The public
 verifier also requires the source, signed-app, and release-copy `LICENSE` bytes to match exactly.
 
-## Install and first run
+## Notarized profiles: install and first run
 
 1. Expand `Fulmar.app.zip` and drag `Fulmar.app` into `/Applications`.
 2. Open Fulmar normally from Applications. Gatekeeper should accept it without a workaround.
 3. Review the privacy boundary before selecting a model. Local Ollama work remains on the Mac; API providers send task content to the selected provider after explicit consent.
 4. Grant only the macOS permissions needed for features you choose. Denying microphone, speech, notifications, Screen Recording, or background scheduling should leave unrelated features usable.
 5. Configure provider credentials through Fulmar so they are stored in macOS Keychain. Never place API keys in prompts, project files, shell history, or issue reports.
+
+## Requirements and provider setup (all profiles)
 
 The declared platform is an Apple-silicon Mac running macOS 15 or later; Intel is not
 supported. Before publishing a release for that declared range, the same immutable
@@ -86,7 +117,7 @@ thermal claims and requires its own endpoint/protocol/tool/cancellation/privacy 
 
 ## Updating safely
 
-A release published under the manual-install **beta** profile
+A release published under either manual-install **beta** profile
 (`docs/PUBLIC_BETA_RELEASE_CONTRACT.md`) has its in-app updater disabled and is
 updated only by hand: download the new versioned release, verify its checksum as
 above, quit Fulmar, keep the previous `Fulmar.app` and a matching Harness-state
@@ -97,7 +128,7 @@ Until a beta release explicitly qualifies retained-state migration, a beta is
 Support, Keychain items or Harness backups, and do not delete or move existing
 state to make room for it. No beta release exists yet.
 
-A beta release page carries twelve assets rather than nine: the same nine as
+A notarized beta release page carries twelve assets rather than nine: the same nine as
 above plus `sharp-libvips-1.3.3-delivery-materials.tar`, its
 `sharp-libvips-1.3.3-delivery-materials.tar.sha256` sidecar and
 `sharp-libvips-1.3.3-delivery-materials.binding.json`. Those three are
