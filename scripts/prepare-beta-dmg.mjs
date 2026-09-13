@@ -5,8 +5,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, link, lstat, mkdir, mkdtemp, open, readdir, readlink, realpath, rm, symlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { readAttestedRegularFile, sha256AttestedRegularFile, withAttestedDirectory } from "./attested-regular-file.mjs";
+import { attestedRegularFileIdentityFields, readAttestedRegularFile, sha256AttestedRegularFile, withAttestedDirectory } from "./attested-regular-file.mjs";
 import { runBoundedCommand } from "./prepare-dsh-upgrade.mjs";
 
 const PROJECT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,6 +18,65 @@ const INSTALL = "Fulmar — private DMG packaging preview\n\nThis disk image has
 const NONNOTARIZED_INSTALL = "Fulmar — non-notarised manual-install beta\n\nThis app is not Apple-notarised and is not distributed through the App Store.\nUse only an independently qualified, published beta release and its installation guide.\nThis disk-image wrapper alone does not qualify an app for public distribution.\n\nClean installations only: do not replace an existing Fulmar installation or reuse its retained data.\nTo install a qualified release, copy Fulmar.app to Applications, then eject this image.\nThis release profile requires the in-app updater to be disabled; updates are manual installs.\nFollow the published release instructions before installing a later version.\n\nmacOS may block this non-notarised app. Do not disable system security controls,\nremove quarantine, or import or trust a signing certificate to make it run.\nThe release installation guide must describe the recipient-tested installation route.\n\nThe app inside is copied unchanged from the explicitly bound candidate ZIP.\nSigning identity, licensing, disabled updater and installation/provider acceptance\nare separate release checks, not claims established by this wrapper.\n";
 const MAXIMUM = 8 * 1024 * 1024 * 1024;
 let interrupted = false;
+
+// Keep nested native/cleanup failures readable even when node:test abbreviates
+// AggregateError.errors. Preserve the actual Error objects separately.
+export function formatDMGError(error) {
+  const seen = new Set();
+  const lines = [];
+  let remaining = 32_768;
+  function visit(value, depth) {
+    if (remaining <= 0 || lines.length >= 64) return;
+    const message = value instanceof Error ? value.message : String(value);
+    const line = `${"  ".repeat(depth)}${message.slice(0, 8192)}`.slice(0, remaining);
+    lines.push(line); remaining -= line.length + 1;
+    if (!(value instanceof Error) || seen.has(value) || depth >= 8) return;
+    seen.add(value);
+    if (value instanceof AggregateError) for (const cause of value.errors.slice(0, 64)) visit(cause, depth + 1);
+    if (value.cause !== undefined) visit(value.cause, depth + 1);
+  }
+  visit(error, 0);
+  return lines.join("\n");
+}
+function combinedFailure(errors, message) {
+  return new AggregateError(errors, `${message}\n${formatDMGError(new AggregateError(errors, "Causes:"))}`);
+}
+
+// In-process primitive seam only: no CLI/environment retry override. Native
+// create, all safety proofs and the short delays share the original 180s bound.
+export async function createImageWithBusyRecovery({ attempt, proveRetrySafe, recovered, now = () => performance.now(), sleep = delay }) {
+  const deadline = now() + 180_000;
+  const budget = () => {
+    if (interrupted) throw new Error("DMG operation interrupted");
+    const remaining = Math.floor(deadline - now());
+    if (remaining < 50) throw new Error("hdiutil create exhausted its single 180000ms deadline");
+    return remaining;
+  };
+  let firstFailure;
+  try {
+    for (let number = 1; number <= 3; number += 1) {
+      budget();
+      const result = await attempt(budget);
+      if (result.code === 0 && result.signal === null) {
+        budget();
+        if (firstFailure) recovered?.({ attempts: number, firstFailure });
+        return result;
+      }
+      const failure = new Error(`hdiutil create failed (${result.code ?? result.signal}): ${result.stderr.trim().slice(-8192)}`);
+      if (result.code !== 1 || result.signal !== null || result.stderr.trim() !== "hdiutil: create failed - Resource busy" || number === 3) throw failure;
+      firstFailure ??= failure;
+      const wait = number * 250;
+      if (budget() < wait + 50) throw new Error("hdiutil create deadline cannot admit another retry");
+      await sleep(wait);
+      budget();
+      await proveRetrySafe(budget);
+      budget();
+    }
+  } catch (error) {
+    if (firstFailure && error !== firstFailure) throw combinedFailure([firstFailure, error], "hdiutil create recovery refused or exhausted");
+    throw error;
+  }
+}
 
 function absolute(value) {
   if (typeof value !== "string" || !isAbsolute(value) || resolve(value) !== value
@@ -54,21 +115,23 @@ function installationNotice(releaseProfile) {
 function environment(root) {
   return { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: join(root, "home"), TMPDIR: `${root}/`, LANG: "en_US.UTF-8", LC_CTYPE: "UTF-8" };
 }
-async function command(root, executable, args, cleanup = false) {
+async function command(root, executable, args, cleanup = false, budget, allowFailure = false) {
   if (interrupted && !cleanup) throw new Error("DMG operation interrupted");
-  return runBoundedCommand(executable, args, {
-    environment: environment(root), timeoutMS: 180_000,
+  const result = await runBoundedCommand(executable, args, {
+    environment: environment(root), timeoutMS: budget ? budget() : 180_000, allowFailure,
     maximumStandardOutputBytes: 8 * 1024 * 1024, maximumStandardErrorBytes: 1024 * 1024,
     label: "private DMG packaging"
   });
+  if (!allowFailure) budget?.();
+  return result;
 }
-async function script(root, name, args) {
-  return command(root, process.execPath, [join(PROJECT, "scripts", name), ...args]);
+async function script(root, name, args, budget) {
+  return command(root, process.execPath, [join(PROJECT, "scripts", name), ...args], false, budget);
 }
-async function jsonPlist(root, value) {
+async function jsonPlist(root, value, budget) {
   const target = join(root, `plist-${randomUUID()}.plist`);
   await writeNew(target, value);
-  return JSON.parse((await command(root, "/usr/bin/plutil", ["-convert", "json", "-o", "-", target], true)).stdout);
+  return JSON.parse((await command(root, "/usr/bin/plutil", ["-convert", "json", "-o", "-", target], true, budget)).stdout);
 }
 async function writeNew(target, value) {
   const handle = await open(target, "wx", 0o600);
@@ -94,22 +157,22 @@ async function identity() {
   if (runtime.sha256 !== release.runtime.nodeSHA256) throw new Error("Use the exact reviewed bundled Node runtime");
   return release;
 }
-async function sameTree(root, left, right) {
+async function sameTree(root, left, right, budget) {
   const original = await lstat(left);
   const copied = await lstat(right);
   if (!original.isDirectory() || !copied.isDirectory() || original.uid !== process.getuid()
       || copied.uid !== original.uid || (original.mode & 0o7777) !== (copied.mode & 0o7777)) throw new Error("App root type, owner or mode changed");
-  return script(root, "verify-release-tree.mjs", [left, right]);
+  return script(root, "verify-release-tree.mjs", [left, right], budget);
 }
-async function signatureIntegrity(root, app, releaseProfile) {
+async function signatureIntegrity(root, app, releaseProfile, budget) {
   if (releaseProfile === "nonnotarized-beta") {
     // Structural/CMS validation still runs. Only the existing exact private-root
     // trust exception is admitted; final distribution separately binds every
     // target to the reviewed persistent certificate and refuses ad-hoc signing.
     return command(root, "/usr/bin/env", ["LOCAL_HARNESS_ALLOW_PRIVATE_ROOT=1", "/bin/zsh", "-f",
-      join(PROJECT, "scripts/verify-code-signature.sh"), app, "--deep", "--strict"]);
+      join(PROJECT, "scripts/verify-code-signature.sh"), app, "--deep", "--strict"], false, budget);
   }
-  return command(root, "/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
+  return command(root, "/usr/bin/codesign", ["--verify", "--deep", "--strict", app], false, budget);
 }
 async function admittedApp(root, archive, release, observers, releaseProfile) {
   await observers.afterArchiveSnapshot?.({ root, archive });
@@ -129,24 +192,70 @@ async function admittedApp(root, archive, release, observers, releaseProfile) {
   return app;
 }
 
+export async function proveCreateRetrySafe({ root, archive, expectedArchiveSHA256, archiveIdentity, rootIdentity, sourceIdentity, app, imageSource, dmg, releaseProfile }, budget) {
+  const directoryMatches = (before, after) => ["dev", "ino", "uid", "gid", "mode"].every((field) => before[field] === after[field]);
+  const checkAbsentImage = async () => {
+    budget();
+    await absent(dmg); // A partial image is evidence, never an overwrite target.
+    if (await attachedImage(root, dmg, budget)) throw new Error("Private image is attached; create retry refused");
+    await absent(dmg);
+    budget();
+  };
+  await withAttestedDirectory(root, { requirePrivateMode: true, requireCanonicalPath: true, allowContentMutation: true }, async ({ metadata }) => {
+    if (!directoryMatches(rootIdentity, metadata)) throw new Error("Private DMG workspace changed; create retry refused");
+    await checkAbsentImage();
+    await withAttestedDirectory(imageSource, { requirePrivateMode: true, requireCanonicalPath: true }, async ({ metadata: source }) => {
+      if (!directoryMatches(sourceIdentity, source)) throw new Error("Private image source changed; create retry refused");
+      const zipped = await sha256AttestedRegularFile(archive, {
+        maximumBytes: MAXIMUM, requirePrivateMode: true, requireCanonicalPath: true,
+        afterOpen: ({ before }) => {
+          budget();
+          if (!attestedRegularFileIdentityFields.every((field) => before[field] === archiveIdentity[field])) throw new Error("Private ZIP identity changed; create retry refused");
+        },
+        afterChunk: () => { budget(); }
+      });
+      if (zipped.sha256 !== expectedArchiveSHA256) throw new Error("Private ZIP digest changed; create retry refused");
+      if (JSON.stringify((await readdir(imageSource)).sort()) !== JSON.stringify(["Applications", "Fulmar.app", "INSTALL.txt"])) throw new Error("Unexpected image source contents; create retry refused");
+      if (!(await lstat(join(imageSource, "Applications"))).isSymbolicLink() || await readlink(join(imageSource, "Applications")) !== "/Applications") throw new Error("Applications shortcut was changed");
+      const instructions = await readAttestedRegularFile(join(imageSource, "INSTALL.txt"), { maximumBytes: 8192, requirePrivateMode: true, requireCanonicalPath: true });
+      if (instructions.bytes.toString("utf8") !== installationNotice(releaseProfile)) throw new Error("Installation notice does not match the requested DMG profile");
+      budget();
+      await script(root, "verify-zip-entries.mjs", [archive, join(imageSource, "Fulmar.app")], budget);
+      await sameTree(root, app, join(imageSource, "Fulmar.app"), budget);
+      await signatureIntegrity(root, join(imageSource, "Fulmar.app"), releaseProfile, budget);
+      budget();
+    });
+    // Recheck immediately before another create; none of the lengthy proofs
+    // above grants authority to replace a newly appeared file or attachment.
+    await checkAbsentImage();
+  });
+  budget();
+}
+
 // hdiutil can attach an image even if its command subsequently fails. Find only
 // this invocation's exact private image; never detach by volume name or a disk
 // number remembered without checking its current backing image.
-async function attachedImage(root, dmg) {
-  const output = await command(root, "/usr/bin/hdiutil", ["info", "-plist"], true);
-  const info = await jsonPlist(root, output.stdout);
+async function attachedImage(root, dmg, budget) {
+  const output = await command(root, "/usr/bin/hdiutil", ["info", "-plist"], true, budget);
+  const info = await jsonPlist(root, output.stdout, budget);
+  if (!Array.isArray(info.images)) throw new Error("Image attachment inventory is unavailable");
   const matches = (info.images ?? []).filter((item) => item["image-path"] === dmg);
   if (matches.length > 1) throw new Error("More than one attachment references this private image; retained for inspection");
   return matches[0];
 }
+export function exactWholeDisk(entities, mount) {
+  if (!Array.isArray(entities)) throw new Error("Image device identity is unavailable; no device was detached");
+  const mounted = entities.filter((entry) => entry["mount-point"] !== undefined);
+  if (mounted.length !== 1 || mounted[0]["mount-point"] !== mount) throw new Error("Unexpected image mount; no device was detached");
+  const match = typeof mounted[0]["dev-entry"] === "string"
+    && mounted[0]["dev-entry"].match(/^(\/dev\/disk[0-9]+)(?:s[0-9]+)?$/u);
+  if (!match || entities.filter((entry) => entry["dev-entry"] === match[1]).length !== 1) throw new Error("Image whole-disk identity is unavailable or ambiguous; no device was detached");
+  return match[1];
+}
 async function detachExact(root, dmg, mount) {
   const item = await attachedImage(root, dmg);
   if (!item) return;
-  const entities = item["system-entities"] ?? [];
-  const mounts = entities.filter((entry) => entry["mount-point"] !== undefined);
-  if (mounts.length !== 1 || mounts[0]["mount-point"] !== mount) throw new Error(`Unexpected image mount; retained for inspection: ${root}`);
-  const device = entities[0]?.["dev-entry"];
-  if (typeof device !== "string" || !/^\/dev\/disk[0-9]+$/u.test(device)) throw new Error("Image device identity is unavailable; no device was detached");
+  const device = exactWholeDisk(item["system-entities"], mount);
   await command(root, "/usr/bin/hdiutil", ["detach", device], true);
   if (await attachedImage(root, dmg)) throw new Error(`Image still attached; retained for inspection: ${root}`);
 }
@@ -180,7 +289,7 @@ async function roundTrip(root, dmg, app, releaseProfile) {
     await signatureIntegrity(root, recovered, releaseProfile);
   } catch (error) { failure = error; }
   try { await detachExact(root, dmg, mount); }
-  catch (error) { throw new AggregateError(failure ? [failure, error] : [error], `DMG detach failed; private work retained: ${root}`); }
+  catch (error) { throw combinedFailure(failure ? [failure, error] : [error], `DMG detach failed; private work retained: ${root}`); }
   if (failure) throw failure;
 }
 
@@ -220,7 +329,7 @@ async function workspace(parent, operation) {
       // A live/ambiguous image is never recursively traversed by cleanup.
       if (await attachedImage(root, join(root, "Fulmar.dmg"))) throw new Error(`Private disk image remains attached: ${root}`);
       await retireOwned(root, before);
-    } catch (error) { throw new AggregateError(failure ? [failure, error] : [error], `Private DMG cleanup incomplete: ${root}`); }
+    } catch (error) { throw combinedFailure(failure ? [failure, error] : [error], `Private DMG cleanup incomplete: ${root}`); }
     if (failure) throw failure;
     return value;
   });
@@ -239,9 +348,19 @@ export async function createDMG(options, observers = {}) {
     await sameTree(root, app, join(imageSource, "Fulmar.app"));
     await symlink("/Applications", join(imageSource, "Applications"));
     await writeNew(join(imageSource, "INSTALL.txt"), installationNotice(releaseProfile));
-    await observers.beforeImageCreate?.({ root, app, imageSource });
     const dmg = join(root, "Fulmar.dmg");
-    await command(root, "/usr/bin/hdiutil", ["create", "-srcfolder", imageSource, "-srcowners", "any", "-noanyowners", "-noskipunreadable", "-fs", "HFS+", "-volname", "Fulmar Beta Preview", "-format", "UDZO", "-nospotlight", dmg]);
+    const retryContext = {
+      root, archive: zipped, expectedArchiveSHA256, app, imageSource, dmg, releaseProfile,
+      archiveIdentity: await lstat(zipped, { bigint: true }),
+      rootIdentity: await lstat(root, { bigint: true }),
+      sourceIdentity: await lstat(imageSource, { bigint: true })
+    };
+    await observers.beforeImageCreate?.({ root, app, imageSource });
+    await createImageWithBusyRecovery({
+      attempt: (budget) => command(root, "/usr/bin/hdiutil", ["create", "-srcfolder", imageSource, "-srcowners", "any", "-noanyowners", "-noskipunreadable", "-fs", "HFS+", "-volname", "Fulmar Beta Preview", "-format", "UDZO", "-nospotlight", dmg], false, budget, true),
+      proveRetrySafe: (budget) => proveCreateRetrySafe(retryContext, budget),
+      recovered: ({ attempts, firstFailure }) => process.stderr.write(`DMG_CREATE_BUSY_RECOVERED attempts=${attempts}; unchanged private inputs reverified; ${firstFailure.message}\n`)
+    });
     await observers.afterImageCreate?.({ root, dmg });
     await roundTrip(root, dmg, app, releaseProfile);
     const image = await sha256AttestedRegularFile(dmg, { maximumBytes: MAXIMUM });
@@ -272,7 +391,7 @@ export async function createDMG(options, observers = {}) {
       await writeNew(join(output, "SHA256SUMS.txt"), `${image.sha256}  Fulmar.dmg\n${createHash("sha256").update(bindingBytes).digest("hex")}  dmg-binding.json\n`);
     } catch (error) {
       try { await retireOwned(output, outputIdentity); }
-      catch (cleanupError) { throw new AggregateError([error, cleanupError], "Private output failed and could not be retired"); }
+      catch (cleanupError) { throw combinedFailure([error, cleanupError], "Private output failed and could not be retired"); }
       throw error;
     }
     return binding;
@@ -300,8 +419,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const result = args.command === "create" ? await createDMG(args) : await verifyDMG(args);
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
-    process.stderr.write(`${error.message}\n`);
-    if (error instanceof AggregateError) for (const cause of error.errors) process.stderr.write(`${cause.message}\n`);
+    process.stderr.write(`${formatDMGError(error)}\n`);
     process.exitCode = 1;
   }
 }

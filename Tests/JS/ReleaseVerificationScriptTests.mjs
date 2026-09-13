@@ -1133,6 +1133,7 @@ test("all ordinary JavaScript qualification uses the hermetic event-accounted pi
   assert.match(runner, /test_profile=full-source/u);
   assert.match(runner, /test_profile=full-candidate/u);
   assert.match(runner, /if ! cleanup; then/u);
+  assert.ok(runner.includes('/bin/rm -rf -x -- "$ISOLATION_ROOT" || return 126'), "JavaScript isolation cleanup must not cross a mounted fixture filesystem");
   assert.match(runner, /exit 126/u);
   assert.match(eventVerifier, /full JavaScript qualification skip topology changed/u);
   assert.match(eventVerifier, /full JavaScript qualification count drift/u);
