@@ -250,7 +250,8 @@ if (!/prepare-public-release-assets\.sh" \\\n+    "\$ARCHIVE" "\$MANIFEST" "\$PU
   fail("public release operator does not candidate-bind public asset preparation");
 }
 if ((publicAssetPreparation.match(/verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"/gu) ?? []).length !== 2
-    || !/PUBLISH_OPERATION="publish"\nCLEANUP_OPERATION="cleanup"\nif \[\[ "\$RELEASE_PROFILE" == "beta" \]\]; then\n  PUBLISH_OPERATION="publish-beta"\n  CLEANUP_OPERATION="cleanup-beta"\nfi/u.test(publicAssetPreparation)
+    || !/PUBLISH_OPERATION="publish"\nCLEANUP_OPERATION="cleanup"\nif \[\[ "\$RELEASE_PROFILE" != "stable" \]\]; then\n  PUBLISH_OPERATION="publish-beta"\n  CLEANUP_OPERATION="cleanup-beta"\nfi\nif \[\[ "\$RELEASE_PROFILE" == "nonnotarized-beta" \]\]; then\n  PUBLISH_OPERATION="publish-nonnotarized-beta"\n  CLEANUP_OPERATION="cleanup-nonnotarized-beta"\nfi/u.test(publicAssetPreparation)
+    || !/verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"\n"\$NODE" "\$PROJECT_DIR\/scripts\/snapshot-regular-file\.mjs" "\$ARCHIVE" "\$ARCHIVE_SNAPSHOT" >\/dev\/null\n"\$NODE" "\$PROJECT_DIR\/scripts\/snapshot-regular-file\.mjs" "\$MANIFEST" "\$MANIFEST_SNAPSHOT" 1048576 >\/dev\/null\nverify_expected_candidate_binding "\$MANIFEST_SNAPSHOT" "\$ARCHIVE_SNAPSHOT"/u.test(publicAssetPreparation)
     || !/verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"\n"\$ATOMIC_PUBLISHER" "\$PUBLISH_OPERATION"/u.test(publicAssetPreparation)) {
   fail("public asset preparation does not rebind the expected live candidate before snapshot and atomic publication");
 }

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, copyFile, link, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, link, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { rootWatchdogChildOptions } from "./RootWatchdogChildProcess.mjs";
 import { readAttestedRegularFile } from "../../scripts/attested-regular-file.mjs";
+import { buildInputRoots } from "../../scripts/source-build-input-inventory.mjs";
 
 const root = process.cwd();
 const verifier = join(root, "scripts", "verify-public-distribution.sh");
@@ -172,6 +173,54 @@ test("public distribution scripts pin every Apple trust and immutable-asset gate
   assert.match(prepare, /verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"\n"\$ATOMIC_PUBLISHER" "\$PUBLISH_OPERATION"/u);
   assert.ok(prepare.indexOf('"$ATOMIC_PUBLISHER" "$PUBLISH_OPERATION"') > prepare.lastIndexOf("verify-retained-release-evidence.mjs"),
     "the private sibling must be published only after the final retained-evidence recheck");
+  // Run the actual source-product verifier, not a second copy of its regexes.
+  // The disposable export contains bounded source roots and the two package
+  // metadata files read by the contract, never runtime executables, retained
+  // release evidence, credentials, or the shared watchdog namespace.
+  const sourceFixture = await mkdtemp(join(tmpdir(), "fulmar-public-source-contract."));
+  try {
+    await chmod(sourceFixture, 0o700);
+    for (const relative of [...buildInputRoots,
+      "VendorRuntime/node_modules/@deepseek-ai/dsh/package.json",
+      "VendorRuntime/node_modules/@deepseek-ai/dsh-mcp-client/package.json"
+    ]) {
+      const destination = join(sourceFixture, relative);
+      await mkdir(dirname(destination), { recursive: true });
+      await cp(join(root, relative), destination, { recursive: true, force: false, errorOnExist: true });
+    }
+    const fixturePreparer = join(sourceFixture, "scripts", "prepare-public-release-assets.sh");
+    const runSourceContract = () => spawnSync(process.execPath, [
+      join(root, "scripts", "verify-source-product-contract.mjs"), sourceFixture
+    ], { cwd: root, encoding: "utf8", timeout: 15_000 });
+    let sourceResult = runSourceContract();
+    assert.equal(sourceResult.status, 0, sourceResult.stderr);
+    const liveBinding = 'verify_expected_candidate_binding "$MANIFEST" "$ARCHIVE"';
+    const snapshotBinding = 'verify_expected_candidate_binding "$MANIFEST_SNAPSHOT" "$ARCHIVE_SNAPSHOT"';
+    const archiveSnapshot = '"$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$ARCHIVE" "$ARCHIVE_SNAPSHOT" >/dev/null';
+    const publish = '"$ATOMIC_PUBLISHER" "$PUBLISH_OPERATION"';
+    const mutations = [
+      ["missing initial live binding", prepare.replace(`${liveBinding}\n`, "")],
+      ["missing final live binding", prepare.replace(`${liveBinding}\n${publish}`, publish)],
+      ["initial binding moved after archive snapshot", prepare.replace(`${liveBinding}\n${archiveSnapshot}`, `${archiveSnapshot}\n${liveBinding}`)],
+      ["missing snapshot binding", prepare.replace(`${snapshotBinding}\n`, "")],
+      ["publication precedes final live binding", prepare.replace(`${liveBinding}\n${publish}`, `${publish}\n${liveBinding}`)],
+      ["wrong non-notarized publication policy", prepare.replace('PUBLISH_OPERATION="publish-nonnotarized-beta"', 'PUBLISH_OPERATION="publish-beta"')],
+      ["wrong non-notarized cleanup policy", prepare.replace('CLEANUP_OPERATION="cleanup-nonnotarized-beta"', 'CLEANUP_OPERATION="cleanup-beta"')],
+      ["stable default publication changed", prepare.replace('PUBLISH_OPERATION="publish"', 'PUBLISH_OPERATION="publish-beta"')]
+    ];
+    for (const [label, mutated] of mutations) {
+      assert.notEqual(mutated, prepare, `${label}: mutation must apply`);
+      await writeFile(fixturePreparer, mutated);
+      sourceResult = runSourceContract();
+      assert.equal(sourceResult.status, 1, `${label}: ${sourceResult.stderr}`);
+      assert.match(sourceResult.stderr, /public asset preparation does not rebind the expected live candidate before snapshot and atomic publication/u, label);
+    }
+    await writeFile(fixturePreparer, prepare);
+    sourceResult = runSourceContract();
+    assert.equal(sourceResult.status, 0, sourceResult.stderr);
+  } finally {
+    await rm(sourceFixture, { recursive: true, force: true });
+  }
   assert.doesNotMatch(prepare, /mkdir -m 0755 "\$OUTPUT"/u);
   assert.match(verify, /codesign --verify --deep --strict/u);
   assert.match(verify, /Authority=Developer ID Application:/u);
