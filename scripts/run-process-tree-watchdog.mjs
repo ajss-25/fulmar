@@ -166,7 +166,9 @@ const maximumProcessTableBytes = 2 * 1024 * 1024;
 const processRow = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s*$/u;
 async function processTable() {
   const inspector = spawn("/bin/ps", ["-axo", "pid=,ppid=,pgid=,rss=,lstart="], {
-    stdio: ["ignore", "pipe", "ignore"]
+    stdio: ["ignore", "pipe", "ignore"],
+    // A process birth must not change spelling/ordering across locale or DST.
+    env: { ...process.env, LC_ALL: "C", TZ: "UTC" }
   });
   let bytes = Buffer.alloc(0);
   let settled = false;
@@ -204,7 +206,7 @@ async function processTable() {
               || !RetiredPIDSet.isPID(pgid) || !Number.isSafeInteger(rssKiB) || rssKiB < 0) {
             throw new Error("invalid process-table value");
           }
-          return { pid, ppid, pgid, rssBytes: rssKiB * 1024, started: match[5] };
+          return { pid, ppid, pgid, rssBytes: rssKiB * 1024, started: parseProcessStart(match[5]) };
         });
         finish(undefined, rows);
       } catch (error) { finish(error); }
@@ -217,19 +219,44 @@ async function processTable() {
   });
 }
 
-// pid_t is signed 32-bit on Darwin. Preserve every retired numeric PID for the
-// lifetime of this monitor: ps start times have only second precision, so an
-// evicted PID could be mistaken for its replacement. History is not a count of
-// concurrent processes. A fixed directory of lazy exact bitmap pages bounds
-// its storage independently of churn: 32,768 slots, at most 256 MiB of payload,
-// and only 8 KiB allocated per occupied 65,536-PID range. No page is forgotten.
+function parseProcessStart(value) {
+  const match = typeof value === "string" && /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/u.exec(value);
+  if (!match || match[0] !== value) throw new Error("invalid process-table value");
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(match[2]);
+  const [day, hour, minute, second, year] = match.slice(3).map(Number);
+  const milliseconds = Date.UTC(year, month, day, hour, minute, second);
+  const date = new Date(milliseconds);
+  const started = milliseconds / 1_000;
+  if (!RetiredPIDSet.isStart(started) || date.getUTCFullYear() !== year
+      || date.getUTCMonth() !== month || date.getUTCDate() !== day
+      || date.getUTCHours() !== hour || date.getUTCMinutes() !== minute
+      || date.getUTCSeconds() !== second
+      || ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getUTCDay()] !== match[1]) {
+    throw new Error("invalid process-table value");
+  }
+  return started;
+}
+
+// Numeric PIDs are recycled. Keep a non-evicting birth high-water for each
+// retired PID, not a permanent ban on every later process with that number.
+// Only a strictly later-second birth may be a new descendant; equal-second,
+// earlier and invalid births remain ambiguous and fail closed. Parent/frontier
+// admission is still required, and the command leader is never readmitted.
+// pid_t is signed 32-bit on Darwin. The fixed directory has 32,768 lazy pages;
+// each occupied 65,536-PID range uses 512 KiB. Keep the previous 256 MiB payload
+// ceiling, poison history on exhaustion, and never evict an identity to fit it.
 class RetiredPIDSet {
   #pages = new Array(0x8000);
+  #allocatedBytes = 0;
   #size = 0;
   #failed = false;
 
   static isPID(value, allowZero = false) {
     return Number.isSafeInteger(value) && value >= (allowZero ? 0 : 1) && value <= 0x7fff_ffff;
+  }
+
+  static isStart(value) {
+    return Number.isSafeInteger(value) && value >= 0 && value <= 253_402_300_799;
   }
 
   get size() { return this.#size; }
@@ -238,15 +265,22 @@ class RetiredPIDSet {
     if (this.#failed) throw new Error("retired PID history storage failed");
   }
 
-  add(pid) {
+  add(pid, started) {
     this.assertAvailable();
-    if (!RetiredPIDSet.isPID(pid)) throw new Error("invalid process-table value");
+    if (!RetiredPIDSet.isPID(pid) || !RetiredPIDSet.isStart(started)) {
+      throw new Error("invalid process-table value");
+    }
     const pageIndex = pid >>> 16;
     let page = this.#pages[pageIndex];
     if (page === undefined) {
       try {
-        page = new Uint8Array(8_192);
+        const pageBytes = 65_536 * 8;
+        if (this.#allocatedBytes + pageBytes > 256 * 1024 * 1024) {
+          throw new Error("retired PID history storage exhausted");
+        }
+        page = new Float64Array(65_536);
         this.#pages[pageIndex] = page;
+        this.#allocatedBytes += pageBytes;
       } catch {
         // We observed a retirement but cannot remember it. Never let a later
         // snapshot revive that identity, including same-second PID reuse.
@@ -254,12 +288,11 @@ class RetiredPIDSet {
         this.assertAvailable();
       }
     }
-    const byteIndex = (pid & 0xffff) >>> 3;
-    const mask = 1 << (pid & 7);
-    if ((page[byteIndex] & mask) === 0) {
-      page[byteIndex] |= mask;
-      this.#size += 1;
-    }
+    const index = pid & 0xffff;
+    // Zero means never retired; the epoch-second-plus-one is exactly
+    // representable throughout the accepted four-digit calendar range.
+    if (page[index] === 0) this.#size += 1;
+    page[index] = Math.max(page[index], started + 1);
     return this;
   }
 
@@ -267,7 +300,16 @@ class RetiredPIDSet {
     this.assertAvailable();
     if (!RetiredPIDSet.isPID(pid)) throw new Error("invalid process-table value");
     const page = this.#pages[pid >>> 16];
-    return page !== undefined && (page[(pid & 0xffff) >>> 3] & (1 << (pid & 7))) !== 0;
+    return page !== undefined && page[pid & 0xffff] !== 0;
+  }
+
+  admits(pid, started) {
+    this.assertAvailable();
+    if (!RetiredPIDSet.isPID(pid) || !RetiredPIDSet.isStart(started)) {
+      throw new Error("invalid process-table value");
+    }
+    const previous = this.#pages[pid >>> 16]?.[pid & 0xffff] ?? 0;
+    return previous === 0 || started + 1 > previous;
   }
 }
 
@@ -317,7 +359,7 @@ function updateOwnership(rows) {
   if (supervisor.pgid !== supervisorPGID) throw new Error("supervisor process group changed");
 
   if (childExit !== undefined && childIdentityActive) {
-    retiredPIDs.add(child.pid);
+    retiredPIDs.add(child.pid, childIdentity.started);
     childIdentityActive = false;
   }
   const observedRoot = byPID.get(child.pid);
@@ -329,7 +371,7 @@ function updateOwnership(rows) {
     throw new Error("test-runner PID identity changed");
   }
   if (childIdentityActive && !root) {
-    retiredPIDs.add(child.pid);
+    retiredPIDs.add(child.pid, childIdentity.started);
     childIdentityActive = false;
   }
 
@@ -339,7 +381,7 @@ function updateOwnership(rows) {
     if (sameIdentity(byPID.get(pid), identity)) frontier.add(pid);
     else {
       // Publish retirement before dropping the last active identity record.
-      retiredPIDs.add(pid);
+      retiredPIDs.add(pid, identity.started);
       known.delete(pid);
     }
   }
@@ -348,7 +390,7 @@ function updateOwnership(rows) {
     changed = false;
     for (const row of rows) {
       if (!frontier.has(row.ppid) || frontier.has(row.pid)) continue;
-      if (retiredPIDs.has(row.pid)) {
+      if (!retiredPIDs.admits(row.pid, row.started)) {
         throw new Error("a retired descendant PID reappeared while supervised");
       }
       const identity = { pid: row.pid, started: row.started, pgid: row.pgid };
