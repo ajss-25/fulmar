@@ -75,7 +75,13 @@
       "id": "pi-ai-adapter-private-no-auth",
       "path": "@deepseek-ai/dsh-llm-pi-ai/lib/index.js",
       "beforeSHA256": "a521cd577e513bba230691b7bd62525b920042cdc36b345e96f7b9dcc709a50f",
-      "afterSHA256": "47053519f9a8170e3945caa17cfb4ddcaf7b10f3851037026a265f607533cdec"
+      "afterSHA256": "91cb35e23ac3840f73fa241ea085d2c9e222e0f8f60f85b644426a827a87321a"
+    },
+    {
+      "id": "pi-ai-context-output-budget",
+      "path": "@earendil-works/pi-ai/dist/api/simple-options.js",
+      "beforeSHA256": "74dfde37adbd00a6af1fd707c1c5c876577793b078da9fbbd6d40bb75bfb4749",
+      "afterSHA256": "9544625d863a61631f6fa97bd84f9c227ee6b85be3f22de94ccf45222a2ec50a"
     },
     {
       "id": "pi-ai-adapter-private-no-auth-types",

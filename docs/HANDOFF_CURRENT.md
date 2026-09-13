@@ -1,13 +1,19 @@
 # Current qualification handoff
 
-Updated: 2026-09-09 (Europe/London)
+Updated: 2026-09-13 (Europe/London)
 
 ## Release decision and immutable identity
 
 - Source identity: Fulmar `1.2.36` build `156`, Apple silicon, macOS `15.0` minimum.
 - Runtime pin: Node `22.23.1`; DeepSeek Harness and MCP client `0.1.1-rc.1`.
-- Current reconstruction: fourteen hash-bound runtime patches; 38,504 VendorRuntime
-  entries / 395,128,248 file bytes, plus the verified Rust notice-material cache.
+- Current reconstruction: fifteen hash-bound runtime patches; 38,504 VendorRuntime
+  entries / 395,130,487 file bytes, plus the verified Rust notice-material cache.
+- The 2026-09-13 model-budget repair replaces the fixed 4K reserve with a bounded
+  context-proportional reserve in pi-ai, caps output by model/caller/remaining
+  estimated capacity, and stops empty automatic continuations. Runtime limits and
+  model-memory admission are unchanged. JS topology is 1,006 tests (source:
+  959 pass / 47 skips; candidate: 960 pass / 46 skips). These are required counts,
+  not a claim of completed qualification or installed-app acceptance.
 - The 2026-09-09 source security refresh moves Hono to `4.13.5`, js-yaml to
   `4.3.2`, and sharp to `0.35.4` with sharp-libvips `1.3.3` (libvips `8.18.6`,
   libheif `1.23.2`). All DSH package descriptors and the fourteen patch bytes are

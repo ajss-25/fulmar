@@ -63,7 +63,12 @@ function session(profile, suffix = "00000000-0000-4000-8000-000000000001", paren
 
 function continuationAgent({ origin } = {}) {
   const id = `continuation-${randomUUID()}`;
-  const liveSession = { id, header: origin === undefined ? {} : { origin } };
+  const notices = [];
+  const liveSession = {
+    id,
+    header: origin === undefined ? {} : { origin },
+    append(type, message, options) { notices.push({ type, message, options }); }
+  };
   const messages = [];
   const agent = {
     id,
@@ -72,7 +77,19 @@ function continuationAgent({ origin } = {}) {
     inbox: { nextTurn: [], nextStep: [] },
     followup(message) { messages.push(message); }
   };
-  return { agent, session: liveSession, messages };
+  return { agent, session: liveSession, messages, notices };
+}
+
+function retainedAssistantEvent(turn, content = [{ type: "text", text: "The first requested change is complete." }]) {
+  return {
+    type: "assistant/message",
+    surfaceOp: "append",
+    data: {
+      turn,
+      step: 1,
+      message: { id: randomUUID(), role: "assistant", source: { kind: "model", provider: "ollama", model: "qwen" }, content }
+    }
+  };
 }
 
 test("automatically continues a max-token foreground turn through an identified Fulmar notice", () => {
@@ -87,6 +104,7 @@ test("automatically continues a max-token foreground turn through an identified 
     { agent: fixture.agent, turn: 7 },
     { provider: "ollama", model: "qwen" }
   );
+  controller.sessionEvent(fixture.session, retainedAssistantEvent(7));
 
   assert.equal(controller.sessionEvent(fixture.session, {
     type: "turn/end",
@@ -145,6 +163,7 @@ test("automatic continuation is bounded, yields to queued user work, and emits a
   for (const turn of [2, 3, 4]) {
     fixture.agent.status = "running";
     controller.requested({ agent: fixture.agent, turn }, { provider: "ollama", model: "qwen" });
+    controller.sessionEvent(fixture.session, retainedAssistantEvent(turn));
     assert.equal(controller.sessionEvent(fixture.session, {
       type: "turn/end", data: { turn, reason: { kind: "max-tokens" } }
     }), true);
@@ -157,6 +176,7 @@ test("automatic continuation is bounded, yields to queued user work, and emits a
   assert.match(fixture.messages[2].content[0].text, /Do not start more tool work/u);
 
   controller.requested({ agent: fixture.agent, turn: 5 }, { provider: "ollama", model: "qwen" });
+  controller.sessionEvent(fixture.session, retainedAssistantEvent(5));
   assert.equal(controller.sessionEvent(fixture.session, {
     type: "turn/end", data: { turn: 5, reason: { kind: "max-tokens" } }
   }), false);
@@ -198,6 +218,7 @@ test("turn-end publication still continues when DSH has already published idle",
   const fixture = continuationAgent();
   controller.created(fixture.agent);
   controller.requested({ agent: fixture.agent, turn: 1 }, { provider: "ollama", model: "qwen" });
+  controller.sessionEvent(fixture.session, retainedAssistantEvent(1));
 
   fixture.agent.status = "idle";
   assert.equal(controller.sessionEvent(fixture.session, {
@@ -220,6 +241,7 @@ test("a user message arriving after idle publication wins over a staged automati
   const fixture = continuationAgent();
   controller.created(fixture.agent);
   controller.requested({ agent: fixture.agent, turn: 1 }, { provider: "ollama", model: "qwen" });
+  controller.sessionEvent(fixture.session, retainedAssistantEvent(1));
   assert.equal(controller.sessionEvent(fixture.session, {
     type: "turn/end", data: { turn: 1, reason: { kind: "max-tokens" } }
   }), true);
@@ -243,6 +265,7 @@ test("a durable user turn invalidates a published continuation without letting i
   controller.created(fixture.agent);
 
   controller.requested({ agent: fixture.agent, turn: 1 }, { provider: "ollama", model: "qwen" });
+  controller.sessionEvent(fixture.session, retainedAssistantEvent(1));
   assert.equal(controller.sessionEvent(fixture.session, {
     type: "turn/end", data: { turn: 1, reason: { kind: "max-tokens" } }
   }), true);
@@ -260,6 +283,7 @@ test("a durable user turn invalidates a published continuation without letting i
 
   fixture.agent.status = "running";
   controller.requested({ agent: fixture.agent, turn: 2 }, { provider: "ollama", model: "qwen" });
+  controller.sessionEvent(fixture.session, retainedAssistantEvent(2));
   assert.equal(controller.sessionEvent(fixture.session, {
     type: "turn/end", data: { turn: 2, reason: { kind: "max-tokens" } }
   }), true);
@@ -275,6 +299,174 @@ test("a durable user turn invalidates a published continuation without letting i
   scheduled.shift()();
   assert.equal(fixture.messages.length, 1);
   assert.equal(fixture.messages[0].source.summary, "Fulmar continued automatically · 1/12");
+});
+
+test("empty max-token turns stop with one factual notice and no additional model request", async (t) => {
+  const cases = [
+    ["one reported token and no retained blocks", { ...retainedAssistantEvent(1, []), data: { ...retainedAssistantEvent(1, []).data, usage: { outputTokens: 1 } } }],
+    ["large token usage does not prove useful output", { ...retainedAssistantEvent(1, []), data: { ...retainedAssistantEvent(1, []).data, usage: { outputTokens: 2048 } } }],
+    ["whitespace text and reasoning", retainedAssistantEvent(1, [{ type: "text", text: " \n" }, { type: "reasoning", text: "\t" }])],
+    ["a raw tool-call delta is not a completed action", { type: "assistant/chunk", data: { turn: 1, step: 1, chunk: { type: "tool-call-delta", index: 0, id: "call-1", name: "write", argumentsDelta: "{\"path\":" } } }],
+    ["a tool name without an executed result is not progress", retainedAssistantEvent(1, [{ type: "tool-call", id: "call-1", name: "write", arguments: "" }])],
+    ["a previous turn cannot lend progress", retainedAssistantEvent(0)],
+    ["surface replacement is not new work", { ...retainedAssistantEvent(1), surfaceOp: "replace" }],
+    ["a failed tool result is not progress", {
+      type: "tool/result", surfaceOp: "append", data: { turn: 1, step: 1, message: {
+        role: "user", source: { kind: "tool", callId: "call-1" },
+        content: [{ type: "tool-result", toolCallId: "call-1", isError: true, content: [{ type: "text", text: "Error: tool call aborted before dispatch" }] }]
+      } }
+    }]
+  ];
+  for (const [name, event] of cases) await t.test(name, () => {
+    const scheduled = [];
+    const controller = createAutomaticContinuationController({ schedule: (operation) => scheduled.push(operation) });
+    const fixture = continuationAgent();
+    controller.created(fixture.agent);
+    controller.requested({ agent: fixture.agent, turn: 1 }, { provider: "ollama", model: "qwen" });
+    controller.sessionEvent(fixture.session, event);
+    const ended = { type: "turn/end", data: { turn: 1, reason: { kind: "max-tokens" } } };
+    assert.equal(controller.sessionEvent(fixture.session, ended), true);
+    assert.equal(fixture.notices.length, 0, "no synchronous session append inside the turn-end observer");
+    fixture.agent.status = "idle";
+    controller.status(fixture.agent, "idle");
+    scheduled.shift()();
+    assert.equal(fixture.messages.length, 0, "stopping must not spend another model request on a summary");
+    assert.equal(fixture.notices.length, 1);
+    assert.equal(fixture.notices[0].type, "user/message");
+    assert.deepEqual(fixture.notices[0].options, { surfaceOp: "append" });
+    assert.equal(fixture.notices[0].message.source.plugin, "fulmar-automatic-continuation");
+    assert.equal(fixture.notices[0].message.source.form, "notice");
+    assert.match(fixture.notices[0].message.source.summary, /stopped: no usable output/u);
+    assert.match(fixture.notices[0].message.content[0].text, /task is not confirmed complete/u);
+    assert.equal(controller.state(fixture.agent).continuations, 0);
+    assert.equal(controller.state(fixture.agent).noProgressNoticeQueued, true);
+    assert.equal(controller.sessionEvent(fixture.session, ended), false);
+    assert.equal(controller.status(fixture.agent, "idle"), false);
+    assert.equal(scheduled.length, 0);
+  });
+});
+
+test("real retained reasoning and same-turn successful tool results retain bounded continuation", async (t) => {
+  for (const kind of ["reasoning", "successful tool result"]) await t.test(kind, () => {
+    const scheduled = [];
+    const controller = createAutomaticContinuationController({ schedule: (operation) => scheduled.push(operation) });
+    const fixture = continuationAgent();
+    controller.created(fixture.agent);
+    controller.requested({ agent: fixture.agent, turn: 1 }, { provider: "ollama", model: "qwen" });
+    controller.sessionEvent(fixture.session, kind === "reasoning"
+      ? retainedAssistantEvent(1, [{ type: "reasoning", text: "I have narrowed the cause to the response limit." }])
+      : {
+        type: "tool/result", surfaceOp: "append", data: { turn: 1, step: 1, message: {
+          role: "user", source: { kind: "tool", callId: "call-1" },
+          content: [{ type: "tool-result", toolCallId: "call-1", isError: false, content: [] }]
+        } }
+      });
+    // A later model request in the same turn must retain the earlier completed
+    // tool's progress, even if the final assistant segment is empty.
+    controller.requested({ agent: fixture.agent, turn: 1, step: 2 }, { provider: "ollama", model: "qwen" });
+    controller.sessionEvent(fixture.session, retainedAssistantEvent(1, []));
+    controller.sessionEvent(fixture.session, { type: "turn/end", data: { turn: 1, reason: { kind: "max-tokens" } } });
+    fixture.agent.status = "idle";
+    controller.status(fixture.agent, "idle");
+    scheduled.shift()();
+    assert.equal(fixture.messages.length, 1);
+    assert.equal(fixture.notices.length, 0);
+    assert.equal(controller.state(fixture.agent).continuations, 1);
+
+    // A genuinely empty follow-up cannot inherit the first turn's work.
+    fixture.agent.status = "running";
+    controller.requested({ agent: fixture.agent, turn: 2 }, { provider: "ollama", model: "qwen" });
+    controller.sessionEvent(fixture.session, retainedAssistantEvent(2, []));
+    controller.sessionEvent(fixture.session, { type: "turn/end", data: { turn: 2, reason: { kind: "max-tokens" } } });
+    fixture.agent.status = "idle";
+    controller.status(fixture.agent, "idle");
+    scheduled.shift()();
+    assert.equal(fixture.messages.length, 1);
+    assert.equal(fixture.notices.length, 1);
+  });
+});
+
+test("no-progress notices yield to cancellation, fresh user work, and disposed sessions", async (t) => {
+  for (const kind of ["cancellation", "durable user message", "queued user work", "disposed session"]) await t.test(kind, () => {
+    const scheduled = [];
+    const controller = createAutomaticContinuationController({ schedule: (operation) => scheduled.push(operation) });
+    const fixture = continuationAgent();
+    const abort = new AbortController();
+    controller.created(fixture.agent);
+    controller.requested({ agent: fixture.agent, turn: 1, signal: abort.signal }, { provider: "ollama", model: "qwen" });
+    fixture.agent.status = "idle";
+    controller.sessionEvent(fixture.session, { type: "turn/end", data: { turn: 1, reason: { kind: "max-tokens" } } });
+    assert.equal(scheduled.length, 1);
+    if (kind === "cancellation") abort.abort();
+    if (kind === "durable user message") controller.sessionEvent(fixture.session, { type: "user/message", data: { source: { kind: "user" } } });
+    if (kind === "queued user work") fixture.agent.inbox.nextTurn.push({ id: "new-user-work" });
+    if (kind === "disposed session") controller.disposed(fixture.agent);
+    scheduled.shift()();
+    assert.equal(fixture.messages.length, 0);
+    assert.equal(fixture.notices.length, 0);
+    if (kind === "cancellation") {
+      const cancelled = continuationAgent();
+      controller.created(cancelled.agent);
+      controller.requested({ agent: cancelled.agent, turn: 1, signal: abort.signal }, { provider: "ollama", model: "qwen" });
+      assert.equal(controller.sessionEvent(cancelled.session, { type: "turn/end", data: { turn: 1, reason: { kind: "max-tokens" } } }), false);
+      cancelled.agent.status = "idle";
+      assert.equal(controller.status(cancelled.agent, "idle"), false);
+      assert.equal(scheduled.length, 0, "a request already cancelled before turn/end is never staged");
+    }
+    if (kind === "durable user message") {
+      controller.requested({ agent: fixture.agent, turn: 2 }, { provider: "ollama", model: "qwen" });
+      controller.sessionEvent(fixture.session, retainedAssistantEvent(2));
+      controller.sessionEvent(fixture.session, { type: "turn/end", data: { turn: 2, reason: { kind: "max-tokens" } } });
+      scheduled.shift()();
+      assert.equal(fixture.messages.length, 1, "the new user's productive task is not permanently disabled");
+    }
+  });
+});
+
+test("pinned DSH empty max-token assembly accepts a persistent notice without fabricating a model turn", async () => {
+  const { Session } = await import("../../VendorRuntime/node_modules/@deepseek-ai/dsh-session/lib/index.js");
+  const { BlockAssembler, createAssistantMessage } = await import("../../VendorRuntime/node_modules/@deepseek-ai/dsh-llm/lib/index.js");
+  const liveSession = Session.create(`no-progress-${randomUUID()}`);
+  const scheduled = [];
+  const followups = [];
+  const agent = { id: liveSession.id, session: liveSession, status: "running", inbox: { nextTurn: [], nextStep: [] }, followup(message) { followups.push(message); } };
+  const controller = createAutomaticContinuationController({ schedule: (operation) => scheduled.push(operation) });
+  controller.created(agent);
+  liveSession.append("turn/start", { turn: 1 });
+  liveSession.append("step/start", { turn: 1, step: 1 });
+  controller.requested({ agent, turn: 1 }, { provider: "ollama", model: "qwen2.5:7b" });
+  const assembler = new BlockAssembler();
+  const chunks = [
+    { type: "usage", usage: { outputTokens: 1 } },
+    { type: "finish", reason: { kind: "max-tokens" } }
+  ];
+  const chunkSeqs = chunks.map((chunk) => {
+    assembler.push(chunk);
+    return liveSession.append("assistant/chunk", { turn: 1, step: 1, chunk }).seq;
+  });
+  assert.deepEqual(assembler.blocks(), []);
+  const assistant = liveSession.append("assistant/message", {
+    turn: 1, step: 1,
+    message: createAssistantMessage({ content: assembler.blocks(), source: { provider: "ollama", model: "qwen2.5:7b" } }),
+    usage: assembler.usage
+  }, { surfaceOp: "append", sourceEventSeqs: chunkSeqs });
+  controller.sessionEvent(liveSession, assistant);
+  liveSession.append("step/end", { turn: 1, step: 1 });
+  controller.sessionEvent(liveSession, liveSession.append("turn/end", { turn: 1, reason: assembler.finish }));
+  agent.status = "idle";
+  controller.status(agent, "idle");
+  scheduled.shift()();
+  assert.equal(followups.length, 0);
+  assert.equal(liveSession.events.filter((event) => event.type === "turn/start").length, 1);
+  assert.deepEqual(liveSession.events.find((event) => event.type === "turn/end").data.reason, { kind: "max-tokens" });
+  const notice = liveSession.events.at(-1);
+  assert.equal(notice.type, "user/message");
+  assert.equal(notice.data.source.form, "notice");
+  assert.match(notice.data.source.summary, /no usable output/u);
+  assert.equal(liveSession.deriveMessages().at(-1).id, notice.data.id);
+  // The exact retained log also restores; the notice is not a UI-only claim.
+  const restored = Session.create(liveSession.id, liveSession.events);
+  assert.equal(restored.deriveMessages().at(-1).id, notice.data.id);
 });
 
 test("decodes the exact native catalog and freezes its values", () => {

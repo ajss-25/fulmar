@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 import test from "node:test";
 
 import { apply } from "../../VendorRuntime/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js";
+import { clampMaxTokensToContext } from "../../VendorRuntime/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js";
+import { estimateContextTokens } from "../../VendorRuntime/node_modules/@earendil-works/pi-ai/dist/utils/estimate.js";
 
 const model = {
   id: "fixture-model",
@@ -42,6 +44,170 @@ function profile(api, baseURL, additions = {}) {
     ...additions
   };
 }
+
+test("configured Ollama and LM Studio-style models serialize usable context-bounded output", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      requests.push(JSON.parse(body));
+      respondChat(response);
+    });
+  });
+  try {
+    const port = await listen(server);
+    for (const [provider, contextWindow, inputTokens, requested, modelCap, expected] of [
+      ["ollama", 8192, 6200, 2048, 2048, 1480],
+      ["lmstudio", 8192, 6200, 2048, 2048, 1480],
+      ["small-local", 4096, 3000, 1024, 1024, 840],
+      ["lmstudio", 16384, 12000, 4096, 4096, 3360],
+      ["ollama", 32768, 28000, 4096, 4096, 2720],
+      ["ollama", 49152, 42000, 8192, 8192, 4080],
+      ["remote-compatible", 65536, 56000, 8192, 8192, 5440],
+      ["remote-compatible", 131072, 10000, 4096, 8192, 4096],
+      ["small-output-cap", 8192, 1024, 4096, 512, 512],
+      ["small-caller-cap", 8192, 1024, 64, 2048, 64]
+    ]) {
+      const adapter = captureAdapter({ [provider]: profile("openai-completions", `http://127.0.0.1:${port}/v1`, {
+        models: [{ ...model, contextWindow, maxTokens: modelCap }], compat: { maxTokensField: "max_tokens" }
+      }) });
+      const chunks = [];
+      for await (const chunk of adapter.stream({ provider, model: model.id, maxTokens: requested,
+        messages: [{ role: "user", content: [{ type: "text", text: "x".repeat(inputTokens * 4) }] }]
+      })) chunks.push(chunk);
+      assert.ok(chunks.some((chunk) => chunk.type === "finish" && chunk.reason?.kind === "stop"));
+      assert.equal(requests.at(-1).max_tokens, expected, `${provider}/${contextWindow}`);
+      assert.equal(requests.at(-1).max_completion_tokens, undefined);
+      assert.ok(inputTokens + expected + Math.min(4096, Math.max(256, Math.ceil(contextWindow / 16))) <= contextWindow);
+    }
+    const tools = [{ name: "WriteFixture", description: "Only an inert schema, never executed.",
+      parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } }];
+    const system = "s".repeat(8000);
+    const prefixTokens = estimateContextTokens({ systemPrompt: system, tools, messages: [] }).tokens;
+    const adapter = captureAdapter({ ollama: profile("openai-completions", `http://127.0.0.1:${port}/v1`, {
+      models: [{ ...model, contextWindow: 8192, maxTokens: 2048 }], compat: { maxTokensField: "max_tokens" }
+    }) });
+    for await (const _chunk of adapter.stream({ provider: "ollama", model: model.id, maxTokens: 2048, system, tools,
+      messages: [{ role: "user", content: [{ type: "text", text: "x".repeat((6200 - prefixTokens) * 4) }] }]
+    })) { /* The serializer, including prefix and tool schemas, is the test subject. */ }
+    assert.equal(requests.at(-1).max_tokens, 1480);
+    assert.equal(requests.at(-1).tools.length, 1);
+  } finally {
+    await close(server);
+  }
+});
+
+test("exhausted model contexts fail with the typed recovery code before provider I/O", async () => {
+  let requests = 0;
+  const server = createServer((_request, response) => { requests += 1; respondChat(response); });
+  try {
+    const port = await listen(server);
+    const adapter = captureAdapter({ lmstudio: profile("openai-completions", `http://127.0.0.1:${port}/v1`, {
+      models: [{ ...model, contextWindow: 8192, maxTokens: 2048 }]
+    }) });
+    for (const remaining of [0, 1, 15, 16, 255]) {
+      const chunks = [];
+      for await (const chunk of adapter.stream({ provider: "lmstudio", model: model.id, maxTokens: 2048,
+        messages: [{ role: "user", content: [{ type: "text", text: "x".repeat((8192 - 512 - remaining) * 4) }] }]
+      })) chunks.push(chunk);
+      assert.ok(chunks.some((chunk) => chunk.type === "finish" && chunk.reason?.kind === "error"
+        && chunk.reason.failure.code === "CONTEXT_WINDOW_EXCEEDED"), JSON.stringify(chunks));
+    }
+    assert.equal(requests, 0);
+  } finally {
+    await close(server);
+  }
+});
+
+test("budgeting includes system and tool burden and honors caller, model and protocol floors", () => {
+  const configured = { ...model, api: "openai-completions", contextWindow: 8192, maxTokens: 2048 };
+  const context = { systemPrompt: "s".repeat(8000), messages: [{ role: "user", content: "x".repeat(12000), timestamp: 0 }],
+    tools: [{ name: "FixtureWrite", description: "inert", parameters: { type: "object", properties: { text: { type: "string" } } } }] };
+  const estimate = estimateContextTokens(context).tokens;
+  assert.equal(clampMaxTokensToContext(configured, context, 2048), Math.min(2048, 8192 - estimate - 512));
+  for (const remaining of [256, 512, 2048]) {
+    const bounded = { messages: [{ role: "user", content: "x".repeat((8192 - 512 - remaining) * 4), timestamp: 0 }] };
+    assert.equal(clampMaxTokensToContext(configured, bounded, 2048), remaining);
+  }
+  assert.equal(clampMaxTokensToContext(configured, { messages: [] }, 1), 1, "an explicit tiny Chat cap is not raised");
+  assert.throws(() => clampMaxTokensToContext({ ...configured, api: "openai-responses" }, { messages: [] }, 15),
+    (error) => error.code === "FULMAR_INVALID_TOKEN_BUDGET");
+  assert.throws(() => clampMaxTokensToContext({ ...configured, api: "azure-openai-responses" }, { messages: [] }, 15),
+    (error) => error.code === "FULMAR_INVALID_TOKEN_BUDGET");
+  for (const invalid of [0, -1, 1.5, NaN, Infinity]) {
+    assert.throws(() => clampMaxTokensToContext({ ...configured, contextWindow: invalid }, { messages: [] }, 2048));
+    assert.throws(() => clampMaxTokensToContext({ ...configured, maxTokens: invalid }, { messages: [] }, 2048));
+    assert.throws(() => clampMaxTokensToContext(configured, { messages: [] }, invalid));
+  }
+  const history = {
+    ...context,
+    messages: [
+      { role: "assistant", content: [{ type: "text", text: "retained" }], timestamp: 1, stopReason: "stop",
+        usage: { input: 6000, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 6100 } },
+      { role: "user", content: "next".repeat(25), timestamp: 2 }
+    ]
+  };
+  assert.equal(estimateContextTokens(history).tokens, 6125, "reported usage already includes the prefix/tools");
+  assert.equal(clampMaxTokensToContext(configured, history, 2048), 1555);
+  const cjk = { messages: [{ role: "user", content: "你好模型".repeat(1000), timestamp: 0 }] };
+  assert.equal(clampMaxTokensToContext(configured, cjk, 2048), 2048);
+  // The estimator is not a tokenizer. An actual provider overflow remains a
+  // typed recoverable error; do not claim character-based admission guarantees fit.
+});
+
+test("Responses and Anthropic serialize bounded budgets and retain typed lazy setup failures", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      requests.push({ url: request.url, body: JSON.parse(body) });
+      if (request.url.endsWith("/responses")) respondResponses(response);
+      else respondAnthropic(response);
+    });
+  });
+  try {
+    const port = await listen(server);
+    for (const [api, suffix, field] of [
+      ["openai-responses", "/v1", "max_output_tokens"],
+      ["anthropic-messages", "", "max_tokens"]
+    ]) {
+      const adapter = captureAdapter({ private: profile(api, `http://127.0.0.1:${port}${suffix}`, {
+        models: [{ ...model, contextWindow: 8192, maxTokens: 2048 }]
+      }) });
+      const chunks = [];
+      for await (const chunk of adapter.stream({ provider: "private", model: model.id, maxTokens: 2048,
+        messages: [{ role: "user", content: [{ type: "text", text: "x".repeat(6200 * 4) }] }]
+      })) chunks.push(chunk);
+      assert.equal(requests.at(-1).body[field], 1480, api);
+      assert.ok(chunks.some((chunk) => chunk.type === "finish" && chunk.reason?.kind === "stop"), api);
+      const before = requests.length;
+      const invalid = [];
+      for await (const chunk of adapter.stream({ provider: "private", model: model.id,
+        maxTokens: api === "openai-responses" ? 15 : 0,
+        messages: [{ role: "user", content: [{ type: "text", text: "tiny" }] }]
+      })) invalid.push(chunk);
+      assert.equal(requests.length, before, "invalid limits must not reach the provider");
+      assert.ok(invalid.some((chunk) => chunk.type === "finish" && chunk.reason?.kind === "error"
+        && chunk.reason.failure.code === "INVALID_REQUEST"), JSON.stringify(invalid));
+    }
+    const thinking = captureAdapter({ private: profile("anthropic-messages", `http://127.0.0.1:${port}`, {
+      reasoning: "medium",
+      models: [{ ...model, contextWindow: 8192, maxTokens: 4096, reasoningEfforts: { off: null, medium: "medium" } }]
+    }) });
+    for await (const _chunk of thinking.stream({ provider: "private", model: model.id, maxTokens: 1024,
+      messages: [{ role: "user", content: [{ type: "text", text: "x".repeat(5000 * 4) }] }]
+    })) { /* Anthropic expands the text allowance for thinking, then must re-clamp. */ }
+    assert.equal(requests.at(-1).body.max_tokens, 2680);
+    assert.equal(requests.at(-1).body.thinking.budget_tokens, 1656);
+    assert.ok(requests.at(-1).body.thinking.budget_tokens < requests.at(-1).body.max_tokens);
+  } finally {
+    await close(server);
+  }
+});
 
 function openSSE(response) {
   response.writeHead(200, {

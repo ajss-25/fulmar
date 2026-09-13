@@ -78,7 +78,7 @@ if (!packageManifest.includes(`.macOS(.v${minimumMacOSMajor})`)) {
 }
 
 const vendorPatchManifest = JSON.parse(read("Config/VendorRuntimePatches.json"));
-if (vendorPatchManifest.schemaVersion !== 1 || vendorPatchManifest.patches?.length !== 14) {
+if (vendorPatchManifest.schemaVersion !== 1 || vendorPatchManifest.patches?.length !== 15) {
   fail("vendored runtime patch manifest is missing or unsupported");
 }
 const vendorMaterializer = read("scripts/materialize-vendor-runtime.mjs");

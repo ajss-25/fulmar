@@ -208,6 +208,40 @@ function automaticContinuationMessage(round, maximum, terminal = false) {
   });
 }
 
+function automaticContinuationStoppedMessage() {
+  return freezeTree({
+    id: randomUUID(),
+    role: "user",
+    content: [{
+      type: "text",
+      text: "Fulmar stopped automatic continuation because the last turn reached its response limit without retaining any nonblank answer or reasoning, or a successful tool result. The task is not confirmed complete. Earlier work is preserved. Check the model and response-limit settings before trying again."
+    }],
+    source: {
+      kind: "plugin",
+      plugin: AUTOMATIC_CONTINUATION_SOURCE,
+      form: "notice",
+      summary: "Automatic continuation stopped: no usable output before the response limit"
+    }
+  });
+}
+
+function isRetainedContinuationProgress(event) {
+  const message = event.data?.message;
+  if (event.surfaceOp !== "append" || !Array.isArray(message?.content)) return false;
+  if (event.type === "assistant/message") {
+    return event.data?.interrupted !== true && message.role === "assistant"
+      && message.source?.kind === "model"
+      && message.content.some((block) => (block?.type === "text" || block?.type === "reasoning")
+        && typeof block.text === "string" && block.text.trim().length > 0);
+  }
+  if (event.type !== "tool/result" || message.role !== "user"
+      || message.source?.kind !== "tool" || typeof message.source.callId !== "string"
+      || message.source.callId.length === 0 || message.content.length !== 1) return false;
+  const block = message.content[0];
+  return block?.type === "tool-result" && block.toolCallId === message.source.callId
+    && block.isError !== true && event.data?.error === undefined && Array.isArray(block.content);
+}
+
 /**
  * Continue a truncated foreground task without impersonating the user. DSH
  * deliberately closes `max-tokens` as a balanced turn, so the supported
@@ -234,9 +268,13 @@ function createAutomaticContinuationController({
         agent,
         continuations: 0,
         lastRequestTurn: undefined,
+        lastRequestSignal: undefined,
+        progressTurn: undefined,
+        retainedProgress: false,
         pendingContinuation: undefined,
         scheduledContinuation: undefined,
         budgetNoticeQueued: false,
+        noProgressNoticeQueued: false,
         eligible: agent?.session?.header?.origin !== "subagent"
       };
       bySession.set(id, state);
@@ -276,12 +314,21 @@ function createAutomaticContinuationController({
       current.scheduledContinuation = undefined;
       if (current.pendingContinuation !== pending) return;
       current.pendingContinuation = undefined;
-      if (current.agent.status !== "idle" || pendingWork(current.agent)) {
+      if (current.agent.status !== "idle" || pendingWork(current.agent) || pending.signal?.aborted) {
         if (pending.terminal) current.budgetNoticeQueued = false;
+        if (pending.noProgress) current.noProgressNoticeQueued = false;
         logDiagnostic(`yielded staged continuation for session=${String(agent.id)} to newer user work`);
         return;
       }
       try {
+        if (pending.noProgress) {
+          // The session observer runs inside append publication: defer this
+          // factual notice until idle so append is not reentered. Appending a
+          // plugin notice directly does not queue a user turn or call the LLM.
+          current.agent.session.append("user/message", automaticContinuationStoppedMessage(), { surfaceOp: "append" });
+          logDiagnostic(`stopped empty max-token turn for session=${String(agent.id)}`);
+          return;
+        }
         current.agent.followup(automaticContinuationMessage(
           pending.round,
           maximumContinuations,
@@ -291,6 +338,7 @@ function createAutomaticContinuationController({
         logDiagnostic(`queued ${pending.terminal ? "terminal summary" : `round=${pending.round}`} for session=${String(agent.id)}`);
       } catch (error) {
         if (pending.terminal) current.budgetNoticeQueued = false;
+        if (pending.noProgress) current.noProgressNoticeQueued = false;
         logFailure(current.agent, error);
       }
     });
@@ -310,7 +358,12 @@ function createAutomaticContinuationController({
         return;
       }
       const state = stateFor(payload?.agent);
+      if (state.progressTurn !== payload.turn) {
+        state.progressTurn = payload.turn;
+        state.retainedProgress = false;
+      }
       state.lastRequestTurn = payload.turn;
+      state.lastRequestSignal = payload.signal;
       logDiagnostic(`observed request turn=${payload.turn} session=${String(payload?.agent?.id ?? "missing")}`);
     },
     sessionEvent(session, event) {
@@ -331,7 +384,15 @@ function createAutomaticContinuationController({
           state.pendingContinuation = undefined;
           state.scheduledContinuation = undefined;
           state.budgetNoticeQueued = false;
+          state.noProgressNoticeQueued = false;
+          state.progressTurn = undefined;
+          state.retainedProgress = false;
         }
+        return false;
+      }
+      if (event?.type === "assistant/message" || event?.type === "tool/result") {
+        if (state.lastRequestTurn === event.data?.turn && state.progressTurn === event.data?.turn
+            && isRetainedContinuationProgress(event)) state.retainedProgress = true;
         return false;
       }
       if (event?.type !== "turn/end") return false;
@@ -339,14 +400,18 @@ function createAutomaticContinuationController({
       if (event.data?.reason?.kind !== "max-tokens") {
         state.continuations = 0;
         state.lastRequestTurn = undefined;
+        state.lastRequestSignal = undefined;
+        state.progressTurn = undefined;
+        state.retainedProgress = false;
         state.pendingContinuation = undefined;
         state.scheduledContinuation = undefined;
         state.budgetNoticeQueued = false;
+        state.noProgressNoticeQueued = false;
         return false;
       }
       if (!state.eligible || state.pendingContinuation !== undefined
           || state.scheduledContinuation !== undefined
-          || state.lastRequestTurn !== turn || pendingWork(state.agent)) {
+          || state.lastRequestTurn !== turn || pendingWork(state.agent) || state.lastRequestSignal?.aborted) {
         logDiagnostic(
           `ignored max-tokens turn=${String(turn)} eligible=${String(state.eligible)} scheduled=${String(state.scheduledContinuation !== undefined)} `
           + `observedTurn=${String(state.lastRequestTurn)} pending=${String(pendingWork(state.agent))}`
@@ -354,16 +419,19 @@ function createAutomaticContinuationController({
         return false;
       }
 
-      const terminal = state.continuations >= maximumContinuations;
+      const noProgress = !state.retainedProgress;
+      if (state.noProgressNoticeQueued) return false;
+      const terminal = !noProgress && state.continuations >= maximumContinuations;
       if (terminal && state.budgetNoticeQueued) return false;
       // Consume this exact observed request before deferring the follow-up. A
       // duplicate delivery of the same durable turn/end event must not enqueue
       // another continuation after the first microtask has run.
       state.lastRequestTurn = undefined;
       if (terminal) state.budgetNoticeQueued = true;
+      if (noProgress) state.noProgressNoticeQueued = true;
       const round = terminal ? state.continuations : state.continuations + 1;
-      state.pendingContinuation = Object.freeze({ round, terminal });
-      logDiagnostic(`staged ${terminal ? "terminal summary" : `round=${round}`} until the exact agent becomes idle`);
+      state.pendingContinuation = Object.freeze({ round, terminal, noProgress, signal: state.lastRequestSignal });
+      logDiagnostic(`staged ${noProgress ? "no-progress notice" : terminal ? "terminal summary" : `round=${round}`} until the exact agent becomes idle`);
       // DSH may publish idle immediately before or immediately after its
       // durable turn/end hook. Observe both boundaries so either legal ordering
       // schedules exactly the same tokenized follow-up once.
@@ -383,6 +451,8 @@ function createAutomaticContinuationController({
         pendingContinuation: value.pendingContinuation !== undefined,
         scheduled: value.scheduledContinuation !== undefined,
         budgetNoticeQueued: value.budgetNoticeQueued,
+        noProgressNoticeQueued: value.noProgressNoticeQueued,
+        retainedProgress: value.retainedProgress,
         eligible: value.eligible
       });
     },

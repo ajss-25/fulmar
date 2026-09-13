@@ -11,12 +11,17 @@ Anthropic, Ollama, Alibaba or the Qwen project.
   (physically tested only on macOS 26.6.2).
 - Bundled runtime: DeepSeek Harness `0.1.1-rc.1` (+ DSH MCP client `0.1.1-rc.1`) on
   Node `22.23.1`, reconstructed at bootstrap from `VendorRuntime/package-lock.json`
-  with fourteen hash-bound Fulmar patches; nothing generated is stored in Git.
+  with fifteen hash-bound Fulmar patches; nothing generated is stored in Git.
 - Licence: original Fulmar source under the MIT License (`LICENSE`); bundled third-party
   components keep their own terms (see the generated SBOM and notices in a built app).
 
 ## Changes since the 1.2.36 candidate notes in `CHANGELOG.md`
 
+- Model/context budgeting: small-context Ollama and custom OpenAI-compatible
+  routes no longer lose their response budget to a fixed 4K reserve. Output stays
+  within the caller/model caps and estimated context space; insufficient space
+  reports a context error. Empty max-token turns stop with a retained notice.
+  This does not validate every model's tool quality or a server's declared limits.
 - Transitive dependency remediation only (no product change):
   `qs` 6.15.3 → **6.16.0** (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g) and
   `fast-uri` 3.1.5 → **3.1.6** (GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf,
@@ -45,11 +50,11 @@ unrun result.
 | Gate | Result |
 | --- | --- |
 | Tracked-index policy on the proposed public commit | must pass against the exact committed index |
-| Clean-checkout bootstrap (`zsh scripts/bootstrap-source-checkout.sh`) | must reconstruct pinned Node, DSH 0.1.1-rc.1, qs 6.16.0, fast-uri 3.1.6, Hono 4.13.5, js-yaml 4.3.2, sharp 0.35.4, 14 patches, the exact 38,504-entry / 395,128,248-byte VendorRuntime inventory and the verified Rust notice-material cache |
+| Clean-checkout bootstrap (`zsh scripts/bootstrap-source-checkout.sh`) | must reconstruct pinned Node, DSH 0.1.1-rc.1, qs 6.16.0, fast-uri 3.1.6, Hono 4.13.5, js-yaml 4.3.2, sharp 0.35.4, 15 patches, the exact 38,504-entry / 395,130,487-byte VendorRuntime inventory and the verified Rust notice-material cache |
 | DSH promotion provenance, source product contract, DeepSeek runtime contract | must pass |
 | Production dependency audit (pinned npm 10.9.8 virtual tree; credential-free bounded Bulk Advisory primary; whole-graph OSV QueryBatch secondary authority only after a narrowly retryable batch outage; no Quick Audit route) | must report zero findings and identify one complete authority |
 | Static security scan | must report zero unreviewed findings using the content-pinned Semgrep 1.135.0 closure and pinned rules |
-| JavaScript gate | 902 exact tests: source profile requires 855 passed / 47 reviewed skips; candidate profile requires 856 passed / 46 reviewed skips, with 0 failures |
+| JavaScript gate | 1,006 exact tests: source profile requires 959 passed / 47 reviewed skips; candidate profile requires 960 passed / 46 reviewed skips, with 0 failures |
 | Swift gate | must complete 1,455/1,455 isolated functions, DeviceAttestationAuthorityTests 12/12, warning-clean, with deployment target 15.0 verified |
 | GitHub-hosted source checks | Workflow jobs `static-analysis`, `codeql-javascript`, `macos`, and `minimum-macos-candidate`, plus the separate `CodeQL` app check, must all pass on the exact source commit |
 

@@ -197,7 +197,7 @@ make runtime-inventory-verify
 make dependency-audit                 # npm first; eligible outages use credential-free OSV
 make static-security-scan
 FULMAR_SWIFT_BUILD_JOBS=2 /usr/bin/caffeinate -dimsu zsh scripts/run-swift-tests.sh   # 1,455 functions + 12 attestation scenarios
-zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # source profile: 983 tests, 936 pass, 47 reviewed skips
+zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # source profile: 1006 tests, 959 pass, 47 reviewed skips
 make private-release                # persistent local signing identity; no Developer ID or notarisation
 ./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
   --emergency-rss-bytes 17179869184 --label "Fulmar frozen-candidate check" -- /usr/bin/make frozen-candidate-check
@@ -218,7 +218,7 @@ build**: the packaged credential services deliberately reject its mismatched
 designated requirements. Do not disable those checks.
 
 Never run `npm ci` directly against `VendorRuntime/package-lock.json`: the bootstrap
-derives the install-only lock, applies the fourteen hash-bound runtime patches and
+derives the install-only lock, applies the fifteen hash-bound runtime patches and
 verifies the complete `VendorRuntime.inventory.json`. The Swift gate builds with
 warnings as errors and takes minutes on a warm cache and considerably longer cold; run
 it and the JavaScript gate sequentially, not concurrently. The full gate list, expected
