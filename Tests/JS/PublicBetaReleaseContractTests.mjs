@@ -26,7 +26,7 @@ import {
   resolvePublicReleaseProfile,
   verifyPublicExternalEvidenceBytes
 } from "../../scripts/public-release-profile-policy.mjs";
-import { verifyNonnotarizedDMGBinding, verifyPrivateSignerDetails } from "../../scripts/nonnotarized-beta-policy.mjs";
+import { privateSignerInspectionArguments, verifyNonnotarizedDMGBinding, verifyPrivateSignerDetails } from "../../scripts/nonnotarized-beta-policy.mjs";
 
 const root = process.cwd();
 const externalEvidenceVerifier = join(root, "scripts", "verify-public-external-evidence.mjs");
@@ -527,6 +527,12 @@ test("the verifier CLI binds the profile explicitly and keeps owner/mode/link ch
 });
 
 test("nonnotarized pure helpers require the reviewed certificate bytes and exact unqualified DMG binding", () => {
+  // codesign's optional certificate prefix must be attached to its option;
+  // a separate token is interpreted as another signing target.
+  const prefix = "/synthetic-test-fixture/private space/certificate-";
+  const target = "/synthetic-test-fixture/Fulmar.app";
+  assert.deepEqual(privateSignerInspectionArguments(prefix, target),
+    ["-dvvv", `--extract-certificates=${prefix}`, target]);
   // These are labelled fixture bytes, not a DER certificate or a real signing
   // identity. Only pure parsing and digest comparison are exercised here.
   const certificate = Buffer.from("synthetic-beta-fixture:NOT-A-CERTIFICATE:private-signer");

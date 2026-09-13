@@ -28,6 +28,10 @@ export function verifyPrivateSignerDetails(details, certificateBytes, expectedSi
   }
 }
 
+export function privateSignerInspectionArguments(prefix, target) {
+  return ["-dvvv", `--extract-certificates=${prefix}`, target];
+}
+
 export async function verifyPrivateSigner(target, expectedSignerSHA256) {
   requireDigest(expectedSignerSHA256);
   if (!isAbsolute(target) || /[\x00-\x1f\x7f]/u.test(target)) throw new Error("signature target must be one absolute path");
@@ -41,7 +45,7 @@ export async function verifyPrivateSigner(target, expectedSignerSHA256) {
   });
   try {
     const prefix = join(scratch, "certificate-");
-    const observed = await run("/usr/bin/codesign", ["-dvvv", "--extract-certificates", prefix, target]);
+    const observed = await run("/usr/bin/codesign", privateSignerInspectionArguments(prefix, target));
     const certificate = await readAttestedRegularFile(`${prefix}0`, {
       minimumBytes: 1, maximumBytes: 65536, requireCurrentUser: true, requireSingleLink: true
     });
