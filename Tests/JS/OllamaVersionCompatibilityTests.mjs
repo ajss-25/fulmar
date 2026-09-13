@@ -35,7 +35,7 @@ test("Ollama minimum, tested, and later patch releases in the qualified series a
   for (const unqualified of ["0.34.0", "1.4.0+official.arm64"]) {
     assert.throws(
       () => requireCompatibleOllamaVersion(unqualified),
-      /newer than Fulmar's release-qualified 0[.]33[.]x range; install a Fulmar update/u
+      new Error(`Ollama ${unqualified} is newer than Fulmar's release-qualified 0.33.x range; install a Fulmar update that qualifies this release or restore 0.33.2 or a later patch within 0.33.x`)
     );
   }
 });
@@ -44,7 +44,7 @@ test("an older stable Ollama version fails with the exact actionable floor", () 
   for (const oldVersion of ["0.32.12", "0.33.1"]) {
     assert.throws(
       () => requireCompatibleOllamaVersion(oldVersion),
-      new RegExp(`Ollama ${oldVersion.replaceAll(".", "[.]")} is too old; update to 0\\.33\\.2 or later`, "u")
+      new Error(`Ollama ${oldVersion} is too old; update to 0.33.2 or a later patch within 0.33.x`)
     );
   }
 });

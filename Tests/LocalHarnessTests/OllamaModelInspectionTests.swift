@@ -46,7 +46,7 @@ private func versionResponse(_ value: String) -> Data {
     #expect(OllamaVersionCompatibilityError.newerUnqualified(
         actual: "0.34.0",
         qualifiedSeries: "0.33.x"
-    ).localizedDescription.contains("Install a Fulmar update"))
+    ).localizedDescription == "Ollama 0.34.0 is newer than Fulmar's release-qualified 0.33.x range. Install a Fulmar update that qualifies this Ollama release, or restore Ollama version 0.33.2 or a later patch within 0.33.x, then restart Fulmar.")
 }
 
 @Test func oldOllamaVersionFailsWithAnActionableMinimum() {
@@ -61,7 +61,7 @@ private func versionResponse(_ value: String) -> Data {
     #expect(OllamaVersionCompatibilityError.unsupported(
         actual: "0.33.1",
         minimum: "0.33.2"
-    ).localizedDescription.contains("Update the official Ollama app"))
+    ).localizedDescription == "Ollama 0.33.1 is too old for Fulmar's local agent route. Update the official Ollama app to version 0.33.2 or a later patch within 0.33.x, then restart Fulmar.")
     #expect(OllamaVersionCompatibilityError.unavailable.localizedDescription.contains(
         "restart Fulmar"
     ))
