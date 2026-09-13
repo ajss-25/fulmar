@@ -1,5 +1,67 @@
 # Public beta release contract — manual-install macOS beta
 
+## Separate non-notarized beta profile
+
+`nonnotarized-beta` is an explicit third profile, not a relaxation of `stable`
+or `beta`. The latter profiles still require Developer ID and notarisation.
+The third profile is a release mechanism, **not evidence of a qualified public
+download**. The current private build and DMG must not be relabelled as one.
+
+It requires a selected persistent private code-signing certificate and its
+independently reviewed SHA-256. Ad-hoc signing is refused. All native/runtime
+signature integrity, hardened-runtime and exact-entitlement checks remain;
+the helper, broker and migration service must share the same designated
+requirement. No certificate is imported or trusted on a recipient machine to
+make the test pass. Future permission persistence is not promised.
+
+The profile is manual-install, clean-install-only, updater-disabled and
+explicitly not notarized. Its eleven external gates are the existing ten beta
+gates plus `nonnotarizedRecipientAcceptance`. This record must cover the exact
+browser-downloaded DMG, actual quarantine/Gatekeeper behaviour and any normal
+per-app Open Anyway step, startup, helpers/XPC, Keychain authorisation,
+quit/relaunch, a bounded local-model task and the declared cloud acceptance.
+Copies transferred over SSH or AirDrop prove only their observed transfer path,
+not browser-download acceptance. Never disable Gatekeeper globally, strip
+quarantine, or change certificate trust to manufacture success.
+
+The owner-private evidence file is
+`build/public-nonnotarized-beta-external-evidence.json`, with evidence type
+`fulmar-public-nonnotarized-beta-external-evidence`, explicit `releaseProfile`,
+and candidate `{sha256, dmgSHA256, signerCertificateSHA256}`. Distribution is
+exactly `{channel:"manual-install", inAppUpdater:"disabled",
+retainedState:"clean-install-only", appleNotarization:"not-notarized"}`.
+Every gate uses the same bounded passed/evidenceSHA256/reference shape below.
+The independent expected DMG and signer digests are required operands; evidence
+cannot supply its own authority. No retained-state migration alternative exists
+in this profile. No licence obligation is closed by naming this profile.
+
+Operator targets are `public-nonnotarized-beta-release`,
+`public-nonnotarized-beta-release-finalize`, `public-nonnotarized-beta-assets`,
+`public-nonnotarized-beta-external-evidence-verify` and
+`public-nonnotarized-beta-distribution-verify`. Supply the same `BETA_MATERIAL_*`
+and `BETA_SOURCE_COMMIT` operands described below plus
+`NONNOTARIZED_SIGNER_SHA256`. Configure an existing persistent signing identity
+and exact signing-Keychain path; leave the Apple notary profile unset and use
+timestamp mode `0`. The operator neither creates an identity nor changes trust.
+
+Fresh preparation builds/retains one candidate, creates
+`build/nonnotarized-beta-dmg`, prints its identities and pauses without publishing.
+After exact-candidate acceptance, finalize additionally requires
+`NONNOTARIZED_DMG_SHA256`. Finalize verifies the retained DMG and never rebuilds,
+re-signs or recreates it. The asset target also takes
+`NONNOTARIZED_DMG_PACKAGE` (defaults to that retained directory).
+
+The third profile's package is exactly fourteen assets: the existing twelve
+beta assets plus `Fulmar.dmg` and `dmg-binding.json`; thirteen entries are bound
+in `SHA256SUMS.txt`. The DMG wrapper always records `publicBetaQualified:false`:
+packaging itself grants no public qualification. The final verifier binds both
+ZIP and DMG digests, signer, material archive, source commit and external evidence.
+Selecting a distinct final version/build, full qualification, actual recipient
+acceptance and unresolved third-party distribution obligations remain prerequisites.
+
+The following sections continue to describe the unchanged notarized `beta`
+profile unless they explicitly name `nonnotarized-beta`.
+
 This document describes the **source implementation** of an explicit, separately
 identifiable release profile for a downloadable macOS beta that is installed and
 updated manually. It is a release-control record, not legal advice, not release

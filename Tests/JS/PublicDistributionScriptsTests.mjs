@@ -163,7 +163,8 @@ test("public distribution scripts pin every Apple trust and immutable-asset gate
   assert.equal(prepare.match(/verify_expected_candidate_binding "\$MANIFEST" "\$ARCHIVE"/gu)?.length, 2,
     "the live candidate must be bound before snapshot and immediately before publish");
   assert.match(prepare, /snapshot-regular-file\.mjs" "\$MANIFEST" "\$MANIFEST_SNAPSHOT" 1048576 >\/dev\/null\nverify_expected_candidate_binding "\$MANIFEST_SNAPSHOT" "\$ARCHIVE_SNAPSHOT"/u);
-  assert.match(prepare, /PUBLISH_OPERATION="publish"\nCLEANUP_OPERATION="cleanup"\nif \[\[ "\$RELEASE_PROFILE" == "beta" \]\]; then\n  PUBLISH_OPERATION="publish-beta"\n  CLEANUP_OPERATION="cleanup-beta"\nfi/u);
+  assert.match(prepare, /PUBLISH_OPERATION="publish"\nCLEANUP_OPERATION="cleanup"\nif \[\[ "\$RELEASE_PROFILE" != "stable" \]\]; then\n  PUBLISH_OPERATION="publish-beta"\n  CLEANUP_OPERATION="cleanup-beta"\nfi/u);
+  assert.match(prepare, /if \[\[ "\$RELEASE_PROFILE" == "nonnotarized-beta" \]\]; then\n  PUBLISH_OPERATION="publish-nonnotarized-beta"\n  CLEANUP_OPERATION="cleanup-nonnotarized-beta"\nfi/u);
   assert.ok(prepare.indexOf('CLEANUP_OPERATION="cleanup-beta"') < prepare.indexOf("cleanup()"),
     "the exact beta cleanup operation must be selected before traps or partial staging");
   assert.match(prepare, /"\$ATOMIC_PUBLISHER" "\$CLEANUP_OPERATION" "\$OUTPUT_PARENT" "\$\{PUBLIC_STAGING:t\}"/u);
@@ -764,6 +765,26 @@ test("public assets publish once by exclusive durable rename and failures leave 
     const assertUnpublished = async (name) => {
       await assert.rejects(stat(join(temporary, name)), { code: "ENOENT" });
     };
+
+    const nonnotarizedNames = [...betaNames, "Fulmar.dmg", "dmg-binding.json"];
+    await makePublisherStage(temporary, ".assets.nonnotarized", "nonnotarized", nonnotarizedNames);
+    for (const operation of ["publish", "publish-beta"]) {
+      assert.notEqual(invokePublisher([operation, temporary, ".assets.nonnotarized", `rejected-${operation}`]).status, 0);
+      await assertUnpublished(`rejected-${operation}`);
+    }
+    for (const operation of ["cleanup", "cleanup-beta"]) {
+      assert.notEqual(invokePublisher(await cleanupArguments(operation, ".assets.nonnotarized")).status, 0);
+    }
+    assert.equal(invokePublisher(["publish-nonnotarized-beta", temporary, ".assets.nonnotarized", "nonnotarized-assets"]).status, 0);
+    assert.deepEqual((await readdir(join(temporary, "nonnotarized-assets"))).sort(), nonnotarizedNames.sort());
+    for (const [index, missing] of ["Fulmar.dmg", "dmg-binding.json"].entries()) {
+      const name = `.assets.nonnotarized-missing-${index}`;
+      await makePublisherStage(temporary, name, "missing", nonnotarizedNames.filter((asset) => asset !== missing));
+      assert.notEqual(invokePublisher(["publish-nonnotarized-beta", temporary, name, `missing-nonnotarized-${index}`]).status, 0);
+      await assertUnpublished(`missing-nonnotarized-${index}`);
+      assert.equal(invokePublisher(await cleanupArguments("cleanup-nonnotarized-beta", name)).status, 0);
+      await assertUnpublished(name);
+    }
 
     await makePublisherStage(temporary, ".assets.beta.success", "beta-success", betaNames);
     const betaPublished = invokePublisher(["publish-beta", temporary, ".assets.beta.success", "beta-assets"]);

@@ -137,6 +137,11 @@ test("the asset policy is exactly nine stable assets and twelve provenance-named
   assert.equal(entries.length, 11);
   assert.deepEqual([...entries], beta.filter((name) => name !== CHECKSUM_LIST_NAME), "SHA256SUMS.txt covers every distributed asset except itself");
   assert.ok(Object.isFrozen(beta) && Object.isFrozen(entries) && Object.isFrozen(STABLE_PACKAGE_ASSET_NAMES));
+  const nonnotarized = packageAssetNames("nonnotarized-beta", rootName);
+  assert.deepEqual([...nonnotarized], [...beta, "Fulmar.dmg", "dmg-binding.json"].sort());
+  assert.equal(nonnotarized.length, 14);
+  assert.equal(checksumEntryNames("nonnotarized-beta", rootName).length, 13);
+  assert.deepEqual([...packageAssetNames("beta", rootName)], [...beta], "the notarized beta keeps its twelve assets");
 
   for (const name of ["", "alpha", "Beta", "stable ", undefined, null, 0, {}]) {
     assert.throws(() => resolveAssetProfile(name), /unknown public release profile/u, JSON.stringify(name));
@@ -359,6 +364,16 @@ test("the asset preparer and distribution verifier validate beta material operan
     // first helper is an immediate sentinel failure. Check the copy first so
     // an ordering regression fails before any production-path invocation.
     await writeFile(watchdogHelper, 'print -u2 "fixture: blocked watchdog entered"\nexit 79\n', { mode: 0o600 });
+    const newProfile = ["--profile", "nonnotarized-beta", "--material-sha256", validDigest, "--source-commit", headCommit];
+    for (const extra of [[], ["--signer-sha256", validDigest], ["--signer-sha256", "invalid", "--dmg-sha256", validDigest]]) {
+      const rejected = runVerifier([...newProfile, ...extra], { script: copiedVerifier, timeout: 5_000 });
+      assert.equal(rejected.status, 64, rejected.stderr);
+      assert.match(rejected.stderr, /requires independent --signer-sha256 and --dmg-sha256/u);
+      assert.doesNotMatch(rejected.stderr, /blocked watchdog entered/u);
+    }
+    const acceptedOperands = runVerifier([...newProfile, "--signer-sha256", validDigest, "--dmg-sha256", validDigest], { script: copiedVerifier, timeout: 5_000 });
+    assert.equal(acceptedOperands.status, 79, acceptedOperands.stderr);
+    assert.match(acceptedOperands.stderr, /blocked watchdog entered/u, "valid non-notarized operands reach only the confined watchdog sentinel");
     const packageDirectory = join(temporary, "package never inspected");
     const malformed = [
       ["beta without material operands", [packageDirectory, "--profile", "beta"], /The beta profile requires --material-sha256 and --source-commit/u],
@@ -622,6 +637,19 @@ verify_public_candidate() {
      && -f "$NOTARY_LOG" && ! -L "$NOTARY_LOG" ]] || return 1
   log_test_action verify-candidate
 }
+prepare_retained_dmg() {
+  if [[ "$MODE" == "fresh" ]]; then
+    log_test_action create-dmg
+    /bin/mkdir -m 0700 "$DMG_PACKAGE"
+    print -r -- "$FULMAR_TEST_DMG_SHA256" > "$DMG_PACKAGE/expected-sha256"
+    EXPECTED_DMG_SHA256="$FULMAR_TEST_DMG_SHA256"
+  fi
+  [[ "$EXPECTED_DMG_SHA256" == "$(<"$DMG_PACKAGE/expected-sha256")" ]] || {
+    print -u2 "fixture: retained DMG digest differs from the expected digest"
+    return 1
+  }
+  log_test_action verify-dmg
+}
 run_clean_script() {
   local script="$1"
   shift
@@ -683,7 +711,7 @@ run_clean_script() {
       await chmod(join(state, "signing.keychain"), 0o600);
     };
     const betaOperands = (materialSHA = materialDigest) => ["--profile", "beta", "--material-package", materialPackage, "--material-sha256", materialSHA, "--source-commit", headCommit];
-    const runOperator = (arguments_ = []) => spawnSync("/bin/zsh", ["-f", copiedOperator, ...arguments_], {
+    const runOperator = (arguments_ = [], environment = {}) => spawnSync("/bin/zsh", ["-f", copiedOperator, ...arguments_], {
       cwd: stateRoot,
       encoding: "utf8",
       timeout: 10_000,
@@ -699,7 +727,8 @@ run_clean_script() {
         LOCAL_HARNESS_SIGN_IDENTITY: testIdentity,
         LOCAL_HARNESS_SIGNING_KEYCHAIN: join(state, "signing.keychain"),
         LOCAL_HARNESS_NOTARY_PROFILE: "fulmar-beta-asset-test",
-        LOCAL_HARNESS_SIGN_TIMESTAMP: "1"
+        LOCAL_HARNESS_SIGN_TIMESTAMP: "1",
+        ...environment
       }
     });
     const writeBetaEvidence = async (sha256) => {
@@ -769,6 +798,53 @@ run_clean_script() {
     const stable = runOperator(["--finalize"]);
     assert.equal(stable.status, 78, stable.stderr);
     assert.match(stable.stderr, /\(stable profile\)[\s\S]*public-external-evidence\.json/u);
+
+    // The third profile has a separate retained image/evidence/output and never
+    // reaches a real signing/Apple tool through this copied operator seam.
+    await resetState();
+    const signerSHA = syntheticDigest("persistent-certificate");
+    const dmgSHA = syntheticDigest("retained-dmg");
+    const privateEnvironment = {
+      LOCAL_HARNESS_SIGN_IDENTITY: "Synthetic Persistent Certificate",
+      LOCAL_HARNESS_NOTARY_PROFILE: "",
+      LOCAL_HARNESS_SIGN_TIMESTAMP: "0",
+      FULMAR_TEST_DMG_SHA256: dmgSHA
+    };
+    const nonnotarizedOperands = ["--profile", "nonnotarized-beta", "--signer-sha256", signerSHA,
+      "--material-package", materialPackage, "--material-sha256", materialDigest, "--source-commit", headCommit];
+    result = runOperator([...nonnotarizedOperands, "--finalize"], privateEnvironment);
+    assert.equal(result.status, 64, result.stderr);
+    assert.match(result.stderr, /finalize requires --dmg-sha256/u);
+    assert.deepEqual(await actions(), []);
+    for (const invalidEnvironment of [
+      { ...privateEnvironment, LOCAL_HARNESS_SIGN_IDENTITY: "-" },
+      { ...privateEnvironment, LOCAL_HARNESS_NOTARY_PROFILE: "unwanted-apple-profile" },
+      { ...privateEnvironment, LOCAL_HARNESS_SIGN_TIMESTAMP: "1" }
+    ]) {
+      result = runOperator(nonnotarizedOperands, invalidEnvironment);
+      assert.equal(result.status, 64, result.stderr);
+      assert.deepEqual(await actions(), [], "invalid private signing never reaches build or Keychain operations");
+    }
+    result = runOperator(nonnotarizedOperands, privateEnvironment);
+    assert.equal(result.status, 78, result.stderr);
+    assert.match(result.stderr, /Retained NON-NOTARIZED[\s\S]*public-nonnotarized-beta-external-evidence/u);
+    assert.deepEqual(await actions(), ["license", "static-scan", "build", "retain", "verify-candidate", "create-dmg", "verify-dmg"]);
+    await writeFile(join(state, "build", "public-nonnotarized-beta-external-evidence.json"), `sha256=${candidateA}\nversion=9.8.7\nbuild=987\n`, { mode: 0o600 });
+    result = runOperator([...nonnotarizedOperands, "--dmg-sha256", dmgSHA, "--finalize"], privateEnvironment);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /NON-NOTARIZED BETA distribution qualification passed/u);
+    recorded = await actions();
+    assert.equal(recorded.filter((action) => action === "build").length, 1);
+    assert.equal(recorded.filter((action) => action === "create-dmg").length, 1, "finalize cannot recreate the accepted DMG");
+    const privatePrepare = recorded.find((action) => action.startsWith("prepare:"));
+    assert.ok(privatePrepare.includes(`--dmg-package ${join(state, "build", "nonnotarized-beta-dmg")} --dmg-sha256 ${dmgSHA}`));
+    const privateVerify = recorded.find((action) => action.startsWith("final-verify:"));
+    assert.ok(privateVerify.includes(`--signer-sha256 ${signerSHA} --dmg-sha256 ${dmgSHA}`));
+    assert.doesNotMatch(privateVerify, /--dmg-package/u, "verification consumes only the retained public snapshot, not the private wrapper path");
+    result = runOperator([...nonnotarizedOperands, "--dmg-sha256", syntheticDigest("wrong-dmg"), "--finalize"], privateEnvironment);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /retained DMG digest differs/u);
+    assert.equal((await actions()).filter((action) => action === "create-dmg").length, 1);
   } finally {
     await rm(stateRoot, { recursive: true, force: true });
   }

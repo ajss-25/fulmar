@@ -6,13 +6,21 @@ import {
   verifyPublicExternalEvidenceBytes
 } from "./public-release-profile-policy.mjs";
 
-const USAGE = "usage: verify-public-external-evidence.mjs <evidence> <candidate-sha256> <version> <build> [--profile <stable|beta>]";
+const USAGE = "usage: verify-public-external-evidence.mjs <evidence> <candidate-sha256> <version> <build> [--profile <stable|beta> | --profile nonnotarized-beta --dmg-sha256 <sha256> --signer-sha256 <sha256>]";
 
 // The default four-operand invocation is the unchanged stable contract. A beta
 // candidate must name its profile explicitly; the profile is never inferred from
 // the evidence contents or from the environment.
 const operands = process.argv.slice(2);
 let profileName;
+let expectedDMGSHA256;
+let expectedSignerSHA256;
+if (operands.length === 10 && operands[4] === "--profile" && operands[5] === "nonnotarized-beta"
+    && operands[6] === "--dmg-sha256" && operands[8] === "--signer-sha256") {
+  expectedDMGSHA256 = operands[7];
+  expectedSignerSHA256 = operands[9];
+  operands.splice(6, 4);
+}
 if (operands.length === 6 && operands[4] === "--profile") {
   profileName = operands[5];
   if (!PUBLIC_RELEASE_PROFILE_NAMES.includes(profileName)) {
@@ -52,6 +60,8 @@ const result = verifyPublicExternalEvidenceBytes(evidenceFile.bytes, {
   profile: profile.name,
   expectedSHA256: expectedSHA,
   expectedVersion,
-  expectedBuild
+  expectedBuild,
+  expectedDMGSHA256,
+  expectedSignerSHA256
 });
 process.stdout.write(`${basename(evidenceFile.path)} is ${result.summary}\n`);

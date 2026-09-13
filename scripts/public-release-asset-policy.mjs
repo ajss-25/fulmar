@@ -105,7 +105,8 @@ export function packageAssetNames(profile, rootName) {
   for (const name of material) {
     if (STABLE_PACKAGE_ASSET_NAMES.includes(name)) fail(`material asset name collides with a stable asset: ${name}`);
   }
-  return Object.freeze(byteOrder([...STABLE_PACKAGE_ASSET_NAMES, ...material]));
+  const dmg = profile === "nonnotarized-beta" ? ["Fulmar.dmg", "dmg-binding.json"] : [];
+  return Object.freeze(byteOrder([...STABLE_PACKAGE_ASSET_NAMES, ...material, ...dmg]));
 }
 
 // Every SHA256SUMS.txt entry of one profile's package, in the order it is written.
@@ -289,7 +290,7 @@ if (isEntryPoint()) {
     if ((command === "names" || command === "checksum-names") && (operands.length === 1 || operands.length === 2)) {
       const profile = resolveAssetProfile(operands[0]);
       let root;
-      if (profile === "beta") {
+      if (profile !== "stable") {
         if (operands.length !== 2) fail("the beta profile requires the tracked provenance record operand");
         root = await loadMaterialRootName(operands[1]);
       } else if (operands.length === 2) {

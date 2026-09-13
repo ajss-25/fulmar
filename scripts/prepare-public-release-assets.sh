@@ -14,6 +14,7 @@ typeset -a ORIGINAL_ARGUMENTS
 ORIGINAL_ARGUMENTS=("$@")
 usage() {
   print -u2 "Usage: prepare-public-release-assets.sh [archive manifest output expected-sha256 expected-version expected-build] [--profile stable | --profile beta --material-package /absolute/package --material-sha256 <sha256> --source-commit <commit>]"
+  print -u2 "The explicit --profile nonnotarized-beta uses the beta material operands plus --dmg-package /absolute/package --dmg-sha256 <sha256>."
   exit 64
 }
 RELEASE_PROFILE="stable"
@@ -24,6 +25,10 @@ MATERIAL_SHA256=""
 MATERIAL_SHA256_SELECTED=0
 SOURCE_COMMIT_OPERAND=""
 SOURCE_COMMIT_SELECTED=0
+DMG_PACKAGE=""
+DMG_PACKAGE_SELECTED=0
+EXPECTED_DMG_SHA256=""
+DMG_SHA256_SELECTED=0
 typeset -a POSITIONAL_OPERANDS
 POSITIONAL_OPERANDS=()
 while (( $# > 0 )); do
@@ -31,9 +36,9 @@ while (( $# > 0 )); do
     --profile)
       (( $# >= 2 && PROFILE_SELECTED == 0 )) || usage
       case "$2" in
-        stable|beta) RELEASE_PROFILE="$2" ;;
+        stable|beta|nonnotarized-beta) RELEASE_PROFILE="$2" ;;
         *)
-          print -u2 "prepare-public-release-assets.sh accepts only the exact release profiles stable or beta."
+          print -u2 "prepare-public-release-assets.sh accepts only the exact release profiles stable or beta or nonnotarized-beta."
           exit 64
           ;;
       esac
@@ -58,6 +63,17 @@ while (( $# > 0 )); do
       SOURCE_COMMIT_SELECTED=1
       shift 2
       ;;
+    --dmg-package|--dmg-sha256)
+      (( $# >= 2 )) || usage
+      if [[ "$1" == "--dmg-package" ]]; then
+        (( DMG_PACKAGE_SELECTED == 0 )) || usage
+        DMG_PACKAGE="$2"; DMG_PACKAGE_SELECTED=1
+      else
+        (( DMG_SHA256_SELECTED == 0 )) || usage
+        EXPECTED_DMG_SHA256="$2"; DMG_SHA256_SELECTED=1
+      fi
+      shift 2
+      ;;
     --*)
       usage
       ;;
@@ -67,8 +83,18 @@ while (( $# > 0 )); do
       ;;
   esac
 done
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  [[ "$DMG_PACKAGE" == /* && "$DMG_PACKAGE" != *$'\n'* && "$DMG_PACKAGE" != *$'\r'* \
+     && "${#EXPECTED_DMG_SHA256}" == 64 && "$EXPECTED_DMG_SHA256" != *[^a-f0-9]* ]] || {
+    print -u2 "nonnotarized-beta assets require --dmg-package and --dmg-sha256 for the retained recipient candidate."
+    exit 64
+  }
+elif (( DMG_PACKAGE_SELECTED != 0 || DMG_SHA256_SELECTED != 0 )); then
+  print -u2 "DMG operands are accepted only with --profile nonnotarized-beta."
+  exit 64
+fi
 (( ${#POSITIONAL_OPERANDS[@]} == 0 || ${#POSITIONAL_OPERANDS[@]} == 6 )) || usage
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   (( MATERIAL_PACKAGE_SELECTED == 1 && MATERIAL_SHA256_SELECTED == 1 && SOURCE_COMMIT_SELECTED == 1 )) || {
     print -u2 "The beta profile requires --material-package, --material-sha256 and --source-commit: the private verified material package, its expected archive SHA-256 from the reviewed release record, and this checkout's exact source commit."
     exit 64
@@ -81,7 +107,7 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
   }
 else
   (( MATERIAL_PACKAGE_SELECTED == 0 && MATERIAL_SHA256_SELECTED == 0 && SOURCE_COMMIT_SELECTED == 0 )) || {
-    print -u2 "Material operands are accepted only with --profile beta; the stable package carries no material assets."
+    print -u2 "Material operands are accepted only with --profile beta or --profile nonnotarized-beta; the stable package carries no material assets."
     exit 64
   }
 fi
@@ -110,6 +136,9 @@ RELEASE_IDENTITY="$PROJECT_DIR/Config/ReleaseIdentity.json"
 ARCHIVE="${1:-$PROJECT_DIR/build/Fulmar.app.zip}"
 MANIFEST="${2:-$PROJECT_DIR/build/release-manifest.json}"
 OUTPUT="${3:-$PROJECT_DIR/build/public-release-assets}"
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  OUTPUT="${3:-$PROJECT_DIR/build/public-nonnotarized-beta-assets}"
+fi
 EXPECTED_CANDIDATE_SHA256="${4:-}"
 EXPECTED_CANDIDATE_VERSION="${5:-}"
 EXPECTED_CANDIDATE_BUILD="${6:-}"
@@ -139,9 +168,13 @@ OUTPUT_NAME=""
 # so a partially copied beta package is retired under the same exact policy.
 PUBLISH_OPERATION="publish"
 CLEANUP_OPERATION="cleanup"
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   PUBLISH_OPERATION="publish-beta"
   CLEANUP_OPERATION="cleanup-beta"
+fi
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  PUBLISH_OPERATION="publish-nonnotarized-beta"
+  CLEANUP_OPERATION="cleanup-nonnotarized-beta"
 fi
 verify_expected_candidate_binding() {
   local manifest_path="$1"
@@ -238,7 +271,7 @@ verify_source_commit_operand() {
     return 1
   }
 }
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   verify_source_commit_operand "$SOURCE_COMMIT_OPERAND"
   [[ "$MATERIAL_SHA256" != "$EXPECTED_CANDIDATE_SHA256" ]] || {
     print -u2 "The expected material digest equals the app candidate digest; the material archive and Fulmar.app.zip are different artefacts with different digests."
@@ -250,8 +283,8 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
   }
   # One policy name per line; plain read loops keep this file parseable by the
   # reviewed static scanner (zsh expansion flags are not).
-  policy_names="$("$NODE" "$ASSET_POLICY" names beta "$PROVENANCE_RECORD")" || exit 1
-  policy_checksum_names="$("$NODE" "$ASSET_POLICY" checksum-names beta "$PROVENANCE_RECORD")" || exit 1
+  policy_names="$("$NODE" "$ASSET_POLICY" names "$RELEASE_PROFILE" "$PROVENANCE_RECORD")" || exit 1
+  policy_checksum_names="$("$NODE" "$ASSET_POLICY" checksum-names "$RELEASE_PROFILE" "$PROVENANCE_RECORD")" || exit 1
   PACKAGE_ASSET_NAMES=()
   while IFS= read -r policy_name; do PACKAGE_ASSET_NAMES+=("$policy_name"); done <<< "$policy_names"
   CHECKSUM_ENTRY_NAMES=()
@@ -259,17 +292,26 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
   # The material assets are exactly the beta names that are not stable names.
   MATERIAL_ASSET_NAMES=()
   for policy_name in "${PACKAGE_ASSET_NAMES[@]}"; do
+    [[ "$policy_name" == "Fulmar.dmg" || "$policy_name" == "dmg-binding.json" ]] && continue
     policy_name_is_stable=0
     for stable_name in "${STABLE_PACKAGE_ASSET_NAMES[@]}"; do
       [[ "$policy_name" == "$stable_name" ]] && policy_name_is_stable=1
     done
     (( policy_name_is_stable )) || MATERIAL_ASSET_NAMES+=("$policy_name")
   done
+  if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+    (( ${#PACKAGE_ASSET_NAMES[@]} == 14 && ${#CHECKSUM_ENTRY_NAMES[@]} == 13 && ${#MATERIAL_ASSET_NAMES[@]} == 3 )) || {
+      print -u2 "The non-notarized beta policy must yield fourteen assets, thirteen checksum entries and three material assets."
+      exit 1
+    }
+    EXPECTED_ASSET_COUNT=14
+  else
   (( ${#PACKAGE_ASSET_NAMES[@]} == 12 && ${#CHECKSUM_ENTRY_NAMES[@]} == 11 && ${#MATERIAL_ASSET_NAMES[@]} == 3 )) || {
     print -u2 "The beta asset policy did not yield exactly twelve assets, eleven checksum entries and three material assets."
     exit 1
   }
   EXPECTED_ASSET_COUNT=12
+  fi
 fi
 "$NODE" "$SOURCE_INPUT_TOOL" verify "$PROJECT_DIR" "$SOURCE_INPUT_INVENTORY"
 "$NODE" "$STATIC_SECURITY_VERIFIER" \
@@ -379,7 +421,7 @@ LOCAL="$RUNTIME/dsh/node_modules/@local-harness"
 /usr/bin/cmp -s "$TEMP_ROOT/notices.md" "$NOTICES"
 /bin/zsh -f "$PROJECT_DIR/scripts/verify-native-symbol-privacy.sh" "$APP" "$SYMBOL_ROOT"
 
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   # Beta material admission: the three material files are snapshotted from the
   # operator's private package through attested descriptors into this
   # invocation's private staging, the existing verify-archive runs on those
@@ -410,6 +452,23 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
   }
 fi
 
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  [[ -d "$DMG_PACKAGE" && ! -L "$DMG_PACKAGE" && "${DMG_PACKAGE:A}" == "$DMG_PACKAGE" ]] || {
+    print -u2 "The retained DMG package must be one canonical directory."
+    exit 1
+  }
+  /bin/mkdir -m 0700 "$TEMP_ROOT/dmg"
+  "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" \
+    "$DMG_PACKAGE/Fulmar.dmg" "$TEMP_ROOT/dmg/Fulmar.dmg" 8589934592 >/dev/null
+  "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" \
+    "$DMG_PACKAGE/dmg-binding.json" "$TEMP_ROOT/dmg/dmg-binding.json" 65536 >/dev/null
+  "$NODE" "$PROJECT_DIR/scripts/prepare-beta-dmg.mjs" verify \
+    "$TEMP_ROOT/dmg/Fulmar.dmg" "$EXPECTED_DMG_SHA256" "$ARCHIVE_SNAPSHOT" "$EXPECTED_CANDIDATE_SHA256" "$TEMP_ROOT" --profile nonnotarized-beta
+  "$NODE" "$PROJECT_DIR/scripts/nonnotarized-beta-policy.mjs" verify-dmg-binding \
+    "$TEMP_ROOT/dmg/dmg-binding.json" "$EXPECTED_CANDIDATE_SHA256" "$EXPECTED_DMG_SHA256" \
+    "$EXPECTED_CANDIDATE_VERSION" "$EXPECTED_CANDIDATE_BUILD" "$(/usr/bin/stat -f %z "$TEMP_ROOT/dmg/Fulmar.dmg")"
+fi
+
 PUBLIC_STAGING="$(/usr/bin/mktemp -d "$OUTPUT_PARENT/.${OUTPUT_NAME}.staging.XXXXXX")"
 [[ "${PUBLIC_STAGING:h}" == "$OUTPUT_PARENT" && -d "$PUBLIC_STAGING" \
    && ! -L "$PUBLIC_STAGING" ]] || {
@@ -429,6 +488,10 @@ PUBLIC_STAGING_IDENTITY="$(/usr/bin/stat -f '%d:%i' "$PUBLIC_STAGING")"
 for name in "${MATERIAL_ASSET_NAMES[@]}"; do
   /bin/cp "$MATERIAL_ADMISSION/$name" "$PUBLIC_STAGING/$name"
 done
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  /bin/cp "$TEMP_ROOT/dmg/Fulmar.dmg" "$PUBLIC_STAGING/Fulmar.dmg"
+  /bin/cp "$TEMP_ROOT/dmg/dmg-binding.json" "$PUBLIC_STAGING/dmg-binding.json"
+fi
 (
   cd "$PUBLIC_STAGING"
   LC_ALL=C /usr/bin/shasum -a 256 Fulmar.app.zip > Fulmar.app.zip.sha256
@@ -440,7 +503,9 @@ done
 )
 /bin/chmod 0644 "$PUBLIC_STAGING/SHA256SUMS.txt"
 [[ "$(/usr/bin/find "$PUBLIC_STAGING" -mindepth 1 -maxdepth 1 | /usr/bin/wc -l | /usr/bin/tr -d ' ')" == "$EXPECTED_ASSET_COUNT" ]] || {
-  if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+  if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+    echo "Prepared non-notarized beta package did not contain exactly fourteen assets." >&2
+  elif [[ "$RELEASE_PROFILE" == "beta" ]]; then
     echo "Prepared public beta package did not contain exactly twelve assets." >&2
   else
     echo "Prepared public package did not contain exactly nine assets." >&2
@@ -468,7 +533,9 @@ verify_expected_candidate_binding "$MANIFEST" "$ARCHIVE"
 "$ATOMIC_PUBLISHER" "$PUBLISH_OPERATION" "$OUTPUT_PARENT" "${PUBLIC_STAGING:t}" "$OUTPUT_NAME"
 PUBLIC_STAGING=""
 PUBLIC_STAGING_IDENTITY=""
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  echo "Prepared fourteen candidate-, DMG- and material-bound non-notarized beta assets. Packaging grants no public qualification, Apple trust or licensing clearance."
+elif [[ "$RELEASE_PROFILE" == "beta" ]]; then
   echo "Prepared the exact twelve manifest-, static-scan-, licence- and material-bound public BETA release assets (material archive sha256 $MATERIAL_SHA256 bound to source commit $SOURCE_COMMIT_OPERAND). This does not qualify them for distribution, is not stable qualification, and closes no third-party licensing obligation."
 else
   echo "Prepared the exact nine manifest-, static-scan-, and licence-bound public release assets. This does not qualify them for distribution."

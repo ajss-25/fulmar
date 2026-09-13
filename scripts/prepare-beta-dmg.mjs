@@ -1,7 +1,7 @@
-// Private DMG wrapper, NOT a public-release qualifier. The existing ZIP remains
+// DMG wrapper, NOT a public-release qualifier. The existing ZIP remains
 // the candidate identity. This tool never builds, signs, installs or launches an
 // app, and never reads credentials. Expected digests are explicit trusted inputs,
-// not values obtained from a sidecar. The public asset contract is unchanged.
+// not values obtained from a sidecar. Public distribution is qualified separately.
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, link, lstat, mkdir, mkdtemp, open, readdir, readlink, realpath, rm, symlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -10,9 +10,10 @@ import { readAttestedRegularFile, sha256AttestedRegularFile, withAttestedDirecto
 import { runBoundedCommand } from "./prepare-dsh-upgrade.mjs";
 
 const PROJECT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const USAGE = "usage: prepare-beta-dmg.mjs create <candidate.zip> <expected-zip-sha256> <new-private-output-directory> | verify <image.dmg> <expected-dmg-sha256> <candidate.zip> <expected-zip-sha256> <private-work-parent>";
+const USAGE = "usage: prepare-beta-dmg.mjs create <candidate.zip> <expected-zip-sha256> <new-private-output-directory> [--profile nonnotarized-beta] | verify <image.dmg> <expected-dmg-sha256> <candidate.zip> <expected-zip-sha256> <private-work-parent> [--profile nonnotarized-beta]";
 const DIGEST = /^[a-f0-9]{64}$/u;
 const INSTALL = "Fulmar — private DMG packaging preview\n\nThis disk image has not been qualified for public distribution.\nDo not install this engineering artifact as a public beta.\nThe Applications shortcut is a packaging preview only.\n\nThe app inside is copied unchanged from the explicitly bound candidate ZIP.\nSigning/notarisation, licensing and installation/provider acceptance are separate release checks.\n";
+const NONNOTARIZED_INSTALL = "Fulmar — non-notarised manual-install beta\n\nThis app is not Apple-notarised and is not distributed through the App Store.\nUse only an independently qualified, published beta release and its installation guide.\nThis disk-image wrapper alone does not qualify an app for public distribution.\n\nClean installations only: do not replace an existing Fulmar installation or reuse its retained data.\nTo install a qualified release, copy Fulmar.app to Applications, then eject this image.\nThis release profile requires the in-app updater to be disabled; updates are manual installs.\nFollow the published release instructions before installing a later version.\n\nmacOS may block this non-notarised app. Do not disable system security controls,\nremove quarantine, or import or trust a signing certificate to make it run.\nThe release installation guide must describe the recipient-tested installation route.\n\nThe app inside is copied unchanged from the explicitly bound candidate ZIP.\nSigning identity, licensing, disabled updater and installation/provider acceptance\nare separate release checks, not claims established by this wrapper.\n";
 const MAXIMUM = 8 * 1024 * 1024 * 1024;
 let interrupted = false;
 
@@ -26,13 +27,28 @@ function digest(value) {
   return value;
 }
 export function parseArguments(args) {
+  let profile = {};
+  if (args.at(-2) === "--profile" && args.at(-1) === "nonnotarized-beta") {
+    profile = { releaseProfile: "nonnotarized-beta" };
+    args = args.slice(0, -2);
+  }
   if (args[0] === "create" && args.length === 4) {
-    return { command: "create", archive: absolute(args[1]), expectedArchiveSHA256: digest(args[2]), output: absolute(args[3]) };
+    return { command: "create", archive: absolute(args[1]), expectedArchiveSHA256: digest(args[2]), output: absolute(args[3]), ...profile };
   }
   if (args[0] === "verify" && args.length === 6) {
-    return { command: "verify", dmg: absolute(args[1]), expectedDMGSHA256: digest(args[2]), archive: absolute(args[3]), expectedArchiveSHA256: digest(args[4]), workParent: absolute(args[5]) };
+    return { command: "verify", dmg: absolute(args[1]), expectedDMGSHA256: digest(args[2]), archive: absolute(args[3]), expectedArchiveSHA256: digest(args[4]), workParent: absolute(args[5]), ...profile };
   }
   throw new Error(USAGE);
+}
+
+function profileOperands(releaseProfile = "private") {
+  if (releaseProfile === "private") return [];
+  if (releaseProfile === "nonnotarized-beta") return ["--profile", releaseProfile];
+  throw new Error(USAGE);
+}
+
+function installationNotice(releaseProfile) {
+  return releaseProfile === "nonnotarized-beta" ? NONNOTARIZED_INSTALL : INSTALL;
 }
 
 function environment(root) {
@@ -85,7 +101,17 @@ async function sameTree(root, left, right) {
       || copied.uid !== original.uid || (original.mode & 0o7777) !== (copied.mode & 0o7777)) throw new Error("App root type, owner or mode changed");
   return script(root, "verify-release-tree.mjs", [left, right]);
 }
-async function admittedApp(root, archive, release, observers) {
+async function signatureIntegrity(root, app, releaseProfile) {
+  if (releaseProfile === "nonnotarized-beta") {
+    // Structural/CMS validation still runs. Only the existing exact private-root
+    // trust exception is admitted; final distribution separately binds every
+    // target to the reviewed persistent certificate and refuses ad-hoc signing.
+    return command(root, "/usr/bin/env", ["LOCAL_HARNESS_ALLOW_PRIVATE_ROOT=1", "/bin/zsh", "-f",
+      join(PROJECT, "scripts/verify-code-signature.sh"), app, "--deep", "--strict"]);
+  }
+  return command(root, "/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
+}
+async function admittedApp(root, archive, release, observers, releaseProfile) {
   await observers.afterArchiveSnapshot?.({ root, archive });
   await script(root, "verify-zip-entries.mjs", [archive]);
   const extracted = join(root, "extracted");
@@ -99,7 +125,7 @@ async function admittedApp(root, archive, release, observers) {
   if (info.CFBundleIdentifier !== release.bundleIdentifier || info.CFBundleShortVersionString !== release.appVersion
       || String(info.CFBundleVersion) !== String(release.appBuild) || info.CFBundleName !== release.productDisplayName
       || info.LSMinimumSystemVersion !== release.minimumMacOS) throw new Error("App identity does not match this reviewed checkout");
-  await command(root, "/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
+  await signatureIntegrity(root, app, releaseProfile);
   return app;
 }
 
@@ -124,7 +150,7 @@ async function detachExact(root, dmg, mount) {
   await command(root, "/usr/bin/hdiutil", ["detach", device], true);
   if (await attachedImage(root, dmg)) throw new Error(`Image still attached; retained for inspection: ${root}`);
 }
-async function roundTrip(root, dmg, app) {
+async function roundTrip(root, dmg, app, releaseProfile) {
   await command(root, "/usr/bin/hdiutil", ["verify", dmg]);
   if (await attachedImage(root, dmg)) throw new Error("Private image was already attached; no cleanup authority was acquired");
   const mount = join(root, "mount");
@@ -146,12 +172,12 @@ async function roundTrip(root, dmg, app) {
     }
     if (!(await lstat(join(mount, "Applications"))).isSymbolicLink() || await readlink(join(mount, "Applications")) !== "/Applications") throw new Error("Applications shortcut was changed");
     const instructions = await readAttestedRegularFile(join(mount, "INSTALL.txt"), { maximumBytes: 8192 });
-    if (instructions.bytes.toString("utf8") !== INSTALL) throw new Error("Private installation notice was changed");
+    if (instructions.bytes.toString("utf8") !== installationNotice(releaseProfile)) throw new Error("Installation notice does not match the requested DMG profile");
     const recovered = join(root, "recovered.app");
     await sameTree(root, app, join(mount, "Fulmar.app"));
     await command(root, "/usr/bin/ditto", ["--noqtn", join(mount, "Fulmar.app"), recovered]);
     await sameTree(root, app, recovered);
-    await command(root, "/usr/bin/codesign", ["--verify", "--deep", "--strict", recovered]);
+    await signatureIntegrity(root, recovered, releaseProfile);
   } catch (error) { failure = error; }
   try { await detachExact(root, dmg, mount); }
   catch (error) { throw new AggregateError(failure ? [failure, error] : [error], `DMG detach failed; private work retained: ${root}`); }
@@ -201,26 +227,30 @@ async function workspace(parent, operation) {
 }
 
 export async function createDMG(options, observers = {}) {
-  const { archive, expectedArchiveSHA256, output } = parseArguments(["create", options.archive, options.expectedArchiveSHA256, options.output]);
+  const { archive, expectedArchiveSHA256, output, releaseProfile } = parseArguments(["create", options.archive, options.expectedArchiveSHA256, options.output, ...profileOperands(options.releaseProfile)]);
   const release = await identity();
   await absent(output);
   return workspace(dirname(output), async (root) => {
     const zipped = await snapshot(root, archive, "Fulmar.app.zip", expectedArchiveSHA256);
-    const app = await admittedApp(root, zipped, release, observers);
+    const app = await admittedApp(root, zipped, release, observers, releaseProfile);
     const imageSource = join(root, "image-source");
     await mkdir(imageSource, { mode: 0o700 });
     await command(root, "/usr/bin/ditto", ["--noqtn", app, join(imageSource, "Fulmar.app")]);
     await sameTree(root, app, join(imageSource, "Fulmar.app"));
     await symlink("/Applications", join(imageSource, "Applications"));
-    await writeNew(join(imageSource, "INSTALL.txt"), INSTALL);
+    await writeNew(join(imageSource, "INSTALL.txt"), installationNotice(releaseProfile));
     await observers.beforeImageCreate?.({ root, app, imageSource });
     const dmg = join(root, "Fulmar.dmg");
     await command(root, "/usr/bin/hdiutil", ["create", "-srcfolder", imageSource, "-srcowners", "any", "-noanyowners", "-noskipunreadable", "-fs", "HFS+", "-volname", "Fulmar Beta Preview", "-format", "UDZO", "-nospotlight", dmg]);
     await observers.afterImageCreate?.({ root, dmg });
-    await roundTrip(root, dmg, app);
+    await roundTrip(root, dmg, app, releaseProfile);
     const image = await sha256AttestedRegularFile(dmg, { maximumBytes: MAXIMUM });
     const binding = {
-      schemaVersion: 1, type: "fulmar-private-dmg-wrapper", publicBetaQualified: false,
+      schemaVersion: 1,
+      ...(releaseProfile === "nonnotarized-beta"
+        ? { type: "fulmar-nonnotarized-beta-dmg-wrapper", releaseProfile }
+        : { type: "fulmar-private-dmg-wrapper" }),
+      publicBetaQualified: false,
       version: release.appVersion, build: release.appBuild,
       candidate: { file: "Fulmar.app.zip", sha256: expectedArchiveSHA256 },
       image: { file: "Fulmar.dmg", bytes: image.bytes, sha256: image.sha256 },
@@ -250,14 +280,15 @@ export async function createDMG(options, observers = {}) {
 }
 
 export async function verifyDMG(options, observers = {}) {
-  const args = parseArguments(["verify", options.dmg, options.expectedDMGSHA256, options.archive, options.expectedArchiveSHA256, options.workParent]);
+  const args = parseArguments(["verify", options.dmg, options.expectedDMGSHA256, options.archive, options.expectedArchiveSHA256, options.workParent, ...profileOperands(options.releaseProfile)]);
   const release = await identity();
   return workspace(args.workParent, async (root) => {
     const archive = await snapshot(root, args.archive, "Fulmar.app.zip", args.expectedArchiveSHA256);
     const dmg = await snapshot(root, args.dmg, "Fulmar.dmg", args.expectedDMGSHA256);
-    const app = await admittedApp(root, archive, release, observers);
-    await roundTrip(root, dmg, app);
-    return { verified: true, publicBetaQualified: false, candidateSHA256: args.expectedArchiveSHA256, dmgSHA256: args.expectedDMGSHA256 };
+    const app = await admittedApp(root, archive, release, observers, args.releaseProfile);
+    await roundTrip(root, dmg, app, args.releaseProfile);
+    return { verified: true, publicBetaQualified: false, candidateSHA256: args.expectedArchiveSHA256, dmgSHA256: args.expectedDMGSHA256,
+      ...(args.releaseProfile === "nonnotarized-beta" ? { releaseProfile: args.releaseProfile } : {}) };
   });
 }
 

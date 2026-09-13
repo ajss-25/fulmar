@@ -245,3 +245,40 @@ public-beta-external-evidence-verify: frozen-candidate-check
 
 public-beta-distribution-verify: dsh-promotion-provenance-verify
 	/bin/zsh -f scripts/verify-public-distribution.sh --profile beta --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)"
+
+# Separate non-notarized manual beta. Existing stable and beta targets above
+# retain their Apple signing/notarisation requirements. This route never uploads.
+# Certificate SHA-256 is independently reviewed; the DMG digest is supplied only
+# after the fresh retained candidate has completed recipient acceptance.
+.PHONY: public-nonnotarized-beta-release public-nonnotarized-beta-release-finalize public-nonnotarized-beta-assets public-nonnotarized-beta-external-evidence-verify public-nonnotarized-beta-distribution-verify
+NONNOTARIZED_SIGNER_SHA256 ?=
+NONNOTARIZED_DMG_SHA256 ?=
+NONNOTARIZED_DMG_PACKAGE ?= $(CURDIR)/build/nonnotarized-beta-dmg
+unexport NONNOTARIZED_SIGNER_SHA256 NONNOTARIZED_DMG_SHA256 NONNOTARIZED_DMG_PACKAGE
+
+public-nonnotarized-beta-release: dsh-promotion-provenance-verify
+	/bin/zsh -f scripts/run-public-release.sh --profile nonnotarized-beta --signer-sha256 "$(NONNOTARIZED_SIGNER_SHA256)" --material-package "$(BETA_MATERIAL_PACKAGE)" --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)"
+
+public-nonnotarized-beta-release-finalize: dsh-promotion-provenance-verify
+	/bin/zsh -f scripts/run-public-release.sh --profile nonnotarized-beta --signer-sha256 "$(NONNOTARIZED_SIGNER_SHA256)" --dmg-sha256 "$(NONNOTARIZED_DMG_SHA256)" --material-package "$(BETA_MATERIAL_PACKAGE)" --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)" --finalize
+
+public-nonnotarized-beta-assets: dsh-promotion-provenance-verify
+	@set -eu; \
+	  candidate_sha="$$(/usr/bin/plutil -extract sha256 raw -o - build/release-manifest.json)"; \
+	  version="$$(/usr/bin/plutil -extract version raw -o - build/release-manifest.json)"; \
+	  build="$$(/usr/bin/plutil -extract build raw -o - build/release-manifest.json)"; \
+	  /bin/zsh -f scripts/prepare-public-release-assets.sh \
+	    "$(CURDIR)/build/Fulmar.app.zip" "$(CURDIR)/build/release-manifest.json" \
+	    "$(CURDIR)/build/public-nonnotarized-beta-assets" "$$candidate_sha" "$$version" "$$build" \
+	    --profile nonnotarized-beta --material-package "$(BETA_MATERIAL_PACKAGE)" --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)" --dmg-package "$(NONNOTARIZED_DMG_PACKAGE)" --dmg-sha256 "$(NONNOTARIZED_DMG_SHA256)"
+
+public-nonnotarized-beta-external-evidence-verify: frozen-candidate-check
+	@set -eu; \
+	  candidate_sha="$$(/usr/bin/plutil -extract sha256 raw -o - build/release-manifest.json)"; \
+	  version="$$(/usr/bin/plutil -extract version raw -o - build/release-manifest.json)"; \
+	  build="$$(/usr/bin/plutil -extract build raw -o - build/release-manifest.json)"; \
+	  VendorRuntime/node-v22.23.1-darwin-arm64/bin/node scripts/verify-public-external-evidence.mjs \
+	    "$(CURDIR)/build/public-nonnotarized-beta-external-evidence.json" "$$candidate_sha" "$$version" "$$build" --profile nonnotarized-beta --dmg-sha256 "$(NONNOTARIZED_DMG_SHA256)" --signer-sha256 "$(NONNOTARIZED_SIGNER_SHA256)"
+
+public-nonnotarized-beta-distribution-verify: dsh-promotion-provenance-verify
+	/bin/zsh -f scripts/verify-public-distribution.sh --profile nonnotarized-beta --material-sha256 "$(BETA_MATERIAL_SHA256)" --source-commit "$(BETA_SOURCE_COMMIT)" --signer-sha256 "$(NONNOTARIZED_SIGNER_SHA256)" --dmg-sha256 "$(NONNOTARIZED_DMG_SHA256)"

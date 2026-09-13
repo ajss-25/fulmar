@@ -16,6 +16,7 @@ const project = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const releaseIdentity = JSON.parse(await readFile(join(project, "Config/ReleaseIdentity.json"), "utf8"));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const EXPECTED_OUTPUTS = ["Fulmar.dmg", "SHA256SUMS.txt", "dmg-binding.json"];
+const PRIVATE_INSTALL = "Fulmar — private DMG packaging preview\n\nThis disk image has not been qualified for public distribution.\nDo not install this engineering artifact as a public beta.\nThe Applications shortcut is a packaging preview only.\n\nThe app inside is copied unchanged from the explicitly bound candidate ZIP.\nSigning/notarisation, licensing and installation/provider acceptance are separate release checks.\n";
 
 function run(executable, args, root) {
   const result = spawnSync(executable, args, {
@@ -153,6 +154,15 @@ test("private beta DMG arguments require one exact command, operand set, digest 
   const verify = ["verify", dmg, dmgSHA, archive, zipSHA, workParent];
   assert.deepEqual(parseArguments(create), { command: "create", archive, expectedArchiveSHA256: zipSHA, output });
   assert.deepEqual(parseArguments(verify), { command: "verify", dmg, expectedDMGSHA256: dmgSHA, archive, expectedArchiveSHA256: zipSHA, workParent });
+  for (const args of [create, verify]) {
+    assert.deepEqual(parseArguments([...args, "--profile", "nonnotarized-beta"]), { ...parseArguments(args), releaseProfile: "nonnotarized-beta" });
+    for (const profile of ["private", "beta", "stable", "nonnotarized", "", "NONNOTARIZED-BETA"]) {
+      assert.throws(() => parseArguments([...args, "--profile", profile]));
+    }
+    assert.throws(() => parseArguments(["--profile", "nonnotarized-beta", ...args]));
+    assert.throws(() => parseArguments([...args, "--profile", "nonnotarized-beta", "--profile", "nonnotarized-beta"]));
+    assert.throws(() => parseArguments([...args, "--profile"]));
+  }
   const invalid = [
     [], ["package", ...create.slice(1)], create.slice(0, -1), [...create, "extra"],
     verify.slice(0, -1), [...verify, "extra"],
@@ -229,11 +239,17 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
     let expectedDMGSHA256;
     await context.test("create and recipient verification retain the input binding and private-only status", async () => {
       const roots = new Set();
-      const binding = await createDMG(accepted, { beforePublish: rememberRoot(roots) });
+      const binding = await createDMG(accepted, {
+        beforePublish: rememberRoot(roots),
+        beforeImageCreate: async ({ imageSource }) => {
+          assert.equal(await readFile(join(imageSource, "INSTALL.txt"), "utf8"), PRIVATE_INSTALL, "the default private notice remains byte-identical");
+        }
+      });
       assert.deepEqual((await readdir(accepted.output)).sort(), EXPECTED_OUTPUTS);
       const bindingBytes = await readFile(join(accepted.output, "dmg-binding.json"));
       assert.deepEqual(JSON.parse(bindingBytes), binding);
       assert.equal(binding.type, "fulmar-private-dmg-wrapper");
+      assert.equal(Object.hasOwn(binding, "releaseProfile"), false);
       assert.equal(binding.publicBetaQualified, false);
       assert.equal(binding.reproducibleDMGBytes, false);
       assert.equal(binding.version, releaseIdentity.appVersion);
@@ -256,6 +272,58 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
       await retired(roots);
       await verifyDMG({ dmg: join(accepted.output, "Fulmar.dmg"), expectedDMGSHA256, archive: files.archive, expectedArchiveSHA256: files.expectedArchiveSHA256, workParent: files.workParent });
       assert.deepEqual(await readdir(files.workParent), [], "verification must detach and retire its own workspace");
+    });
+
+    await context.test("explicit non-notarised wrapper stays unqualified and rejects both cross-profile images", async () => {
+      const options = createOptions("nonnotarized-beta", { releaseProfile: "nonnotarized-beta" });
+      const roots = new Set();
+      let installText;
+      const binding = await createDMG(options, {
+        beforePublish: rememberRoot(roots),
+        beforeImageCreate: async ({ imageSource }) => {
+          installText = await readFile(join(imageSource, "INSTALL.txt"), "utf8");
+          assert.notEqual(installText, PRIVATE_INSTALL);
+          assert.match(installText, /not Apple-notarised/u);
+          assert.match(installText, /Clean installations only/u);
+          assert.match(installText, /in-app updater to be disabled/u);
+          assert.match(installText, /Do not disable system security controls/u);
+          assert.match(installText, /wrapper alone does not qualify/u);
+        }
+      });
+      assert.deepEqual((await readdir(options.output)).sort(), EXPECTED_OUTPUTS);
+      assert.equal(binding.type, "fulmar-nonnotarized-beta-dmg-wrapper");
+      assert.equal(binding.releaseProfile, "nonnotarized-beta");
+      assert.equal(binding.publicBetaQualified, false);
+      assert.equal(binding.reproducibleDMGBytes, false);
+      const bindingBytes = await readFile(join(options.output, "dmg-binding.json"));
+      assert.deepEqual(JSON.parse(bindingBytes), binding);
+      assert.deepEqual(binding.candidate, { file: "Fulmar.app.zip", sha256: files.expectedArchiveSHA256 });
+      const image = join(options.output, "Fulmar.dmg");
+      const imageBytes = await readFile(image);
+      assert.deepEqual(binding.image, { file: "Fulmar.dmg", bytes: imageBytes.length, sha256: hash(imageBytes) });
+      assert.equal(await readFile(join(options.output, "SHA256SUMS.txt"), "utf8"), `${binding.image.sha256}  Fulmar.dmg\n${hash(bindingBytes)}  dmg-binding.json\n`);
+      const verification = { dmg: image, expectedDMGSHA256: binding.image.sha256, archive: files.archive, expectedArchiveSHA256: files.expectedArchiveSHA256, workParent: files.workParent };
+      assert.deepEqual(await verifyDMG({ ...verification, releaseProfile: "nonnotarized-beta" }), {
+        verified: true, publicBetaQualified: false, candidateSHA256: files.expectedArchiveSHA256,
+        dmgSHA256: binding.image.sha256, releaseProfile: "nonnotarized-beta"
+      });
+      await assert.rejects(verifyDMG(verification), /Installation notice does not match the requested DMG profile/u);
+      await assert.rejects(verifyDMG({ ...verification, dmg: join(accepted.output, "Fulmar.dmg"), expectedDMGSHA256, releaseProfile: "nonnotarized-beta" }), /Installation notice does not match the requested DMG profile/u);
+      for (const releaseProfile of [null, "beta", "stable", "unknown", false]) {
+        const invalid = createOptions("invalid-profile", { releaseProfile });
+        await assert.rejects(createDMG(invalid), /usage:/u);
+        await absent(invalid.output);
+        await assert.rejects(verifyDMG({ ...verification, releaseProfile }), /usage:/u);
+      }
+      const tampered = createOptions("tampered-nonnotarized-notice", { releaseProfile: "nonnotarized-beta" });
+      await assert.rejects(createDMG(tampered, {
+        beforeImageCreate: rememberRoot(roots, async ({ imageSource }) => {
+          await writeFile(join(imageSource, "INSTALL.txt"), `${installText}Unreviewed additional instruction.\n`);
+        })
+      }), /Installation notice does not match the requested DMG profile/u);
+      await absent(tampered.output);
+      await retired(roots);
+      assert.deepEqual(await readdir(files.workParent), [], "cross-profile rejection must still detach and retire each verification workspace");
     });
 
     await context.test("a modified DMG fails its independent expected digest without residual workspace", async () => {
