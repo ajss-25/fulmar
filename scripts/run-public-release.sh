@@ -35,6 +35,7 @@ MODE="fresh"
 # verbatim to the asset preparer and the distribution verifier. They are refused
 # under the stable profile.
 USAGE="Usage: run-public-release.sh [--profile stable | --profile beta --material-package /absolute/package --material-sha256 <sha256> --source-commit <commit>] [--finalize]"
+USAGE="$USAGE; --profile nonnotarized-beta uses the beta material operands plus --signer-sha256 <sha256> and, only for --finalize, --dmg-sha256 <sha256>"
 RELEASE_PROFILE="stable"
 PROFILE_SELECTED=0
 MATERIAL_PACKAGE=""
@@ -43,6 +44,10 @@ MATERIAL_SHA256=""
 MATERIAL_SHA256_SELECTED=0
 SOURCE_COMMIT_OPERAND=""
 SOURCE_COMMIT_SELECTED=0
+SIGNER_SHA256=""
+SIGNER_SELECTED=0
+EXPECTED_DMG_SHA256=""
+DMG_SELECTED=0
 while (( $# > 0 )); do
   case "$1" in
     --finalize)
@@ -59,9 +64,9 @@ while (( $# > 0 )); do
         exit 64
       }
       case "$2" in
-        stable|beta) RELEASE_PROFILE="$2" ;;
+        stable|beta|nonnotarized-beta) RELEASE_PROFILE="$2" ;;
         *)
-          print -u2 "run-public-release.sh accepts only the exact release profiles stable or beta."
+          print -u2 "run-public-release.sh accepts only the exact release profiles stable or beta or nonnotarized-beta."
           exit 64
           ;;
       esac
@@ -95,19 +100,49 @@ while (( $# > 0 )); do
       SOURCE_COMMIT_SELECTED=1
       shift 2
       ;;
+    --signer-sha256|--dmg-sha256)
+      (( $# >= 2 )) || { print -u2 "$USAGE"; exit 64; }
+      if [[ "$1" == "--signer-sha256" ]]; then
+        (( SIGNER_SELECTED == 0 )) || { print -u2 "$USAGE"; exit 64; }
+        SIGNER_SHA256="$2"; SIGNER_SELECTED=1
+      else
+        (( DMG_SELECTED == 0 )) || { print -u2 "$USAGE"; exit 64; }
+        EXPECTED_DMG_SHA256="$2"; DMG_SELECTED=1
+      fi
+      shift 2
+      ;;
     *)
       print -u2 "$USAGE"
       exit 64
       ;;
   esac
 done
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  [[ "${#SIGNER_SHA256}" == 64 && "$SIGNER_SHA256" != *[^a-f0-9]* \
+     && "$SIGNER_SHA256" != "0000000000000000000000000000000000000000000000000000000000000000" ]] || {
+    print -u2 "nonnotarized-beta requires --signer-sha256 with the independently reviewed persistent certificate SHA-256."
+    exit 64
+  }
+  if [[ "$MODE" == "finalize" ]]; then
+    [[ "${#EXPECTED_DMG_SHA256}" == 64 && "$EXPECTED_DMG_SHA256" != *[^a-f0-9]* ]] || {
+      print -u2 "nonnotarized-beta finalize requires --dmg-sha256 from the accepted exact recipient candidate."
+      exit 64
+    }
+  elif (( DMG_SELECTED != 0 )); then
+    print -u2 "--dmg-sha256 is accepted only when finalizing the retained nonnotarized-beta DMG."
+    exit 64
+  fi
+elif (( SIGNER_SELECTED != 0 || DMG_SELECTED != 0 )); then
+  print -u2 "Signer and DMG operands are accepted only with --profile nonnotarized-beta."
+  exit 64
+fi
 # Asset operands forwarded to the preparer (profile plus material operands) and
 # material operands forwarded to the distribution verifier. Empty under stable.
 typeset -a ASSET_PROFILE_ARGUMENTS
 ASSET_PROFILE_ARGUMENTS=()
 typeset -a MATERIAL_VERIFY_ARGUMENTS
 MATERIAL_VERIFY_ARGUMENTS=()
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   (( MATERIAL_PACKAGE_SELECTED == 1 && MATERIAL_SHA256_SELECTED == 1 && SOURCE_COMMIT_SELECTED == 1 )) || {
     print -u2 "The beta profile requires --material-package, --material-sha256 and --source-commit: the private verified material package, its expected archive SHA-256 from the reviewed release record, and this checkout's exact source commit."
     exit 64
@@ -118,11 +153,11 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
     print -u2 "Beta material operands must be one absolute package directory, one lowercase SHA-256 and one full 40-hex source commit."
     exit 64
   }
-  ASSET_PROFILE_ARGUMENTS=(--profile beta --material-package "$MATERIAL_PACKAGE" --material-sha256 "$MATERIAL_SHA256" --source-commit "$SOURCE_COMMIT_OPERAND")
+  ASSET_PROFILE_ARGUMENTS=(--profile "$RELEASE_PROFILE" --material-package "$MATERIAL_PACKAGE" --material-sha256 "$MATERIAL_SHA256" --source-commit "$SOURCE_COMMIT_OPERAND")
   MATERIAL_VERIFY_ARGUMENTS=(--material-sha256 "$MATERIAL_SHA256" --source-commit "$SOURCE_COMMIT_OPERAND")
 else
   (( MATERIAL_PACKAGE_SELECTED == 0 && MATERIAL_SHA256_SELECTED == 0 && SOURCE_COMMIT_SELECTED == 0 )) || {
-    print -u2 "Material operands are accepted only with --profile beta; the stable package carries no material assets."
+    print -u2 "Material operands are accepted only with --profile beta or --profile nonnotarized-beta; the stable package carries no material assets."
     exit 64
   }
 fi
@@ -144,17 +179,24 @@ NOTARY_SUBMISSION="$BUILD_DIR/notarization-submission.json"
 NOTARY_LOG="$BUILD_DIR/notarization-log.json"
 PUBLIC_ASSETS="$BUILD_DIR/public-release-assets"
 PUBLIC_EXTERNAL_EVIDENCE="$BUILD_DIR/public-external-evidence.json"
+DMG_PACKAGE="$BUILD_DIR/nonnotarized-beta-dmg"
 # Profile-bound evidence and verifier operands. The beta evidence lives in its
 # own file so stable finalization can never consume beta records and vice versa.
 typeset -a EVIDENCE_PROFILE_ARGUMENTS
 EVIDENCE_PROFILE_ARGUMENTS=()
 GATE_DESCRIPTION="complete the eight manual gates"
 FINALIZE_TARGET="make public-release-finalize"
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   PUBLIC_EXTERNAL_EVIDENCE="$BUILD_DIR/public-beta-external-evidence.json"
-  EVIDENCE_PROFILE_ARGUMENTS=(--profile beta)
+  EVIDENCE_PROFILE_ARGUMENTS=(--profile "$RELEASE_PROFILE")
   FINALIZE_TARGET="make public-beta-release-finalize"
   GATE_DESCRIPTION="complete the ten manual beta gates (manual install/reinstall/recovery and updater-disabled proof replace the automatic-updater exercise; retained-state migration stays unqualified unless separately closed)"
+fi
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  PUBLIC_EXTERNAL_EVIDENCE="$BUILD_DIR/public-nonnotarized-beta-external-evidence.json"
+  PUBLIC_ASSETS="$BUILD_DIR/public-nonnotarized-beta-assets"
+  FINALIZE_TARGET="make public-nonnotarized-beta-release-finalize"
+  GATE_DESCRIPTION="complete the eleven non-notarized beta gates, including exact downloaded-DMG recipient acceptance; clean-install-only and updater-disabled"
 fi
 OPERATOR_HOME="${HOME:-}"
 if (( TEST_MODE == 1 )); then
@@ -199,12 +241,16 @@ fail_configuration() {
 SIGN_IDENTITY="${LOCAL_HARNESS_SIGN_IDENTITY:-}"
 SIGNING_KEYCHAIN="${LOCAL_HARNESS_SIGNING_KEYCHAIN:-}"
 NOTARY_PROFILE="${LOCAL_HARNESS_NOTARY_PROFILE:-}"
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" && -z "$SIGN_IDENTITY" ]]; then
+  fail_configuration "nonnotarized-beta requires LOCAL_HARNESS_SIGN_IDENTITY selecting an existing persistent private certificate."
+fi
 [[ -n "$SIGN_IDENTITY" ]] || {
   fail_configuration "Public release requires LOCAL_HARNESS_SIGN_IDENTITY with the exact Developer ID Application certificate name."
 }
 [[ -n "$SIGNING_KEYCHAIN" ]] || {
   fail_configuration "Public release requires LOCAL_HARNESS_SIGNING_KEYCHAIN with the absolute signing-Keychain path."
 }
+if [[ "$RELEASE_PROFILE" != "nonnotarized-beta" ]]; then
 [[ -n "$NOTARY_PROFILE" ]] || {
   fail_configuration "Public release requires LOCAL_HARNESS_NOTARY_PROFILE with an Apple notarytool Keychain profile."
 }
@@ -215,11 +261,20 @@ done
 [[ "$SIGN_IDENTITY" =~ '^Developer ID Application: .+ \([A-Z0-9]{10}\)$' ]] || {
   fail_configuration "LOCAL_HARNESS_SIGN_IDENTITY must be the exact Developer ID Application certificate name, including its 10-character Team ID."
 }
+else
+  [[ "$SIGN_IDENTITY" != "-" && "$SIGN_IDENTITY" != "Developer ID Application:"* \
+     && "${#SIGN_IDENTITY}" -le 512 && "$SIGN_IDENTITY" != *$'\n'* && "$SIGN_IDENTITY" != *$'\r'* \
+     && "${#SIGNING_KEYCHAIN}" -le 512 && "$SIGNING_KEYCHAIN" != *$'\n'* && "$SIGNING_KEYCHAIN" != *$'\r'* \
+     && -z "$NOTARY_PROFILE" && "${LOCAL_HARNESS_SIGN_TIMESTAMP:-0}" == "0" ]] || {
+    fail_configuration "nonnotarized-beta requires a persistent private certificate, no Apple notary profile and timestamp mode 0; ad-hoc signing is refused."
+  }
+fi
 [[ "$SIGNING_KEYCHAIN" == /* && -f "$SIGNING_KEYCHAIN" && ! -L "$SIGNING_KEYCHAIN" \
    && "${SIGNING_KEYCHAIN:A}" == "$SIGNING_KEYCHAIN" \
    && "$(/usr/bin/stat -f '%u:%l' "$SIGNING_KEYCHAIN")" == "$(/usr/bin/id -u):1" ]] || {
   fail_configuration "LOCAL_HARNESS_SIGNING_KEYCHAIN must be one owner-controlled absolute regular file."
 }
+if [[ "$RELEASE_PROFILE" != "nonnotarized-beta" ]]; then
 [[ "${LOCAL_HARNESS_SIGN_TIMESTAMP:-1}" == "1" ]] || {
   fail_configuration "Public release requires LOCAL_HARNESS_SIGN_TIMESTAMP=1; timestamp disabling and auto mode are not accepted."
 }
@@ -250,6 +305,7 @@ done <<< "$IDENTITY_LISTING"
   fail_configuration "The signing Keychain must contain exactly one usable identity named $SIGN_IDENTITY."
 }
 unset IDENTITY_LISTING identity_line listed_name
+fi
 
 if (( TEST_MODE == 0 )); then
   PINNED_NODE_SHA256="$(/usr/bin/plutil -extract runtime.nodeSHA256 raw -o - "$RELEASE_IDENTITY")"
@@ -286,6 +342,16 @@ run_static_scan() {
 }
 
 run_public_build() {
+  if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+    /usr/bin/env -i \
+      "HOME=$OPERATOR_HOME" "CFFIXED_USER_HOME=$OPERATOR_HOME" \
+      "PATH=$SAFE_PATH" "USER=$OPERATOR_USER" "LOGNAME=$OPERATOR_USER" \
+      LANG=en_US.UTF-8 LC_CTYPE=UTF-8 TMPDIR=/private/tmp/ \
+      LOCAL_HARNESS_REQUIRE_STABLE_SIGNING=1 LOCAL_HARNESS_SIGN_TIMESTAMP=0 \
+      "LOCAL_HARNESS_SIGN_IDENTITY=$SIGN_IDENTITY" "LOCAL_HARNESS_SIGNING_KEYCHAIN=$SIGNING_KEYCHAIN" \
+      /bin/zsh -f "$PROJECT_DIR/scripts/build-app.sh"
+    return
+  fi
   /usr/bin/env -i \
     "HOME=$OPERATOR_HOME" "CFFIXED_USER_HOME=$OPERATOR_HOME" \
     "PATH=$SAFE_PATH" "USER=$OPERATOR_USER" "LOGNAME=$OPERATOR_USER" \
@@ -312,6 +378,28 @@ read_candidate_field() {
 }
 
 verify_public_candidate() {
+  if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+    for required in "$APP" "$ARCHIVE" "$MANIFEST"; do
+      [[ ( -f "$required" || -d "$required" ) && ! -L "$required" ]] || return 1
+    done
+    run_reviewed_node "$PROJECT_DIR/scripts/verify-retained-release-evidence.mjs" \
+      "$RELEASE_IDENTITY" "$MANIFEST" "$BUILD_DIR"
+    run_reviewed_node "$PROJECT_DIR/scripts/nonnotarized-beta-policy.mjs" \
+      verify-signature "$APP" "$SIGNER_SHA256"
+    TEMP_ROOT="$(/usr/bin/mktemp -d /private/tmp/fulmar-public-operator.XXXXXX)"
+    /bin/chmod 0700 "$TEMP_ROOT"
+    run_reviewed_node "$PROJECT_DIR/scripts/verify-zip-entries.mjs" "$ARCHIVE" >/dev/null
+    /usr/bin/ditto -x -k --noqtn "$ARCHIVE" "$TEMP_ROOT/extracted"
+    local private_archived_app="$TEMP_ROOT/extracted/Fulmar.app"
+    [[ -d "$private_archived_app" && ! -L "$private_archived_app" \
+       && "$(/usr/bin/find "$TEMP_ROOT/extracted" -mindepth 1 -maxdepth 1 | /usr/bin/wc -l | /usr/bin/tr -d ' ')" == "1" ]] || return 1
+    run_reviewed_node "$PROJECT_DIR/scripts/verify-release-tree.mjs" "$APP" "$private_archived_app"
+    run_reviewed_node "$PROJECT_DIR/scripts/nonnotarized-beta-policy.mjs" \
+      verify-signature "$private_archived_app" "$SIGNER_SHA256"
+    /bin/rm -rf -- "$TEMP_ROOT"
+    TEMP_ROOT=""
+    return
+  fi
   for required in "$APP" "$ARCHIVE" "$MANIFEST" "$NOTARY_SUBMISSION" "$NOTARY_LOG"; do
     [[ ( -f "$required" || -d "$required" ) && ! -L "$required" ]] || {
       print -u2 "The retained public candidate is incomplete or linked: ${required:t}."
@@ -370,6 +458,21 @@ verify_public_candidate() {
   TEMP_ROOT=""
 }
 
+prepare_retained_dmg() {
+  local zip_sha
+  zip_sha="$(read_candidate_field sha256)"
+  if [[ "$MODE" == "fresh" ]]; then
+    run_reviewed_node "$PROJECT_DIR/scripts/prepare-beta-dmg.mjs" \
+      create "$ARCHIVE" "$zip_sha" "$DMG_PACKAGE" --profile nonnotarized-beta
+    EXPECTED_DMG_SHA256="$(/usr/bin/shasum -a 256 "$DMG_PACKAGE/Fulmar.dmg" | /usr/bin/awk '{print $1}')"
+  fi
+  run_reviewed_node "$PROJECT_DIR/scripts/prepare-beta-dmg.mjs" \
+    verify "$DMG_PACKAGE/Fulmar.dmg" "$EXPECTED_DMG_SHA256" "$ARCHIVE" "$zip_sha" "$BUILD_DIR" --profile nonnotarized-beta
+  run_reviewed_node "$PROJECT_DIR/scripts/nonnotarized-beta-policy.mjs" \
+    verify-dmg-binding "$DMG_PACKAGE/dmg-binding.json" "$zip_sha" "$EXPECTED_DMG_SHA256" \
+    "$(read_candidate_field version)" "$(read_candidate_field build)" "$(/usr/bin/stat -f %z "$DMG_PACKAGE/Fulmar.dmg")"
+}
+
 if (( TEST_MODE == 1 )); then
   TEST_SEAM="$PROJECT_DIR/test-support/run-public-release-test-seam.zsh"
   [[ -f "$TEST_SEAM" && ! -L "$TEST_SEAM" \
@@ -378,7 +481,7 @@ if (( TEST_MODE == 1 )); then
   }
   source "$TEST_SEAM"
   for confined_path in "$BUILD_DIR" "$APP" "$ARCHIVE" "$MANIFEST" \
-    "$NOTARY_SUBMISSION" "$NOTARY_LOG" "$PUBLIC_ASSETS" "$PUBLIC_EXTERNAL_EVIDENCE"; do
+    "$NOTARY_SUBMISSION" "$NOTARY_LOG" "$PUBLIC_ASSETS" "$PUBLIC_EXTERNAL_EVIDENCE" "$DMG_PACKAGE"; do
     [[ "$confined_path" == "$PROJECT_DIR/"* ]] || {
       fail_configuration "The public-release test seam attempted to escape its temporary root."
     }
@@ -397,6 +500,10 @@ run_reviewed_node "$PROJECT_DIR/scripts/first-party-license-policy.mjs" \
   state "$PROJECT_DIR" --require-selected >/dev/null
 
 if [[ "$MODE" == "fresh" ]]; then
+  if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" && ( -e "$DMG_PACKAGE" || -L "$DMG_PACKAGE" ) ]]; then
+    print -u2 "A retained non-notarized DMG already exists; finalize its exact candidate instead of replacing it."
+    exit 1
+  fi
   [[ ! -e "$PUBLIC_ASSETS" && ! -L "$PUBLIC_ASSETS" ]] || {
     print -u2 "A retained public asset set already exists. Preserve it and use '$FINALIZE_TARGET' for its exact candidate, or move it aside before creating a new candidate."
     exit 1
@@ -409,6 +516,14 @@ else
 fi
 
 verify_public_candidate
+typeset -a DISTRIBUTION_PROFILE_ARGUMENTS
+DISTRIBUTION_PROFILE_ARGUMENTS=("${EVIDENCE_PROFILE_ARGUMENTS[@]}")
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  prepare_retained_dmg
+  EVIDENCE_PROFILE_ARGUMENTS+=(--dmg-sha256 "$EXPECTED_DMG_SHA256" --signer-sha256 "$SIGNER_SHA256")
+  ASSET_PROFILE_ARGUMENTS+=(--dmg-package "$DMG_PACKAGE" --dmg-sha256 "$EXPECTED_DMG_SHA256")
+  MATERIAL_VERIFY_ARGUMENTS+=(--signer-sha256 "$SIGNER_SHA256" --dmg-sha256 "$EXPECTED_DMG_SHA256")
+fi
 
 CANDIDATE_SHA256="$(read_candidate_field sha256)"
 CANDIDATE_VERSION="$(read_candidate_field version)"
@@ -418,7 +533,11 @@ if [[ "$RELEASE_PROFILE" == "beta" && "$MATERIAL_SHA256" == "$CANDIDATE_SHA256" 
   exit 64
 fi
 if [[ ! -f "$PUBLIC_EXTERNAL_EVIDENCE" || -L "$PUBLIC_EXTERNAL_EVIDENCE" ]]; then
-  print -u2 "Retained notarized Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256 ($RELEASE_PROFILE profile)."
+  if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+    print -u2 "Retained NON-NOTARIZED Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD ZIP $CANDIDATE_SHA256, DMG $EXPECTED_DMG_SHA256, signer certificate $SIGNER_SHA256. No public qualification has been granted."
+  else
+    print -u2 "Retained notarized Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256 ($RELEASE_PROFILE profile)."
+  fi
   print -u2 "Public release is intentionally paused: $GATE_DESCRIPTION and create owner-private build/${PUBLIC_EXTERNAL_EVIDENCE:t} for this exact candidate, then run '$FINALIZE_TARGET'. Do not rebuild."
   exit 78
 fi
@@ -436,9 +555,11 @@ if [[ ! -e "$PUBLIC_ASSETS" && ! -L "$PUBLIC_ASSETS" ]]; then
     "${ASSET_PROFILE_ARGUMENTS[@]}"
 fi
 run_clean_script "$PROJECT_DIR/scripts/verify-public-distribution.sh" \
-  "$PUBLIC_ASSETS" "$PUBLIC_EXTERNAL_EVIDENCE" "${EVIDENCE_PROFILE_ARGUMENTS[@]}" \
+  "$PUBLIC_ASSETS" "$PUBLIC_EXTERNAL_EVIDENCE" "${DISTRIBUTION_PROFILE_ARGUMENTS[@]}" \
   "${MATERIAL_VERIFY_ARGUMENTS[@]}"
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  print "NON-NOTARIZED BETA distribution qualification passed for ZIP $CANDIDATE_SHA256 and DMG $EXPECTED_DMG_SHA256 with candidate-bound external evidence. Manual install, clean-install-only, updater disabled. This is not Apple trust or stable qualification. No upload or publication was performed."
+elif [[ "$RELEASE_PROFILE" == "beta" ]]; then
   print "Public BETA release qualification passed for retained Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256 with the verified third-party material archive $MATERIAL_SHA256 bound to source commit $SOURCE_COMMIT_OPERAND (manual install, in-app updater disabled). This is not stable qualification and closes no licensing obligation. No upload or publication was performed."
 else
   print "Public release qualification passed for retained Fulmar $CANDIDATE_VERSION build $CANDIDATE_BUILD candidate $CANDIDATE_SHA256. No upload or publication was performed."

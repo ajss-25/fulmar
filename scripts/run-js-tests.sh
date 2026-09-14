@@ -67,7 +67,9 @@ cleanup() {
     print -u2 "Refusing to remove a changed JavaScript-test isolation root."
     return 126
   }
-  /bin/rm -rf -- "$ISOLATION_ROOT" || return 126
+  # A failed disk-image test can leave a mounted descendant. Never enter that
+  # filesystem; retain the root and report cleanup failure instead.
+  /bin/rm -rf -x -- "$ISOLATION_ROOT" || return 126
   [[ ! -e "$ISOLATION_ROOT" && ! -L "$ISOLATION_ROOT" ]] || return 126
   ISOLATION_ROOT=""
 }

@@ -6,8 +6,8 @@
   "symbolsArchiveName": "Fulmar.dSYMs.zip",
   "internalProductName": "Local Harness",
   "bundleIdentifier": "com.angadjairath.localharness",
-  "appVersion": "1.2.36",
-  "appBuild": 156,
+  "appVersion": "1.2.37",
+  "appBuild": 157,
   "minimumMacOS": "15.0",
   "runtime": {
     "nodeVersion": "22.23.1",

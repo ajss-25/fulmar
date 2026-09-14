@@ -1,4 +1,4 @@
-# Test plan and release evidence — Fulmar 1.2.36 build 156
+# Test plan and release evidence — Fulmar 1.2.37 build 157
 
 ## Evidence rule
 

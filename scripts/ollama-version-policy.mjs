@@ -44,10 +44,10 @@ export function requireCompatibleOllamaVersion(rawValue) {
   const actual = parseStableOllamaVersion(rawValue);
   const minimum = parseStableOllamaVersion(minimumOllamaVersion);
   if (compareOllamaVersions(actual, minimum) < 0) {
-    fail(`Ollama ${actual.rawValue} is too old; update to ${minimumOllamaVersion} or later`);
+    fail(`Ollama ${actual.rawValue} is too old; update to ${minimumOllamaVersion} or a later patch within ${qualifiedOllamaSeries}`);
   }
   if (actual.major !== minimum.major || actual.minor !== minimum.minor) {
-    fail(`Ollama ${actual.rawValue} is newer than Fulmar's release-qualified ${qualifiedOllamaSeries} range; install a Fulmar update that qualifies this release or restore ${qualifiedOllamaSeries} (${minimumOllamaVersion} or later)`);
+    fail(`Ollama ${actual.rawValue} is newer than Fulmar's release-qualified ${qualifiedOllamaSeries} range; install a Fulmar update that qualifies this release or restore ${minimumOllamaVersion} or a later patch within ${qualifiedOllamaSeries}`);
   }
   return actual;
 }

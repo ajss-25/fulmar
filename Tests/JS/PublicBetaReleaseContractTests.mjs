@@ -19,12 +19,14 @@ import {
   BETA_RETAINED_STATE_CLEAN_INSTALL_ONLY,
   BETA_RETAINED_STATE_MIGRATION_GATE,
   BETA_RETAINED_STATE_MIGRATION_QUALIFIED,
+  NONNOTARIZED_BETA_REQUIRED_GATES,
   PUBLIC_RELEASE_PROFILE_NAMES,
   PUBLIC_RELEASE_PROFILES,
   STABLE_REQUIRED_GATES,
   resolvePublicReleaseProfile,
   verifyPublicExternalEvidenceBytes
 } from "../../scripts/public-release-profile-policy.mjs";
+import { privateSignerInspectionArguments, verifyNonnotarizedDMGBinding, verifyPrivateSignerDetails } from "../../scripts/nonnotarized-beta-policy.mjs";
 
 const root = process.cwd();
 const externalEvidenceVerifier = join(root, "scripts", "verify-public-external-evidence.mjs");
@@ -35,6 +37,8 @@ const makefilePath = join(root, "Makefile");
 const syntheticDigest = (label) => createHash("sha256").update(`synthetic-beta-fixture:${label}`).digest("hex");
 const candidateSHA = syntheticDigest("candidate-A");
 const otherCandidateSHA = syntheticDigest("candidate-B");
+const dmgSHA = syntheticDigest("nonnotarized-dmg");
+const signerSHA = syntheticDigest("nonnotarized-signer");
 const version = "0.0.1";
 const build = 1;
 
@@ -60,6 +64,7 @@ const betaGateNames = Object.freeze([
   "inAppUpdaterDisabledInCandidate",
   "thirdPartyBinaryLicenseMaterials"
 ]);
+const nonnotarizedGateNames = Object.freeze([...betaGateNames, "nonnotarizedRecipientAcceptance"]);
 
 const gateRecord = (gate) => ({
   status: "passed",
@@ -96,6 +101,15 @@ const betaEvidence = (retainedState = BETA_RETAINED_STATE_CLEAN_INSTALL_ONLY) =>
     : betaGateNames)
 });
 
+const nonnotarizedEvidence = () => ({
+  ...betaEvidence(),
+  evidenceType: "fulmar-public-nonnotarized-beta-external-evidence",
+  releaseProfile: "nonnotarized-beta",
+  candidate: { sha256: candidateSHA, dmgSHA256: dmgSHA, signerCertificateSHA256: signerSHA },
+  distribution: { ...betaEvidence().distribution, appleNotarization: "not-notarized" },
+  gates: gates(nonnotarizedGateNames)
+});
+
 const bytes = (value) => Buffer.from(`${JSON.stringify(value)}\n`, "utf8");
 const verify = (value, profile, overrides = {}) => verifyPublicExternalEvidenceBytes(bytes(value), {
   profile,
@@ -104,15 +118,23 @@ const verify = (value, profile, overrides = {}) => verifyPublicExternalEvidenceB
   expectedBuild: build,
   ...overrides
 });
+const verifyNonnotarized = (value = nonnotarizedEvidence(), overrides = {}) => verify(value, "nonnotarized-beta", {
+  expectedDMGSHA256: dmgSHA, expectedSignerSHA256: signerSHA, ...overrides
+});
 
-test("release profiles are exactly stable and beta with separately identifiable evidence", () => {
-  assert.deepEqual(PUBLIC_RELEASE_PROFILE_NAMES, ["stable", "beta"]);
+test("release profiles are exactly stable, beta and nonnotarized-beta with separately identifiable evidence", () => {
+  assert.deepEqual(PUBLIC_RELEASE_PROFILE_NAMES, ["stable", "beta", "nonnotarized-beta"]);
   assert.deepEqual([...STABLE_REQUIRED_GATES], stableGateNames);
   assert.deepEqual([...BETA_REQUIRED_GATES], betaGateNames);
   assert.equal(PUBLIC_RELEASE_PROFILES.stable.evidenceType, "fulmar-public-external-evidence");
   assert.equal(PUBLIC_RELEASE_PROFILES.beta.evidenceType, "fulmar-public-beta-external-evidence");
   assert.notEqual(PUBLIC_RELEASE_PROFILES.stable.evidenceFileName, PUBLIC_RELEASE_PROFILES.beta.evidenceFileName);
   assert.equal(PUBLIC_RELEASE_PROFILES.beta.evidenceFileName, "public-beta-external-evidence.json");
+  assert.deepEqual([...NONNOTARIZED_BETA_REQUIRED_GATES], nonnotarizedGateNames);
+  assert.equal(PUBLIC_RELEASE_PROFILES["nonnotarized-beta"].evidenceType, "fulmar-public-nonnotarized-beta-external-evidence");
+  assert.equal(PUBLIC_RELEASE_PROFILES["nonnotarized-beta"].evidenceFileName, "public-nonnotarized-beta-external-evidence.json");
+  assert.equal(new Set(PUBLIC_RELEASE_PROFILE_NAMES.map((name) => PUBLIC_RELEASE_PROFILES[name].evidenceFileName)).size, 3);
+  assert.ok(Object.isFrozen(NONNOTARIZED_BETA_REQUIRED_GATES));
   assert.ok(STABLE_REQUIRED_GATES.includes("twoVersionNotarizedUpdateRollback"),
     "the stable contract keeps the two-version notarized updater/rollback record mandatory");
   assert.ok(!BETA_REQUIRED_GATES.includes("twoVersionNotarizedUpdateRollback"),
@@ -174,6 +196,15 @@ test("stable refuses beta evidence and beta refuses stable evidence", () => {
   const wrongProfileValue = betaEvidence();
   wrongProfileValue.releaseProfile = "stable";
   assert.throws(() => verify(wrongProfileValue, "beta"), /belongs to another release profile/u);
+  const examples = { stable: stableEvidence, beta: betaEvidence, "nonnotarized-beta": nonnotarizedEvidence };
+  for (const [source, makeEvidence] of Object.entries(examples)) {
+    for (const target of PUBLIC_RELEASE_PROFILE_NAMES.filter((name) => name !== source)) {
+      assert.throws(() => verify(makeEvidence(), target, { expectedDMGSHA256: dmgSHA, expectedSignerSHA256: signerSHA }),
+        /belongs to another release profile/u, `${source} evidence must never qualify ${target}`);
+    }
+  }
+  assert.throws(() => verify(nonnotarizedEvidence(), undefined), /belongs to another release profile/u,
+    "the stable default must never infer the non-notarized profile from evidence");
 });
 
 test("a complete beta record passes only with its exact shape", () => {
@@ -222,6 +253,38 @@ test("a complete beta record passes only with its exact shape", () => {
     mutate(fixture);
     assert.throws(() => verify(fixture, "beta"), rejection, label);
   }
+
+  const nonnotarized = verifyNonnotarized();
+  assert.equal(nonnotarized.profile, "nonnotarized-beta");
+  assert.equal(nonnotarized.gateCount, 11);
+  assert.equal(nonnotarized.retainedState, "clean-install-only");
+  assert.deepEqual([...nonnotarized.gates], nonnotarizedGateNames);
+  assert.equal(nonnotarized.summary, "complete and candidate-bound across all 11 non-notarized beta external gates.");
+  for (const missingGate of nonnotarizedGateNames) {
+    const fixture = nonnotarizedEvidence();
+    delete fixture.gates[missingGate];
+    assert.throws(() => verifyNonnotarized(fixture), /incomplete/u, `missing ${missingGate}`);
+  }
+  for (const [label, mutate] of [
+    ["missing profile", (value) => { delete value.releaseProfile; }],
+    ["wrong profile", (value) => { value.releaseProfile = "beta"; }],
+    ["missing distribution", (value) => { delete value.distribution; }],
+    ["missing DMG identity", (value) => { delete value.candidate.dmgSHA256; }],
+    ["missing signer identity", (value) => { delete value.candidate.signerCertificateSHA256; }],
+    ["extra candidate claim", (value) => { value.candidate.notarized = true; }],
+    ["extra top-level claim", (value) => { value.appleApproved = true; }],
+    ["no aggregate pass", (value) => { value.allRequiredGatesPassed = false; }],
+    ["unproven recipient", (value) => { value.gates.nonnotarizedRecipientAcceptance.status = "planned"; }],
+    ["placeholder recipient", (value) => { value.gates.nonnotarizedRecipientAcceptance.evidenceSHA256 = "0".repeat(64); }],
+    ["unbounded recipient", (value) => { value.gates.nonnotarizedRecipientAcceptance.reference = "x".repeat(201); }],
+    ["extra recipient claim", (value) => { value.gates.nonnotarizedRecipientAcceptance.notarized = true; }],
+    ["extra stable updater gate", (value) => { value.gates.twoVersionNotarizedUpdateRollback = gateRecord("twoVersionNotarizedUpdateRollback"); }],
+    ["extra migration gate", (value) => { value.gates.retainedStateMigrationAndRecovery = gateRecord("retainedStateMigrationAndRecovery"); }]
+  ]) {
+    const fixture = nonnotarizedEvidence();
+    mutate(fixture);
+    assert.throws(() => verifyNonnotarized(fixture), undefined, label);
+  }
 });
 
 test("beta evidence must prove the updater is disabled and the manual-install channel", () => {
@@ -243,6 +306,24 @@ test("beta evidence must prove the updater is disabled and the manual-install ch
   const missingProof = betaEvidence();
   delete missingProof.gates.inAppUpdaterDisabledInCandidate;
   assert.throws(() => verify(missingProof, "beta"), /incomplete/u);
+  for (const [key, invalidValues] of [
+    ["channel", ["in-app-update", "manual", null]],
+    ["inAppUpdater", ["enabled", "disabled-by-default", false]],
+    ["retainedState", [BETA_RETAINED_STATE_MIGRATION_QUALIFIED, "upgrade-in-place", "", null]],
+    ["appleNotarization", ["notarized", "optional", false, null]]
+  ]) {
+    for (const invalid of invalidValues) {
+      const fixture = nonnotarizedEvidence();
+      fixture.distribution[key] = invalid;
+      assert.throws(() => verifyNonnotarized(fixture), /must declare manual-install, updater-disabled, clean-install-only and not-notarized/u, `${key}: ${JSON.stringify(invalid)}`);
+    }
+    const missing = nonnotarizedEvidence();
+    delete missing.distribution[key];
+    assert.throws(() => verifyNonnotarized(missing), /must declare/u, `missing ${key}`);
+  }
+  const extra = nonnotarizedEvidence();
+  extra.distribution.appleTrustOverride = true;
+  assert.throws(() => verifyNonnotarized(extra), /must declare/u);
 });
 
 test("retained state is either explicitly clean-install-only or separately qualified", () => {
@@ -296,6 +377,17 @@ test("beta evidence is bound to the exact candidate SHA, version and build", () 
   stringBuild.build = String(build);
   assert.throws(() => verify(stringBuild, "beta"), /stale or belongs to another candidate/u,
     "a string build in the record is not the exact integer build");
+  for (const [key, value] of [
+    ["expectedSHA256", otherCandidateSHA], ["expectedDMGSHA256", syntheticDigest("wrong-dmg")],
+    ["expectedSignerSHA256", syntheticDigest("wrong-signer")], ["expectedVersion", "0.0.2"], ["expectedBuild", 2]
+  ]) {
+    assert.throws(() => verifyNonnotarized(nonnotarizedEvidence(), { [key]: value }), /stale or belongs to another candidate/u, key);
+  }
+  for (const key of ["expectedDMGSHA256", "expectedSignerSHA256"]) {
+    for (const value of [undefined, null, "", "0".repeat(64), candidateSHA.toUpperCase(), candidateSHA.slice(1)]) {
+      assert.throws(() => verifyNonnotarized(nonnotarizedEvidence(), { [key]: value }), /independent expected DMG and signer certificate SHA-256 operands/u, `${key}: ${JSON.stringify(value)}`);
+    }
+  }
 });
 
 test("the verifier CLI binds the profile explicitly and keeps owner/mode/link checks", async () => {
@@ -304,6 +396,7 @@ test("the verifier CLI binds the profile explicitly and keeps owner/mode/link ch
     await chmod(temporary, 0o700);
     const stablePath = join(temporary, "public-external-evidence.json");
     const betaPath = join(temporary, "public-beta-external-evidence.json");
+    const nonnotarizedPath = join(temporary, "public-nonnotarized-beta-external-evidence.json");
     const write = async (path, value, mode = 0o600) => {
       await writeFile(path, `${JSON.stringify(value)}\n`, { mode });
       await chmod(path, mode);
@@ -315,6 +408,7 @@ test("the verifier CLI binds the profile explicitly and keeps owner/mode/link ch
 
     await write(stablePath, stableEvidence());
     await write(betaPath, betaEvidence());
+    await write(nonnotarizedPath, nonnotarizedEvidence());
 
     let result = run([stablePath, ...candidate]);
     assert.equal(result.status, 0, result.stderr);
@@ -326,6 +420,44 @@ test("the verifier CLI binds the profile explicitly and keeps owner/mode/link ch
     result = run([betaPath, ...candidate, "--profile", "beta"]);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /^public-beta-external-evidence\.json is complete and candidate-bound across all 10 beta external gates\.\n$/u);
+
+    const nonnotarizedOperands = ["--profile", "nonnotarized-beta", "--dmg-sha256", dmgSHA, "--signer-sha256", signerSHA];
+    result = run([nonnotarizedPath, ...candidate, ...nonnotarizedOperands]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^public-nonnotarized-beta-external-evidence\.json is complete and candidate-bound across all 11 non-notarized beta external gates\.\n$/u);
+    for (const [sourcePath, profileOperands] of [
+      [stablePath, nonnotarizedOperands], [betaPath, nonnotarizedOperands],
+      [nonnotarizedPath, []], [nonnotarizedPath, ["--profile", "stable"]], [nonnotarizedPath, ["--profile", "beta"]]
+    ]) {
+      result = run([sourcePath, ...candidate, ...profileOperands]);
+      assert.notEqual(result.status, 0, "CLI evidence must not cross profiles");
+      assert.match(result.stderr, /belongs to another release profile/u);
+    }
+    for (const operands of [
+      ["--profile", "nonnotarized-beta"],
+      ["--profile", "nonnotarized-beta", "--dmg-sha256", dmgSHA],
+      ["--profile", "nonnotarized-beta", "--signer-sha256", signerSHA, "--dmg-sha256", dmgSHA],
+      ["--profile", "nonnotarized-beta", "--dmg-sha256", dmgSHA, "--signer-sha256", "0".repeat(64)],
+      ["--profile", "nonnotarized-beta", "--dmg-sha256", syntheticDigest("wrong-cli-dmg"), "--signer-sha256", signerSHA],
+      ["--profile", "nonnotarized-beta", "--dmg-sha256", dmgSHA, "--signer-sha256", syntheticDigest("wrong-cli-signer")],
+      [...nonnotarizedOperands, "--signer-sha256", signerSHA],
+      ["--profile", "beta", "--dmg-sha256", dmgSHA, "--signer-sha256", signerSHA],
+      ["--profile", "stable", "--dmg-sha256", dmgSHA, "--signer-sha256", signerSHA]
+    ]) {
+      result = run([nonnotarizedPath, ...candidate, ...operands]);
+      assert.notEqual(result.status, 0, `invalid independent operands: ${JSON.stringify(operands)}`);
+    }
+    await write(nonnotarizedPath, nonnotarizedEvidence(), 0o644);
+    result = run([nonnotarizedPath, ...candidate, ...nonnotarizedOperands]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /not owner-private/u);
+    await write(nonnotarizedPath, nonnotarizedEvidence());
+    const nonnotarizedLink = join(temporary, "nonnotarized-second-link.json");
+    await link(nonnotarizedPath, nonnotarizedLink);
+    result = run([nonnotarizedPath, ...candidate, ...nonnotarizedOperands]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /must not be hard linked/u);
+    await rm(nonnotarizedLink);
 
     result = run([betaPath, ...candidate]);
     assert.notEqual(result.status, 0, "the default invocation must refuse beta evidence");
@@ -394,6 +526,86 @@ test("the verifier CLI binds the profile explicitly and keeps owner/mode/link ch
   }
 });
 
+test("nonnotarized pure helpers require the reviewed certificate bytes and exact unqualified DMG binding", () => {
+  // codesign's optional certificate prefix must be attached to its option;
+  // a separate token is interpreted as another signing target.
+  const prefix = "/synthetic-test-fixture/private space/certificate-";
+  const target = "/synthetic-test-fixture/Fulmar.app";
+  assert.deepEqual(privateSignerInspectionArguments(prefix, target),
+    ["-dvvv", `--extract-certificates=${prefix}`, target]);
+  // These are labelled fixture bytes, not a DER certificate or a real signing
+  // identity. Only pure parsing and digest comparison are exercised here.
+  const certificate = Buffer.from("synthetic-beta-fixture:NOT-A-CERTIFICATE:private-signer");
+  const certificateSHA = createHash("sha256").update(certificate).digest("hex");
+  const details = "Executable=/synthetic-test-fixture/Fulmar.app\nCodeDirectory v=20500 size=120 flags=0x10000(runtime) hashes=1+7 location=embedded\nAuthority=Fulmar Synthetic Fixture\nTeamIdentifier=not set\n";
+  assert.doesNotThrow(() => verifyPrivateSignerDetails(details, certificate, certificateSHA));
+  for (const [label, invalidDetails, invalidCertificate, expectedSHA] of [
+    ["no runtime", details.replace("flags=0x10000(runtime)", "flags=0x0(none)"), certificate, certificateSHA],
+    ["ad-hoc", `${details}Signature=adhoc\n`, certificate, certificateSHA],
+    ["no authority", details.replace("Authority=Fulmar Synthetic Fixture\n", ""), certificate, certificateSHA],
+    ["Developer ID", details.replace("Authority=Fulmar Synthetic Fixture", "Authority=Developer ID Application: Synthetic Fixture"), certificate, certificateSHA],
+    ["not a details string", null, certificate, certificateSHA],
+    ["wrong bytes", details, Buffer.from("synthetic-beta-fixture:different-certificate"), certificateSHA],
+    ["not Buffer", details, certificate.toString("utf8"), certificateSHA],
+    ["empty certificate", details, Buffer.alloc(0), certificateSHA],
+    ["oversize certificate", details, Buffer.alloc(65537), certificateSHA],
+    ["different expected signer", details, certificate, signerSHA],
+    ["placeholder expected signer", details, certificate, "0".repeat(64)],
+    ["uppercase expected signer", details, certificate, certificateSHA.toUpperCase()],
+    ["missing expected signer", details, certificate, undefined]
+  ]) {
+    assert.throws(() => verifyPrivateSignerDetails(invalidDetails, invalidCertificate, expectedSHA), undefined, label);
+  }
+
+  const binding = () => ({
+    schemaVersion: 1, type: "fulmar-nonnotarized-beta-dmg-wrapper", releaseProfile: "nonnotarized-beta", publicBetaQualified: false,
+    version, build,
+    candidate: { file: "Fulmar.app.zip", sha256: candidateSHA },
+    image: { file: "Fulmar.dmg", bytes: 4096, sha256: dmgSHA },
+    verified: ["candidate-zip-digest", "app-identity", "code-signature-integrity", "read-only-image-roundtrip", "app-tree-bytes-types-modes-links"],
+    notProven: ["Developer ID distribution trust", "notarisation", "licensing clearance", "physical installation", "providers", "permission persistence"],
+    reproducibleDMGBytes: false
+  });
+  assert.doesNotThrow(() => verifyNonnotarizedDMGBinding(binding(), candidateSHA, dmgSHA));
+  for (const [label, mutate] of [
+    ["old private type", (value) => { value.type = "fulmar-private-dmg-wrapper"; }],
+    ["old private missing profile", (value) => { delete value.releaseProfile; }],
+    ["wrong profile", (value) => { value.releaseProfile = "beta"; }],
+    ["claimed public qualification", (value) => { value.publicBetaQualified = true; }],
+    ["claimed reproducibility", (value) => { value.reproducibleDMGBytes = true; }],
+    ["wrong schema", (value) => { value.schemaVersion = 2; }],
+    ["extra field", (value) => { value.appleApproved = true; }],
+    ["invalid version", (value) => { value.version = "0.0.1-beta"; }],
+    ["invalid build", (value) => { value.build = "1"; }],
+    ["zero build", (value) => { value.build = 0; }],
+    ["wrong ZIP filename", (value) => { value.candidate.file = "subdir/Fulmar.app.zip"; }],
+    ["wrong ZIP digest", (value) => { value.candidate.sha256 = otherCandidateSHA; }],
+    ["extra candidate field", (value) => { value.candidate.bytes = 4096; }],
+    ["wrong DMG filename", (value) => { value.image.file = "other.dmg"; }],
+    ["wrong DMG digest", (value) => { value.image.sha256 = otherCandidateSHA; }],
+    ["extra image field", (value) => { value.image.qualified = true; }],
+    ["zero image bytes", (value) => { value.image.bytes = 0; }],
+    ["fractional image bytes", (value) => { value.image.bytes = 0.5; }],
+    ["unsafe image bytes", (value) => { value.image.bytes = Number.MAX_SAFE_INTEGER + 1; }],
+    ["missing verification proof", (value) => { value.verified = []; }],
+    ["extra verification claim", (value) => { value.verified.push("notarisation"); }],
+    ["changed verification order", (value) => { value.verified.reverse(); }],
+    ["omitted limitations", (value) => { value.notProven = []; }],
+    ["extra limitation", (value) => { value.notProven.push("synthetic-extra-limitation"); }]
+  ]) {
+    const fixture = binding();
+    mutate(fixture);
+    assert.throws(() => verifyNonnotarizedDMGBinding(fixture, candidateSHA, dmgSHA), undefined, label);
+  }
+  for (const value of [null, [], "binding"]) {
+    assert.throws(() => verifyNonnotarizedDMGBinding(value, candidateSHA, dmgSHA));
+  }
+  for (const invalid of ["0".repeat(64), "", undefined, candidateSHA.toUpperCase()]) {
+    assert.throws(() => verifyNonnotarizedDMGBinding(binding(), invalid, dmgSHA));
+    assert.throws(() => verifyNonnotarizedDMGBinding(binding(), candidateSHA, invalid));
+  }
+});
+
 test("finalize stays non-building and refuses a changed candidate under either profile", async () => {
   // Policy level: evidence bound to candidate A never qualifies candidate B.
   assert.throws(() => verify(betaEvidence(), "beta", { expectedSHA256: otherCandidateSHA }), /stale or belongs to another candidate/u);
@@ -405,16 +617,17 @@ test("finalize stays non-building and refuses a changed candidate under either p
   const operator = await readFile(operatorPath, "utf8");
   assert.match(operator, /RELEASE_PROFILE="stable"/u, "stable is the default profile");
   assert.match(operator, /--profile\)/u);
-  assert.match(operator, /stable\|beta\) RELEASE_PROFILE="\$2"/u);
+  assert.match(operator, /stable\|beta\|nonnotarized-beta\) RELEASE_PROFILE="\$2"/u);
   assert.match(operator, /accepts only the exact release profiles stable or beta/u);
   assert.doesNotMatch(operator, /FULMAR_PUBLIC_RELEASE_PROFILE|RELEASE_PROFILE="\$\{[A-Z_]+:-/u,
     "the profile is never read from the environment");
   assert.match(operator, /PUBLIC_EXTERNAL_EVIDENCE="\$BUILD_DIR\/public-external-evidence\.json"/u);
-  assert.match(operator, /if \[\[ "\$RELEASE_PROFILE" == "beta" \]\]; then\n\s+PUBLIC_EXTERNAL_EVIDENCE="\$BUILD_DIR\/public-beta-external-evidence\.json"\n\s+EVIDENCE_PROFILE_ARGUMENTS=\(--profile beta\)/u);
+  assert.match(operator, /if \[\[ "\$RELEASE_PROFILE" != "stable" \]\]; then\n\s+PUBLIC_EXTERNAL_EVIDENCE="\$BUILD_DIR\/public-beta-external-evidence\.json"\n\s+EVIDENCE_PROFILE_ARGUMENTS=\(--profile "\$RELEASE_PROFILE"\)/u);
   assert.match(operator, /verify-public-external-evidence\.mjs" \\\n\s+"\$PUBLIC_EXTERNAL_EVIDENCE" "\$CANDIDATE_SHA256" "\$CANDIDATE_VERSION" "\$CANDIDATE_BUILD" \\\n\s+"\$\{EVIDENCE_PROFILE_ARGUMENTS\[@\]\}"/u);
-  assert.match(operator, /verify-public-distribution\.sh" \\\n\s+"\$PUBLIC_ASSETS" "\$PUBLIC_EXTERNAL_EVIDENCE" "\$\{EVIDENCE_PROFILE_ARGUMENTS\[@\]\}"/u);
+  assert.match(operator, /DISTRIBUTION_PROFILE_ARGUMENTS=\("\$\{EVIDENCE_PROFILE_ARGUMENTS\[@\]\}"\)/u);
+  assert.match(operator, /verify-public-distribution\.sh" \\\n\s+"\$PUBLIC_ASSETS" "\$PUBLIC_EXTERNAL_EVIDENCE" "\$\{DISTRIBUTION_PROFILE_ARGUMENTS\[@\]\}"/u);
   assert.equal(operator.match(/run_public_build\n/gu)?.length, 1, "exactly one build invocation exists");
-  const freshBlock = operator.slice(operator.indexOf('if [[ "$MODE" == "fresh" ]]; then'), operator.indexOf("verify_public_candidate\n\nCANDIDATE_SHA256"));
+  const freshBlock = operator.slice(operator.lastIndexOf('if [[ "$MODE" == "fresh" ]]; then'), operator.lastIndexOf("\nverify_public_candidate\n"));
   assert.match(freshBlock, /run_static_scan\n\s+run_public_build\n\s+retain_public_candidate\nelse\n\s+print "Finalizing the retained public candidate without rebuilding it\."/u);
   assert.ok(operator.lastIndexOf("verify_public_candidate\n") < operator.lastIndexOf("verify-public-external-evidence.mjs"),
     "the retained candidate is revalidated before evidence is consulted");
@@ -429,7 +642,7 @@ test("finalize stays non-building and refuses a changed candidate under either p
 
   const distribution = await readFile(distributionVerifierPath, "utf8");
   assert.match(distribution, /RELEASE_PROFILE="stable"/u);
-  assert.match(distribution, /stable\|beta\) RELEASE_PROFILE="\$2"/u);
+  assert.match(distribution, /stable\|beta\|nonnotarized-beta\) RELEASE_PROFILE="\$2"/u);
   assert.match(distribution, /DEFAULT_PUBLIC_EXTERNAL_EVIDENCE="\$PROJECT_DIR\/build\/public-external-evidence\.json"/u);
   assert.match(distribution, /DEFAULT_PUBLIC_EXTERNAL_EVIDENCE="\$PROJECT_DIR\/build\/public-beta-external-evidence\.json"/u);
   assert.match(distribution, /verify-public-external-evidence\.mjs" \\\n\s+"\$PUBLIC_EXTERNAL_EVIDENCE" "\$PUBLIC_CANDIDATE_SHA256" "\$PUBLIC_VERSION" "\$PUBLIC_BUILD" \\\n\s+"\$\{EVIDENCE_PROFILE_ARGUMENTS\[@\]\}"/u);
@@ -447,10 +660,10 @@ test("finalize stays non-building and refuses a changed candidate under either p
 
   // The operator validates the beta material operands before any signing or
   // build step and forwards them verbatim to the preparer and the verifier.
-  assert.match(operator, /ASSET_PROFILE_ARGUMENTS=\(--profile beta --material-package "\$MATERIAL_PACKAGE" --material-sha256 "\$MATERIAL_SHA256" --source-commit "\$SOURCE_COMMIT_OPERAND"\)/u);
+  assert.match(operator, /ASSET_PROFILE_ARGUMENTS=\(--profile "\$RELEASE_PROFILE" --material-package "\$MATERIAL_PACKAGE" --material-sha256 "\$MATERIAL_SHA256" --source-commit "\$SOURCE_COMMIT_OPERAND"\)/u);
   assert.match(operator, /MATERIAL_VERIFY_ARGUMENTS=\(--material-sha256 "\$MATERIAL_SHA256" --source-commit "\$SOURCE_COMMIT_OPERAND"\)/u);
   assert.match(operator, /prepare-public-release-assets\.sh" \\\n\s+"\$ARCHIVE" "\$MANIFEST" "\$PUBLIC_ASSETS" \\\n\s+"\$CANDIDATE_SHA256" "\$CANDIDATE_VERSION" "\$CANDIDATE_BUILD" \\\n\s+"\$\{ASSET_PROFILE_ARGUMENTS\[@\]\}"/u);
-  assert.match(operator, /verify-public-distribution\.sh" \\\n\s+"\$PUBLIC_ASSETS" "\$PUBLIC_EXTERNAL_EVIDENCE" "\$\{EVIDENCE_PROFILE_ARGUMENTS\[@\]\}" \\\n\s+"\$\{MATERIAL_VERIFY_ARGUMENTS\[@\]\}"/u);
+  assert.match(operator, /verify-public-distribution\.sh" \\\n\s+"\$PUBLIC_ASSETS" "\$PUBLIC_EXTERNAL_EVIDENCE" "\$\{DISTRIBUTION_PROFILE_ARGUMENTS\[@\]\}" \\\n\s+"\$\{MATERIAL_VERIFY_ARGUMENTS\[@\]\}"/u);
   assert.match(operator, /Material operands are accepted only with --profile beta/u, "stable refuses beta-only operands");
   assert.ok(operator.indexOf("The beta profile requires --material-package") < operator.indexOf("security find-identity"),
     "material operands are validated before the signing identity is even consulted");

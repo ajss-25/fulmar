@@ -8,20 +8,27 @@ clearly labelled privacy boundary. Fulmar is **not affiliated with, endorsed by,
 supported by DeepSeek, OpenAI, Anthropic, Ollama, Alibaba, or the Qwen project.**
 Third-party names identify compatibility only.
 
-The 1.2.36 candidate is build 156. The visible product was renamed from Local Harness;
+The 1.2.37 candidate is build 157. The visible product was renamed from Local Harness;
 stable legacy technical identifiers (bundle ID, Keychain services, Application Support
 folder) remain in place so existing conversations, settings, credentials, schedules,
 backups and rollback continue to resolve. See
 [Brand and release identity](docs/BRAND_AND_RELEASE_IDENTITY.md). Fulmar does not
 promise feature parity with proprietary desktop applications or freedom from defects.
 
-> **MIT-licensed source preview.** The proposed first public tag is
-> `v1.2.36-preview.1`. Build and run locally using the [source instructions](#build-from-source).
+> **MIT-licensed source preview.** The next proposed manual-download beta tag is
+> `v1.2.37-beta.1`; it is not published or qualified yet. Build and run locally using the [source instructions](#build-from-source).
 > There is no supported DMG or app download, Developer ID signature, or Apple
 > notarisation. A usable local build uses a persistent self-signed identity; see
 > [Preview binary and Gatekeeper](docs/PREVIEW_BINARY_GATEKEEPER.md).
 > Exact-source hosted checks and the separate binary-release requirements are tracked
 > in [public-release readiness](docs/PUBLIC_RELEASE_READINESS.md).
+
+The planned direct-download beta uses the explicit **non-notarized** profile:
+no App Store or Apple Developer ID is claimed. It keeps a persistent private
+signing identity, disables automatic updates, and is clean-install-only until
+separate migration evidence exists. See the [beta candidate notes](docs/RELEASE_NOTES_v1.2.37-beta.1.md)
+and [distribution contract](docs/PUBLIC_BETA_RELEASE_CONTRACT.md). A private DMG
+or successful local test is not a public-download qualification.
 
 > **Upstream safety boundary:** [DeepSeek describes Harness](https://github.com/deepseek-ai/deepseek-harness/blob/main/SAFETY.md) as experimental
 > developer-preview software that has not undergone a security audit. Fulmar's
@@ -197,7 +204,7 @@ make runtime-inventory-verify
 make dependency-audit                 # npm first; eligible outages use credential-free OSV
 make static-security-scan
 FULMAR_SWIFT_BUILD_JOBS=2 /usr/bin/caffeinate -dimsu zsh scripts/run-swift-tests.sh   # 1,455 functions + 12 attestation scenarios
-zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # source profile: 981 tests, 934 pass, 47 reviewed skips
+zsh scripts/run-js-tests.sh --test Tests/JS/*.mjs      # source profile: 1006 tests, 959 pass, 47 reviewed skips
 make private-release                # persistent local signing identity; no Developer ID or notarisation
 ./scripts/run-with-watchdog.sh --seconds 1800 --max-rss-bytes 8589934592 --rss-grace-seconds 15 \
   --emergency-rss-bytes 17179869184 --label "Fulmar frozen-candidate check" -- /usr/bin/make frozen-candidate-check
@@ -218,7 +225,7 @@ build**: the packaged credential services deliberately reject its mismatched
 designated requirements. Do not disable those checks.
 
 Never run `npm ci` directly against `VendorRuntime/package-lock.json`: the bootstrap
-derives the install-only lock, applies the fourteen hash-bound runtime patches and
+derives the install-only lock, applies the fifteen hash-bound runtime patches and
 verifies the complete `VendorRuntime.inventory.json`. The Swift gate builds with
 warnings as errors and takes minutes on a warm cache and considerably longer cold; run
 it and the JavaScript gate sequentially, not concurrently. The full gate list, expected

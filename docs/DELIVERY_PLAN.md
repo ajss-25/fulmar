@@ -1,4 +1,4 @@
-# Delivery record — Fulmar 1.2.36 build 156
+# Delivery record — Fulmar 1.2.37 build 157
 
 ## Objective
 
@@ -7,9 +7,15 @@ makes local Qwen a first-class private route, supports deliberately selected
 DeepSeek/OpenAI/Anthropic/compatible providers, and adds native history, trust,
 recovery, performance, external-link, download, schedule, and export controls.
 
-The current delivery target is an evidence-backed, explicitly labelled MIT source
-preview. It is not a claim of proprietary-app parity, official affiliation, a supported
-downloadable binary, public notarization, or zero defects.
+The current delivery target is updated MIT source plus a separately qualified,
+explicitly non-notarized manual-download beta. Neither source availability nor
+private acceptance claims a qualified public download, proprietary-app parity,
+official affiliation, Apple notarization, or zero defects. The non-notarized beta
+keeps the updater disabled and requires the existing binary-material and recipient
+gates in PUBLIC_BETA_RELEASE_CONTRACT.md; it does not require Apple enrolment.
+
+The milestone table below retains the build-156 planning baseline. Build 157 has
+its own qualification cycle; historical status is not a pass for its final bytes.
 
 ## Milestones
 

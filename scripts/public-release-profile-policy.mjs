@@ -1,6 +1,6 @@
 // Pure release-profile policy for public external evidence.
 //
-// Two explicit, separately identifiable profiles exist:
+// Three explicit, separately identifiable profiles exist:
 //
 // - `stable`: the existing schema v1 record with exactly eight mandatory passed
 //   gates, including `twoVersionNotarizedUpdateRollback`. Its shape, names and
@@ -11,6 +11,9 @@
 //   replaced by honest manual install/reinstall/recovery evidence plus proof that
 //   the in-app updater is disabled in the exact candidate. Manual replacement is
 //   never treated as proof of automatic recovery.
+// - `nonnotarized-beta`: an explicit persistent-private-certificate, manual
+//   download profile. No Apple trust is claimed; exact DMG/signer identities and
+//   real recipient acceptance are required in addition to the beta gates.
 //
 // Cross-profile evidence, unknown or malformed profiles, stale candidates and
 // unbounded records fail closed. This module performs no I/O; callers attest the
@@ -22,8 +25,9 @@ const PLACEHOLDER_DIGEST = "0".repeat(64);
 
 const STABLE_EVIDENCE_TYPE = "fulmar-public-external-evidence";
 const BETA_EVIDENCE_TYPE = "fulmar-public-beta-external-evidence";
+const NONNOTARIZED_BETA_EVIDENCE_TYPE = "fulmar-public-nonnotarized-beta-external-evidence";
 
-// Gates shared by both profiles: Apple trust/clean installation on both OS bounds,
+// Gates shared by all profiles: clean installation on both OS bounds,
 // history scanning, repository controls, legal/trademark, permissions and
 // support/privacy/export review are never relaxed for a beta.
 const SHARED_GATES = Object.freeze([
@@ -53,6 +57,14 @@ export const BETA_REQUIRED_GATES = Object.freeze([
   "manualInstallReinstallRecovery",
   "inAppUpdaterDisabledInCandidate",
   "thirdPartyBinaryLicenseMaterials"
+]);
+
+// This third profile does not claim Apple trust. The extra recipient gate must
+// record the browser-downloaded DMG's real quarantine/Open Anyway behaviour,
+// helper/XPC/Keychain authorisation and relaunch, not only a copied-app launch.
+export const NONNOTARIZED_BETA_REQUIRED_GATES = Object.freeze([
+  ...BETA_REQUIRED_GATES,
+  "nonnotarizedRecipientAcceptance"
 ]);
 
 // Retained-state migration is unqualified today. A beta must either declare the
@@ -88,6 +100,17 @@ export const PUBLIC_RELEASE_PROFILES = Object.freeze({
     ]),
     requiredGates: BETA_REQUIRED_GATES,
     successNoun: "beta external gates"
+  }),
+  "nonnotarized-beta": Object.freeze({
+    name: "nonnotarized-beta",
+    evidenceType: NONNOTARIZED_BETA_EVIDENCE_TYPE,
+    evidenceFileName: "public-nonnotarized-beta-external-evidence.json",
+    topLevelKeys: Object.freeze([
+      "schemaVersion", "evidenceType", "releaseProfile", "version", "build", "candidate",
+      "distribution", "allRequiredGatesPassed", "gates"
+    ]),
+    requiredGates: NONNOTARIZED_BETA_REQUIRED_GATES,
+    successNoun: "non-notarized beta external gates"
   })
 });
 
@@ -138,6 +161,16 @@ function otherProfileClaimed(value, profile) {
 }
 
 function requiredGatesFor(profile, value) {
+  if (profile.name === "nonnotarized-beta") {
+    if (!exactKeys(value.distribution, ["channel", "inAppUpdater", "retainedState", "appleNotarization"])
+        || value.distribution.channel !== BETA_DISTRIBUTION_CHANNEL
+        || value.distribution.inAppUpdater !== BETA_IN_APP_UPDATER_STATE
+        || value.distribution.retainedState !== BETA_RETAINED_STATE_CLEAN_INSTALL_ONLY
+        || value.distribution.appleNotarization !== "not-notarized") {
+      throw new Error("non-notarized beta evidence must declare manual-install, updater-disabled, clean-install-only and not-notarized");
+    }
+    return profile.requiredGates;
+  }
   if (profile.name !== "beta") return profile.requiredGates;
   const distribution = value.distribution;
   if (!exactKeys(distribution, ["channel", "inAppUpdater", "retainedState"])
@@ -161,6 +194,12 @@ export function verifyPublicExternalEvidenceBytes(bytes, options) {
   const profile = resolvePublicReleaseProfile(options?.profile);
   validateCandidateIdentity(options ?? {});
   const { expectedSHA256, expectedVersion, expectedBuild } = options;
+  const nonnotarized = profile.name === "nonnotarized-beta";
+  if (nonnotarized && (![options.expectedDMGSHA256, options.expectedSignerSHA256].every(
+    (digest) => SHA256_PATTERN.test(digest ?? "") && digest !== PLACEHOLDER_DIGEST
+  ))) {
+    throw new Error("non-notarized beta verification requires independent expected DMG and signer certificate SHA-256 operands");
+  }
   let value;
   try {
     value = JSON.parse(Buffer.from(bytes).toString("utf8"));
@@ -172,8 +211,9 @@ export function verifyPublicExternalEvidenceBytes(bytes, options) {
   }
   if (!exactKeys(value, profile.topLevelKeys) || value.schemaVersion !== 1
       || value.evidenceType !== profile.evidenceType
-      || value.allRequiredGatesPassed !== true || !exactKeys(value.candidate, ["sha256"])
-      || (profile.name === "beta" && value.releaseProfile !== "beta")) {
+      || value.allRequiredGatesPassed !== true
+      || !exactKeys(value.candidate, nonnotarized ? ["sha256", "dmgSHA256", "signerCertificateSHA256"] : ["sha256"])
+      || (profile.name !== "stable" && value.releaseProfile !== profile.name)) {
     throw new Error("public external evidence is incomplete or belongs to another candidate");
   }
   const requiredGates = requiredGatesFor(profile, value);
@@ -181,7 +221,9 @@ export function verifyPublicExternalEvidenceBytes(bytes, options) {
     throw new Error("public external evidence is incomplete or belongs to another candidate");
   }
   if (value.version !== expectedVersion || value.build !== expectedBuild
-      || value.candidate.sha256 !== expectedSHA256) {
+      || value.candidate.sha256 !== expectedSHA256
+      || (nonnotarized && (value.candidate.dmgSHA256 !== options.expectedDMGSHA256
+        || value.candidate.signerCertificateSHA256 !== options.expectedSignerSHA256))) {
     throw new Error("public external evidence is stale or belongs to another candidate");
   }
   for (const gate of requiredGates) {
@@ -193,7 +235,7 @@ export function verifyPublicExternalEvidenceBytes(bytes, options) {
     profile: profile.name,
     gateCount: requiredGates.length,
     gates: Object.freeze([...requiredGates]),
-    retainedState: profile.name === "beta" ? value.distribution.retainedState : null,
+    retainedState: profile.name !== "stable" ? value.distribution.retainedState : null,
     summary: `complete and candidate-bound across all ${requiredGates.length} ${profile.successNoun}.`
   });
 }

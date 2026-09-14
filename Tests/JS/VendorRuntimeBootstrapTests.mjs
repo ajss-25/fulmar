@@ -11,6 +11,8 @@ import {
   patchDSHProfileReadOnlyBoot,
   patchDeepSeekRuntime,
   patchPiAIAdapterRuntime,
+  patchPiAIContextBudgetErrors,
+  patchPiAIContextOutputBudget,
   patchPiAIAnthropicClientNoAuth,
   patchPiAIConfigTypes,
   patchPiAIReadmeChinese,
@@ -74,7 +76,7 @@ test("review manifest binds the lock, exact upstream packages, and every install
   const review = JSON.parse(await readFile(join(project, "Config", "VendorRuntimePatches.json"), "utf8"));
   assert.equal(sha256(await readFile(join(project, "VendorRuntime", "package.json"))), review.runtimePackageSHA256);
   assert.equal(sha256(await readFile(join(project, "VendorRuntime", "package-lock.json"))), review.reviewedLockSHA256);
-  assert.equal(review.patches.length, 14);
+  assert.equal(review.patches.length, 15);
   assert.deepEqual(
     review.upstreamTarballs.map(({ package: name, resolved }) => [name, new URL(resolved).origin]),
     [
@@ -250,11 +252,15 @@ test("every pi-ai no-auth transform accepts its exact upstream anchors and rejec
     `function routeAuth(spec, catalog) {
 \tif (catalog === void 0) return { apiKey: harnessApiKeyAuth(spec.displayName) };
 \tif (catalog.auth.apiKey !== void 0 || !spec.namesCredential) return catalog.auth;`,
-    "\t\t\t\tnamesCredential: apiKeyEnv !== void 0\n\t\t\t})\n"
+    "\t\t\t\tnamesCredential: apiKeyEnv !== void 0\n\t\t\t})\n",
+    '\t\t\t\tif (options.signal?.aborted) throw new LlmError("pi-ai request aborted by caller", "ABORTED", { cause: error });\n\t\t\t\tthrow error;',
+    'function mapStopReason(message, contextWindow) {\n'
   ].join("\n// independent exact upstream anchor\n"));
   const adapterPatched = patchPiAIAdapterRuntime(adapterUpstream).toString("utf8");
   assert.match(adapterPatched, /unauthenticated: unauthenticated === true/u);
   assert.match(adapterPatched, /if \(spec\.unauthenticated\) return/u);
+  assert.match(adapterPatched, /FULMAR_CONTEXT_BUDGET_EXCEEDED/u);
+  assert.match(adapterPatched, /CONTEXT_WINDOW_EXCEEDED_CODE, \{ cause: error \}/u);
   assert.throws(
     () => patchPiAIAdapterRuntime(Buffer.concat([adapterUpstream, adapterUpstream])),
     /patch anchor was absent or ambiguous/u
@@ -305,6 +311,29 @@ test("every pi-ai no-auth transform accepts its exact upstream anchors and rejec
     () => patchPiAIReadmeChinese(Buffer.concat([chineseUpstream, chineseUpstream])),
     /patch anchor was absent or ambiguous/u
   );
+});
+
+test("context-budget materialization is exact, checksum-bound and rejects missing or repeated anchors", async () => {
+  const upstream = Buffer.from(`export function clampMaxTokensToContext(model, context, maxTokens) {
+    if (model.contextWindow <= 0)
+        return Math.max(MIN_MAX_TOKENS, maxTokens);
+    const available = model.contextWindow - estimateContextTokens(context).tokens - CONTEXT_SAFETY_TOKENS;
+    return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, available));
+}`);
+  const patched = patchPiAIContextOutputBudget(upstream);
+  assert.match(patched.toString("utf8"), /Math\.min\(maxTokens, model\.maxTokens\)/u);
+  assert.match(patched.toString("utf8"), /FULMAR_CONTEXT_BUDGET_EXCEEDED/u);
+  assert.throws(() => patchPiAIContextOutputBudget(Buffer.concat([upstream, upstream])), /absent or ambiguous/u);
+  assert.throws(() => patchPiAIContextOutputBudget(patched), /absent or ambiguous/u);
+  assert.throws(() => patchPiAIContextOutputBudget(Buffer.from(upstream.toString("utf8").replace("<= 0", "< 0"))), /absent or ambiguous/u);
+  const errorAnchor = Buffer.from('\t\t\t\tif (options.signal?.aborted) throw new LlmError("pi-ai request aborted by caller", "ABORTED", { cause: error });\n\t\t\t\tthrow error;');
+  assert.throws(() => patchPiAIContextBudgetErrors(Buffer.concat([errorAnchor, errorAnchor])), /absent or ambiguous/u);
+  assert.throws(() => patchPiAIContextBudgetErrors(Buffer.from("throw error;")), /absent or ambiguous/u);
+  const review = JSON.parse(await readFile(join(project, "Config", "VendorRuntimePatches.json"), "utf8"));
+  const patch = review.patches.find(({ id }) => id === "pi-ai-context-output-budget");
+  assert.equal(patch.beforeSHA256, "74dfde37adbd00a6af1fd707c1c5c876577793b078da9fbbd6d40bb75bfb4749");
+  const installed = await readFile(join(project, "VendorRuntime", "node_modules", patch.path));
+  assert.equal(sha256(installed), patch.afterSHA256);
 });
 
 test("DeepSeek streamed tool identity patch is exact and fails closed on byte, hash, or anchor drift", async () => {

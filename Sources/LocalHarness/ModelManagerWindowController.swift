@@ -295,7 +295,7 @@ final class ModelManagerWindowController: NSWindowController, NSTableViewDataSou
     private func fetchCatalogue(generation: UInt64) {
         fetchModels { [weak self] modelsResult in
             guard let self else { return }
-            self.performOnMain {
+            self.performOnMain { [self] in
                 guard self.isCurrentOperation(.refreshingModels, generation: generation) else { return }
                 switch modelsResult {
                 case .failure:

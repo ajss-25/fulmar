@@ -9,12 +9,13 @@ set -euo pipefail
 # Neither may come from the package's own sidecar, checksum list or binding, and
 # nothing is read from the environment.
 USAGE="Usage: verify-public-distribution.sh [/absolute/public-release-assets] [/absolute/public-external-evidence.json] [--profile stable | --profile beta --material-sha256 <sha256> --source-commit <commit>]"
+USAGE="$USAGE; --profile nonnotarized-beta uses the beta material operands plus --signer-sha256 <sha256> --dmg-sha256 <sha256>"
 # Syntax checks use shell built-ins only and precede all watchdog, environment
 # and lock setup. Retain the untouched argv because both guarded re-execution
 # paths must parse the same operands again after this loop consumes "$@".
 typeset -a ORIGINAL_ARGUMENTS
 ORIGINAL_ARGUMENTS=("$@")
-(( $# <= 8 )) || {
+(( $# <= 12 )) || {
   print -u2 "$USAGE"
   exit 64
 }
@@ -28,6 +29,10 @@ MATERIAL_SHA256=""
 MATERIAL_SHA256_SELECTED=0
 SOURCE_COMMIT_OPERAND=""
 SOURCE_COMMIT_SELECTED=0
+SIGNER_SHA256=""
+SIGNER_SELECTED=0
+EXPECTED_DMG_SHA256=""
+DMG_SELECTED=0
 while (( $# > 0 )); do
   case "$1" in
     --profile)
@@ -36,9 +41,9 @@ while (( $# > 0 )); do
         exit 64
       }
       case "$2" in
-        stable|beta) RELEASE_PROFILE="$2" ;;
+        stable|beta|nonnotarized-beta) RELEASE_PROFILE="$2" ;;
         *)
-          print -u2 "verify-public-distribution.sh accepts only the exact release profiles stable or beta."
+          print -u2 "verify-public-distribution.sh accepts only the exact release profiles stable or beta or nonnotarized-beta."
           exit 64
           ;;
       esac
@@ -63,6 +68,17 @@ while (( $# > 0 )); do
       SOURCE_COMMIT_SELECTED=1
       shift 2
       ;;
+    --signer-sha256|--dmg-sha256)
+      (( $# >= 2 )) || { print -u2 "$USAGE"; exit 64; }
+      if [[ "$1" == "--signer-sha256" ]]; then
+        (( SIGNER_SELECTED == 0 )) || { print -u2 "$USAGE"; exit 64; }
+        SIGNER_SHA256="$2"; SIGNER_SELECTED=1
+      else
+        (( DMG_SELECTED == 0 )) || { print -u2 "$USAGE"; exit 64; }
+        EXPECTED_DMG_SHA256="$2"; DMG_SELECTED=1
+      fi
+      shift 2
+      ;;
     --*)
       print -u2 "$USAGE"
       exit 64
@@ -73,11 +89,21 @@ while (( $# > 0 )); do
       ;;
   esac
 done
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  [[ "${#SIGNER_SHA256}" == 64 && "$SIGNER_SHA256" != *[^a-f0-9]* \
+     && "${#EXPECTED_DMG_SHA256}" == 64 && "$EXPECTED_DMG_SHA256" != *[^a-f0-9]* ]] || {
+    print -u2 "nonnotarized-beta requires independent --signer-sha256 and --dmg-sha256 operands."
+    exit 64
+  }
+elif (( SIGNER_SELECTED != 0 || DMG_SELECTED != 0 )); then
+  print -u2 "Signer and DMG operands are accepted only with --profile nonnotarized-beta."
+  exit 64
+fi
 (( ${#POSITIONAL_OPERANDS[@]} <= 2 )) || {
   print -u2 "$USAGE"
   exit 64
 }
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   (( MATERIAL_SHA256_SELECTED == 1 && SOURCE_COMMIT_SELECTED == 1 )) || {
     print -u2 "The beta profile requires --material-sha256 and --source-commit: the expected material archive SHA-256 from the reviewed release record and this checkout's exact source commit."
     exit 64
@@ -89,7 +115,7 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
   }
 else
   (( MATERIAL_SHA256_SELECTED == 0 && SOURCE_COMMIT_SELECTED == 0 )) || {
-    print -u2 "Material operands are accepted only with --profile beta; the stable package carries no material assets."
+    print -u2 "Material operands are accepted only with --profile beta or --profile nonnotarized-beta; the stable package carries no material assets."
     exit 64
   }
 fi
@@ -117,9 +143,14 @@ source "$PROJECT_DIR/scripts/release-lock.zsh"
 RELEASE_IDENTITY="$PROJECT_DIR/Config/ReleaseIdentity.json"
 PACKAGE="${POSITIONAL_OPERANDS[1]:-$PROJECT_DIR/build/public-release-assets}"
 DEFAULT_PUBLIC_EXTERNAL_EVIDENCE="$PROJECT_DIR/build/public-external-evidence.json"
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   DEFAULT_PUBLIC_EXTERNAL_EVIDENCE="$PROJECT_DIR/build/public-beta-external-evidence.json"
-  EVIDENCE_PROFILE_ARGUMENTS=(--profile beta)
+  EVIDENCE_PROFILE_ARGUMENTS=(--profile "$RELEASE_PROFILE")
+fi
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  DEFAULT_PUBLIC_EXTERNAL_EVIDENCE="$PROJECT_DIR/build/public-nonnotarized-beta-external-evidence.json"
+  PACKAGE="${POSITIONAL_OPERANDS[1]:-$PROJECT_DIR/build/public-nonnotarized-beta-assets}"
+  EVIDENCE_PROFILE_ARGUMENTS+=(--dmg-sha256 "$EXPECTED_DMG_SHA256" --signer-sha256 "$SIGNER_SHA256")
 fi
 PUBLIC_EXTERNAL_EVIDENCE="${POSITIONAL_OPERANDS[2]:-$DEFAULT_PUBLIC_EXTERNAL_EVIDENCE}"
 umask 077
@@ -218,11 +249,11 @@ verify_source_commit_operand() {
     return 1
   }
 }
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   # One policy name per line; plain read loops keep this file parseable by the
   # reviewed static scanner (zsh expansion flags are not).
-  policy_names="$("$NODE" "$ASSET_POLICY" names beta "$PROVENANCE_RECORD")" || exit 1
-  policy_checksum_names="$("$NODE" "$ASSET_POLICY" checksum-names beta "$PROVENANCE_RECORD")" || exit 1
+  policy_names="$("$NODE" "$ASSET_POLICY" names "$RELEASE_PROFILE" "$PROVENANCE_RECORD")" || exit 1
+  policy_checksum_names="$("$NODE" "$ASSET_POLICY" checksum-names "$RELEASE_PROFILE" "$PROVENANCE_RECORD")" || exit 1
   PACKAGE_ASSET_NAMES=()
   while IFS= read -r policy_name; do PACKAGE_ASSET_NAMES+=("$policy_name"); done <<< "$policy_names"
   CHECKSUM_ENTRY_NAMES=()
@@ -230,18 +261,28 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
   # The material assets are exactly the beta names that are not stable names.
   MATERIAL_ASSET_NAMES=()
   for policy_name in "${PACKAGE_ASSET_NAMES[@]}"; do
+    [[ "$policy_name" == "Fulmar.dmg" || "$policy_name" == "dmg-binding.json" ]] && continue
     policy_name_is_stable=0
     for stable_name in "${STABLE_PACKAGE_ASSET_NAMES[@]}"; do
       [[ "$policy_name" == "$stable_name" ]] && policy_name_is_stable=1
     done
     (( policy_name_is_stable )) || MATERIAL_ASSET_NAMES+=("$policy_name")
   done
+  if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+    (( ${#PACKAGE_ASSET_NAMES[@]} == 14 && ${#CHECKSUM_ENTRY_NAMES[@]} == 13 && ${#MATERIAL_ASSET_NAMES[@]} == 3 )) || {
+      echo "The non-notarized beta policy must yield fourteen assets, thirteen checksum entries and three material assets." >&2; exit 1
+    }
+    [[ "$(/usr/bin/find "$PACKAGE" -mindepth 1 -maxdepth 1 | /usr/bin/wc -l | /usr/bin/tr -d ' ')" == 14 ]] || {
+      echo "Non-notarized beta package must contain exactly fourteen reviewed assets." >&2; exit 1
+    }
+  else
   (( ${#PACKAGE_ASSET_NAMES[@]} == 12 && ${#CHECKSUM_ENTRY_NAMES[@]} == 11 && ${#MATERIAL_ASSET_NAMES[@]} == 3 )) || {
     echo "The beta asset policy did not yield exactly twelve assets, eleven checksum entries and three material assets." >&2; exit 1
   }
   [[ "$(/usr/bin/find "$PACKAGE" -mindepth 1 -maxdepth 1 | /usr/bin/wc -l | /usr/bin/tr -d ' ')" == 12 ]] || {
     echo "Public beta package must contain exactly the twelve reviewed beta release assets (the nine stable assets plus the verified material archive, its sidecar and its binding)." >&2; exit 1
   }
+  fi
   for name in "${PACKAGE_ASSET_NAMES[@]}"; do
     [[ -f "$PACKAGE/$name" && ! -L "$PACKAGE/$name" \
        && "$(/usr/bin/stat -f %l "$PACKAGE/$name")" == 1 ]] || {
@@ -272,7 +313,11 @@ expected_checksum_names="$(printf '%s\n' "${CHECKSUM_ENTRY_NAMES[@]}")"
 "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/LICENSE" "$SNAPSHOT/LICENSE" 1048576 >/dev/null
 "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/LocalHarness.sbom.cdx.json" "$SNAPSHOT/LocalHarness.sbom.cdx.json" 67108864 >/dev/null
 "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/THIRD_PARTY_NOTICES.md" "$SNAPSHOT/THIRD_PARTY_NOTICES.md" 16777216 >/dev/null
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/Fulmar.dmg" "$SNAPSHOT/Fulmar.dmg" 8589934592 >/dev/null
+  "$NODE" "$PROJECT_DIR/scripts/snapshot-regular-file.mjs" "$PACKAGE/dmg-binding.json" "$SNAPSHOT/dmg-binding.json" 65536 >/dev/null
+fi
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   for name in "${MATERIAL_ASSET_NAMES[@]}"; do
     case "$name" in
       *.tar) material_bound=2147483648 ;;
@@ -286,7 +331,7 @@ if [[ "$RELEASE_PROFILE" == "beta" ]]; then
 fi
 (cd "$SNAPSHOT" && /usr/bin/shasum -a 256 -c Fulmar.app.zip.sha256)
 (cd "$SNAPSHOT" && /usr/bin/shasum -a 256 -c SHA256SUMS.txt)
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" != "stable" ]]; then
   # Beta material binding. The expected digest and source commit are the
   # operator's operands, never the package's own sidecar, checksum list or
   # binding. The checkout must be exactly the named revision; then the existing
@@ -311,8 +356,10 @@ fi
 "$NODE" "$PROJECT_DIR/scripts/verify-dependency-audit.mjs" "$AUDIT_SUMMARY" "$PACKAGE_LOCK"
 "$NODE" "$PROJECT_DIR/scripts/verify-retained-release-evidence.mjs" \
   "$RELEASE_IDENTITY" "$PROJECT_DIR/build/release-manifest.json" "$PROJECT_DIR/build"
-"$NODE" "$PROJECT_DIR/scripts/verify-notarization-evidence.mjs" \
-  "$NOTARY_SUBMISSION_EVIDENCE" "$NOTARY_LOG_EVIDENCE"
+if [[ "$RELEASE_PROFILE" != "nonnotarized-beta" ]]; then
+  "$NODE" "$PROJECT_DIR/scripts/verify-notarization-evidence.mjs" \
+    "$NOTARY_SUBMISSION_EVIDENCE" "$NOTARY_LOG_EVIDENCE"
+fi
 /usr/bin/cmp -s "$PROJECT_DIR/LICENSE" "$SNAPSHOT/LICENSE" || {
   echo "Public package LICENSE is not the exact owner-selected source file." >&2; exit 1
 }
@@ -381,6 +428,9 @@ LOCAL="$RUNTIME/dsh/node_modules/@local-harness"
 
 details="$(/usr/bin/codesign -dvvv "$APP" 2>&1)"
 team="$(print -r -- "$details" | /usr/bin/sed -n 's/^TeamIdentifier=//p')"
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  "$NODE" "$PROJECT_DIR/scripts/nonnotarized-beta-policy.mjs" verify-signature "$APP" "$SIGNER_SHA256"
+else
 [[ "$details" == *"Authority=Developer ID Application:"* \
    && "$details" == *"Timestamp="* \
    && "$details" == *"flags="*"runtime"* ]] \
@@ -389,6 +439,7 @@ team="$(print -r -- "$details" | /usr/bin/sed -n 's/^TeamIdentifier=//p')"
   exit 1
 }
 /usr/bin/codesign --verify --deep --strict --verbose=4 "$APP"
+fi
 
 extract_entitlements() {
   local target="$1"
@@ -486,6 +537,10 @@ done < "$RUNTIME_SIGNABLE_PATHS"
 target_index=0
 for target in "${signed_targets[@]}"; do
   target_index=$((target_index + 1))
+  if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+    "$NODE" "$PROJECT_DIR/scripts/nonnotarized-beta-policy.mjs" verify-signature "$target" "$SIGNER_SHA256"
+    target_details="$(/usr/bin/codesign -dvvv "$target" 2>&1)"
+  else
   /usr/bin/codesign --verify --strict --verbose=4 "$target"
   target_details="$(/usr/bin/codesign -dvvv "$target" 2>&1)"
   [[ "$target_details" == *"TeamIdentifier=$team"* \
@@ -493,6 +548,7 @@ for target in "${signed_targets[@]}"; do
      && "$target_details" == *"flags="*"runtime"* \
      && "$target_details" == *"Timestamp="* \
      && "$target_details" != *"Signature=adhoc"* ]] || exit 1
+  fi
   if [[ "$target" == "$APP" || "$target" == "$APP/Contents/MacOS/LocalHarness" ]]; then
     [[ "$target_details" == *"Identifier=$PRODUCT_BUNDLE_ID"* ]] || exit 1
     assert_exact_entitlements "$target" "$PROJECT_DIR/Resources/LocalHarness.entitlements" "target-$target_index"
@@ -530,8 +586,10 @@ BROKER_DR="$(/usr/bin/codesign -d -r- "$BROKER_XPC" 2>&1 \
   echo "Credential services and helper do not share the reviewed Keychain requirement." >&2
   exit 1
 }
-/usr/bin/xcrun stapler validate "$APP"
-/usr/sbin/spctl --assess --type execute --verbose=4 "$APP"
+if [[ "$RELEASE_PROFILE" != "nonnotarized-beta" ]]; then
+  /usr/bin/xcrun stapler validate "$APP"
+  /usr/sbin/spctl --assess --type execute --verbose=4 "$APP"
+fi
 "$NODE" "$SOURCE_INPUT_TOOL" verify "$PROJECT_DIR" "$SOURCE_INPUT_INVENTORY"
 "$NODE" "$STATIC_SECURITY_VERIFIER" \
   "$STATIC_SECURITY_SUMMARY" "$SOURCE_INPUT_INVENTORY" "$PROJECT_DIR/Config/SemgrepRules.json"
@@ -545,10 +603,19 @@ BROKER_DR="$(/usr/bin/codesign -d -r- "$BROKER_XPC" 2>&1 \
 PUBLIC_CANDIDATE_SHA256="$(/usr/bin/plutil -extract sha256 raw -o - "$SNAPSHOT/release-manifest.json")"
 PUBLIC_VERSION="$(/usr/bin/plutil -extract version raw -o - "$SNAPSHOT/release-manifest.json")"
 PUBLIC_BUILD="$(/usr/bin/plutil -extract build raw -o - "$SNAPSHOT/release-manifest.json")"
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  "$NODE" "$PROJECT_DIR/scripts/prepare-beta-dmg.mjs" verify \
+    "$SNAPSHOT/Fulmar.dmg" "$EXPECTED_DMG_SHA256" "$SNAPSHOT/Fulmar.app.zip" "$PUBLIC_CANDIDATE_SHA256" "$TEMP_ROOT" --profile nonnotarized-beta
+  "$NODE" "$PROJECT_DIR/scripts/nonnotarized-beta-policy.mjs" verify-dmg-binding \
+    "$SNAPSHOT/dmg-binding.json" "$PUBLIC_CANDIDATE_SHA256" "$EXPECTED_DMG_SHA256" \
+    "$PUBLIC_VERSION" "$PUBLIC_BUILD" "$(/usr/bin/stat -f %z "$SNAPSHOT/Fulmar.dmg")"
+fi
 "$NODE" "$PROJECT_DIR/scripts/verify-public-external-evidence.mjs" \
   "$PUBLIC_EXTERNAL_EVIDENCE" "$PUBLIC_CANDIDATE_SHA256" "$PUBLIC_VERSION" "$PUBLIC_BUILD" \
   "${EVIDENCE_PROFILE_ARGUMENTS[@]}"
-if [[ "$RELEASE_PROFILE" == "beta" ]]; then
+if [[ "$RELEASE_PROFILE" == "nonnotarized-beta" ]]; then
+  echo "NON-NOTARIZED BETA distribution verification passed for ZIP $PUBLIC_CANDIDATE_SHA256, DMG $EXPECTED_DMG_SHA256, signer certificate $SIGNER_SHA256 and material archive $MATERIAL_SHA256. Manual install, clean-install-only, updater disabled; no Apple trust or stable qualification claimed. No publication performed."
+elif [[ "$RELEASE_PROFILE" == "beta" ]]; then
   # The app candidate digest and the material archive digest identify different
   # artefacts; an operator who supplied the ZIP digest as the material digest is
   # refused above by verify-archive, and never accepted here by coincidence.

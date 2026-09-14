@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "root": "VendorRuntime",
   "entryCount": 38504,
-  "totalFileBytes": "395128248",
+  "totalFileBytes": "395130487",
   "entries": [
     {
       "path": "node-v22.23.1-darwin-arm64",
@@ -74585,8 +74585,8 @@
       "path": "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js",
       "type": "file",
       "mode": "0644",
-      "size": 106653,
-      "sha256": "47053519f9a8170e3945caa17cfb4ddcaf7b10f3851037026a265f607533cdec"
+      "size": 107512,
+      "sha256": "91cb35e23ac3840f73fa241ea085d2c9e222e0f8f60f85b644426a827a87321a"
     },
     {
       "path": "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/invariant.js",
@@ -86413,8 +86413,8 @@
       "path": "node_modules/@earendil-works/pi-ai/dist/api/simple-options.js",
       "type": "file",
       "mode": "0644",
-      "size": 2214,
-      "sha256": "74dfde37adbd00a6af1fd707c1c5c876577793b078da9fbbd6d40bb75bfb4749"
+      "size": 3594,
+      "sha256": "9544625d863a61631f6fa97bd84f9c227ee6b85be3f22de94ccf45222a2ec50a"
     },
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/simple-options.js.map",

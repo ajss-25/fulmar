@@ -33,9 +33,9 @@ enum OllamaVersionCompatibilityError: Error, Equatable, LocalizedError, Sendable
         case .malformedResponse:
             return "Ollama returned an invalid version response. Update or reinstall the official Ollama app, then restart Fulmar."
         case .unsupported(let actual, let minimum):
-            return "Ollama \(actual) is too old for Fulmar's local agent route. Update the official Ollama app to version \(minimum) or later, then restart Fulmar."
+            return "Ollama \(actual) is too old for Fulmar's local agent route. Update the official Ollama app to version \(minimum) or a later patch within \(OllamaVersionCompatibilityPolicy.qualifiedSeries), then restart Fulmar."
         case .newerUnqualified(let actual, let qualifiedSeries):
-            return "Ollama \(actual) is newer than Fulmar's release-qualified \(qualifiedSeries) range. Install a Fulmar update that qualifies this Ollama release, or restore Ollama \(qualifiedSeries) (version \(OllamaVersionCompatibilityPolicy.minimum.rawValue) or later), then restart Fulmar."
+            return "Ollama \(actual) is newer than Fulmar's release-qualified \(qualifiedSeries) range. Install a Fulmar update that qualifies this Ollama release, or restore Ollama version \(OllamaVersionCompatibilityPolicy.minimum.rawValue) or a later patch within \(qualifiedSeries), then restart Fulmar."
         }
     }
 }

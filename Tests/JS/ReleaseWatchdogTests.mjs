@@ -1171,71 +1171,136 @@ supervisorFixture("the cross-session self-test monitor preserves status and drai
 });
 
 function verifyRetiredPIDAccounting(treeSource) {
-  const start = treeSource.indexOf("class RetiredPIDSet {");
+  const start = treeSource.indexOf("function parseProcessStart(value) {");
   const end = treeSource.indexOf("\nasync function establishChildIdentity()", start);
   assert.ok(start >= 0 && end > start, "missing production ownership accounting");
   const core = treeSource.slice(start, end);
+  const signalStart = treeSource.indexOf("function signalOwned(rows, signal) {");
+  const signalEnd = treeSource.indexOf("\nconst pause =", signalStart);
+  assert.ok(signalStart >= 0 && signalEnd > signalStart, "missing production ownership signaling");
+  const signalSource = treeSource.slice(signalStart, signalEnd);
   const setup = `
-    childIdentity = { pid: 2, started: 'root' };
+    const generationBase = parseProcessStart('Sun Sep 13 12:00:00 2026');
+    childIdentity = { pid: 2, started: generationBase };
     childIdentityActive = true;
     const roots = [
-      { pid: 1, ppid: 0, pgid: 1, started: 'supervisor', rssBytes: 1 },
-      { pid: 2, ppid: 1, pgid: 1, started: 'root', rssBytes: 1 }
+      { pid: 1, ppid: 0, pgid: 1, started: generationBase - 1, rssBytes: 1 },
+      { pid: 2, ppid: 1, pgid: 1, started: generationBase, rssBytes: 1 }
     ];
-    const descendant = (pid, pgid = 1) => ({ pid, ppid: 2, pgid, started: 'descendant', rssBytes: 1 });
+    const descendant = (pid, pgid = 1, started = generationBase + 1, ppid = 2) =>
+      ({ pid, ppid, pgid, started, rssBytes: 1 });
   `;
   function scenario(body) {
-    const allocation = { bytes: 0, fail: false };
-    class MeasuredPage extends Uint8Array {
-      constructor(length) {
-        if (allocation.fail) throw new Error("injected bitmap allocation failure");
-        super(length);
-        allocation.bytes += this.byteLength;
+    const allocation = { bytes: 0, calls: 0, fail: false, sparse: false };
+    // The cap scenario represents pages sparsely; it never allocates the
+    // production ceiling's 256 MiB. Other scenarios use real Float64 pages.
+    function MeasuredPage(length) {
+      allocation.calls += 1;
+      if (allocation.fail) throw new Error("injected retirement allocation failure");
+      const bytes = length * Float64Array.BYTES_PER_ELEMENT;
+      allocation.bytes += bytes;
+      if (allocation.sparse) {
+        return new Proxy(Object.create(null), {
+          get(target, key) {
+            if (key === "byteLength") return bytes;
+            if (key === "length") return length;
+            return target[key] ?? 0;
+          },
+          set(target, key, value) { target[key] = value; return true; }
+        });
       }
+      return new Float64Array(length);
     }
-    runInNewContext(`${core}\n${setup}\n${body}`, {
-      assert, allocation, Uint8Array: MeasuredPage,
-      process: { pid: 1, kill: () => assert.fail("ownership model must not signal real processes") },
+    MeasuredPage.BYTES_PER_ELEMENT = Float64Array.BYTES_PER_ELEMENT;
+    const signals = [];
+    runInNewContext(`${core}\n${signalSource}\n${setup}\n${body}`, {
+      assert, allocation, signals, Float64Array: MeasuredPage,
+      process: { pid: 1, kill: (pid, signal) => { signals.push([pid, signal]); return true; } },
       child: { pid: 2 }, childExit: undefined
     }, { timeout: 2_000 });
   }
 
   scenario(`
-    const bitmap = new RetiredPIDSet();
+    assert.equal(generationBase, Date.UTC(2026, 8, 13, 12) / 1000);
+    assert.equal(parseProcessStart('Thu Jan  1 00:00:00 1970'), 0);
+    assert.equal(parseProcessStart('Fri Dec 31 23:59:59 9999'), 253402300799);
+    assert.equal(parseProcessStart('Sun Sep  6 12:00:00 2026'),
+      parseProcessStart('Sun Sep 6 12:00:00 2026'),
+      'ps day padding must not create a different same-second identity');
+    assert.equal(parseProcessStart('Sun Sep 13 11:59:59 2026'), generationBase - 1);
+    for (const value of [
+      'Mon Sep 13 12:00:00 2026', 'Sun Xxx 13 12:00:00 2026',
+      'Sun Sep 31 12:00:00 2026', 'Sat Feb 29 12:00:00 2025',
+      'Sun Sep 13 24:00:00 2026', 'Sun Sep 13 12:60:00 2026',
+      'Sun Sep 13 12:00:60 2026', 'Wed Dec 31 23:59:59 1969',
+      'Sun Sep   6 12:00:00 2026', 'Sun Sep 13 12:00:00 2026 trailing',
+      'Sun Sep 13 12:00:00 2026' + String.fromCharCode(10), '', null, 0
+    ]) assert.throws(() => parseProcessStart(value), /invalid process-table value/);
+    assert.equal(RetiredPIDSet.isStart(0), true);
+    assert.equal(RetiredPIDSet.isStart(253402300799), true);
+  `);
+
+  scenario(`
+    const history = new RetiredPIDSet();
     const reference = new Set();
     assert.equal(allocation.bytes, 0, 'history pages must be lazy');
     const boundaries = [1, 7, 8, 65535, 65536, 65537, 0x7fffffff];
     for (const pid of boundaries) {
-      assert.equal(bitmap.has(pid), false);
-      assert.equal(bitmap.add(pid), bitmap);
-      bitmap.add(pid);
+      assert.equal(history.has(pid), false);
+      assert.equal(history.admits(pid, generationBase), true);
+      assert.equal(history.add(pid, generationBase), history);
+      history.add(pid, generationBase);
       reference.add(pid);
-      assert.equal(bitmap.has(pid), true);
-      assert.equal(bitmap.size, reference.size);
+      assert.equal(history.has(pid), true);
+      assert.equal(history.size, reference.size);
+      assert.equal(history.admits(pid, generationBase - 1), false);
+      assert.equal(history.admits(pid, generationBase), false);
+      assert.equal(history.admits(pid, generationBase + 1), true);
+      history.add(pid, generationBase + 2);
+      history.add(pid, generationBase + 1);
+      assert.equal(history.admits(pid, generationBase + 2), false,
+        'an older retirement must never lower the high-water');
+      assert.equal(history.admits(pid, generationBase + 3), true);
     }
-    assert.equal(allocation.bytes, 3 * 8192, 'boundary values occupy exactly three pages');
+    assert.equal(allocation.bytes, 3 * 65536 * 8, 'boundary values occupy exactly three pages');
     for (let i = 1; i <= 512; i++) {
       const pid = (i * 7919) % 131072 + 1;
-      bitmap.add(pid);
+      history.add(pid, generationBase);
       reference.add(pid);
     }
     for (let pid = 1; pid < 131073; pid++) {
-      assert.equal(bitmap.has(pid), reference.has(pid), 'bitmap must have no aliases or false positives');
+      assert.equal(history.has(pid), reference.has(pid), 'history must have no aliases or false positives');
     }
-    assert.equal(bitmap.has(0x7ffffffe), false);
-    assert.equal(bitmap.size, reference.size);
-    assert.equal(allocation.bytes, 3 * 8192);
+    assert.equal(history.has(0x7ffffffe), false);
+    assert.equal(history.size, reference.size);
+    assert.equal(allocation.bytes, 3 * 65536 * 8);
+    history.add(1, 253402300799);
+    assert.equal(history.admits(1, 253402300799), false, 'maximum start must not overflow');
+    history.add(7, 0);
+    assert.equal(history.admits(7, 0), false, 'epoch zero must not clear an existing retirement');
+    history.add(9, 0);
+    reference.add(9);
+    assert.equal(history.has(9), true, 'epoch zero must not alias never retired');
+    assert.equal(history.admits(9, 0), false);
+    assert.equal(history.admits(9, 1), true);
     for (const pid of [0, -1, 1.5, NaN, Infinity, 0x80000000, 0x100000001,
       Number.MAX_SAFE_INTEGER, '1', null, undefined]) {
       assert.equal(RetiredPIDSet.isPID(pid), false);
-      assert.throws(() => bitmap.add(pid), /invalid process-table value/);
-      assert.throws(() => bitmap.has(pid), /invalid process-table value/);
+      assert.throws(() => history.add(pid, generationBase), /invalid process-table value/);
+      assert.throws(() => history.has(pid), /invalid process-table value/);
+      assert.throws(() => history.admits(pid, generationBase), /invalid process-table value/);
+    }
+    for (const started of [-1, 0.5, NaN, Infinity, 253402300800,
+      Number.MAX_SAFE_INTEGER, '1', null, undefined]) {
+      assert.equal(RetiredPIDSet.isStart(started), false);
+      assert.throws(() => history.add(9, started), /invalid process-table value/);
+      assert.throws(() => history.admits(9, started), /invalid process-table value/);
     }
     assert.equal(RetiredPIDSet.isPID(0, true), true);
     assert.equal(RetiredPIDSet.isPID(-1, true), false);
     assert.equal(RetiredPIDSet.isPID(0x80000000, true), false);
-    assert.equal(bitmap.size, reference.size);
-    assert.equal(allocation.bytes, 3 * 8192, 'invalid PIDs cannot allocate or alias a page');
+    assert.equal(history.size, reference.size);
+    assert.equal(allocation.bytes, 3 * 65536 * 8, 'invalid identities cannot allocate or alias a page');
   `);
 
   scenario(`
@@ -1247,21 +1312,96 @@ function verifyRetiredPIDAccounting(treeSource) {
     }
     assert.equal(known.size, 0);
     assert.equal(retiredPIDs.size, 16384);
-    assert.equal(allocation.bytes, 8192, 'long sequential churn occupies a single history page');
-    for (const started of ['descendant', 'replacement']) {
-      assert.throws(() => updateOwnership([...roots, { ...descendant(1000), started }]),
+    assert.equal(allocation.bytes, 65536 * 8, 'long sequential churn occupies a single history page');
+    for (const started of [generationBase, generationBase + 1]) {
+      assert.throws(() => signalOwned([...roots, descendant(1000, 1, started)], 'SIGTERM'),
         /a retired descendant PID reappeared while supervised/,
-        'the earliest retired PID must remain rejected, including same-second reuse');
+        'same-second and older generations must remain rejected after long churn');
+      assert.equal(signals.length, 0, 'ambiguous history must fail before any signal');
     }
-    const unrelated = { ...descendant(1000), ppid: 999, started: 'unrelated' };
+    const unrelated = descendant(1000, 99, generationBase + 2, 999);
     assert.equal(updateOwnership([...roots, unrelated]).owned.length, 1,
       'an unrelated reused PID must never become an owned signal target');
+    for (const started of [generationBase + 2, generationBase + 3]) {
+      const reused = descendant(1000, 1, started);
+      assert.equal(updateOwnership([...roots, reused]).owned.length, 2,
+        'a strictly newer process under the current owned parent must be admitted');
+      assert.equal(known.get(1000).started, started);
+      updateOwnership(roots);
+      assert.equal(retiredPIDs.size, 16384, 'new generations do not consume new PID slots');
+      assert.throws(() => updateOwnership([...roots, reused]), /a retired descendant PID reappeared/);
+    }
     childExit = { code: 0 };
     assert.equal(updateOwnership([roots[0]]).owned.length, 0);
     assert.equal(childIdentityActive, false);
     assert.equal(retiredPIDs.size, 16385);
     assert.equal(retiredPIDs.has(2), true);
     assert.throws(() => updateOwnership(roots), /a retired test-runner PID reappeared/);
+    assert.throws(() => updateOwnership([roots[0], { ...roots[1], started: generationBase + 9 }]),
+      /a retired test-runner PID reappeared/, 'a newer PID cannot replace the command leader');
+  `);
+
+  scenario(`
+    const paddedStart = parseProcessStart('Sun Sep  6 12:00:00 2026');
+    updateOwnership([...roots, descendant(1000, 1, paddedStart)]);
+    updateOwnership(roots);
+    assert.throws(() => updateOwnership([...roots,
+      descendant(1000, 1, parseProcessStart('Sun Sep 6 12:00:00 2026'))]),
+      /a retired descendant PID reappeared/,
+      'an omitted snapshot followed by alternate day padding is not proof of a new birth');
+  `);
+
+  scenario(`
+    updateOwnership([...roots, descendant(1000)]);
+    const replacement = descendant(1000, 1, generationBase + 2);
+    assert.equal(updateOwnership([...roots, replacement]).owned.length, 2,
+      'chronological replacement does not require an intervening absent snapshot');
+    assert.equal(retiredPIDs.has(1000), true);
+    assert.equal(retiredPIDs.admits(1000, generationBase + 1), false);
+    assert.equal(known.get(1000).started, generationBase + 2);
+    const grandchild = descendant(2000, 1, generationBase + 3, 1000);
+    assert.equal(updateOwnership([...roots, replacement, grandchild]).owned.length, 3);
+    const reparented = { ...grandchild, ppid: 1 };
+    assert.equal(updateOwnership([...roots, reparented]).owned.length, 2,
+      'an already attested descendant stays owned after reparenting');
+    const foreignReplacement = descendant(1000, 90, generationBase + 4, 999);
+    const unseenForeignChild = descendant(3000, 90, generationBase + 5, 1000);
+    const observed = updateOwnership([...roots, reparented, foreignReplacement, unseenForeignChild]);
+    assert.equal(observed.owned.length, 2);
+    assert.equal(known.has(1000), false, 'a retired numeric parent cannot confer ownership');
+    assert.equal(known.has(3000), false);
+  `);
+
+  scenario(`
+    updateOwnership([...roots, descendant(1000, 70)]);
+    updateOwnership(roots);
+    assert.equal(knownGroups.has(70), false, 'an observed empty group must be retired');
+    const foreign = descendant(9000, 70, generationBase + 2, 999);
+    const foreignReuse = descendant(1000, 70, generationBase + 2, 999);
+    assert.equal(updateOwnership([...roots, foreign, foreignReuse]).owned.length, 1);
+    const ownedReuse = descendant(1000, 80, generationBase + 2);
+    for (const signal of ['SIGTERM', 'SIGKILL']) {
+      signals.length = 0;
+      signalOwned([...roots, foreign, ownedReuse], signal);
+      assert.equal(JSON.stringify(signals), JSON.stringify([[-80, signal], [1000, signal], [2, signal]]),
+        'only the current owned group and exact owned PIDs may be signaled');
+    }
+    signals.length = 0;
+    updateOwnership(roots);
+    for (const started of [generationBase + 1, generationBase + 2]) {
+      assert.throws(() => signalOwned([...roots, descendant(1000, 80, started)], 'SIGKILL'),
+        /a retired descendant PID reappeared/);
+      assert.equal(signals.length, 0);
+    }
+  `);
+
+  scenario(`
+    assert.throws(() => updateOwnership([roots[0], { ...roots[1], started: generationBase + 1 }]),
+      /test-runner PID identity changed/, 'even a later-second live leader replacement is forbidden');
+    updateOwnership([roots[0]]);
+    assert.equal(childIdentityActive, false);
+    assert.throws(() => updateOwnership([roots[0], { ...roots[1], started: generationBase + 2 }]),
+      /a retired test-runner PID reappeared/, 'leader omission must not permit revival before its exit event');
   `);
 
   scenario(`
@@ -1273,12 +1413,13 @@ function verifyRetiredPIDAccounting(treeSource) {
     assert.equal(retiredPIDs.size, 0);
     allocation.fail = false;
     for (const rows of [roots, [...roots, descendant(pid)],
-      [...roots, { ...descendant(pid), started: 'replacement' }]]) {
+      [...roots, descendant(pid, 1, generationBase + 2)]]) {
       assert.throws(() => updateOwnership(rows), /retired PID history storage failed/,
         'allocator recovery must not revive an observed-but-unrecorded retirement');
     }
-    assert.throws(() => retiredPIDs.add(pid), /retired PID history storage failed/);
+    assert.throws(() => retiredPIDs.add(pid, generationBase + 1), /retired PID history storage failed/);
     assert.throws(() => retiredPIDs.has(pid), /retired PID history storage failed/);
+    assert.throws(() => retiredPIDs.admits(pid, generationBase + 2), /retired PID history storage failed/);
     childExit = { code: 0 };
     assert.throws(() => updateOwnership([roots[0]]), /retired PID history storage failed/,
       'an uncertain history must never return a successful empty-tree proof');
@@ -1296,6 +1437,29 @@ function verifyRetiredPIDAccounting(treeSource) {
   `);
 
   scenario(`
+    allocation.sparse = true;
+    for (let page = 0; page < 512; page++) {
+      retiredPIDs.add(page * 65536 + 1, generationBase);
+    }
+    assert.equal(allocation.calls, 512);
+    assert.equal(allocation.bytes, 256 * 1024 * 1024,
+      'sparse fixture must account for exactly the production byte ceiling');
+    assert.equal(retiredPIDs.size, 512);
+    assert.throws(() => retiredPIDs.add(512 * 65536 + 1, generationBase),
+      /retired PID history storage failed/);
+    assert.equal(allocation.calls, 512, 'the ceiling must reject before allocating an excess page');
+    assert.equal(allocation.bytes, 256 * 1024 * 1024);
+    assert.equal(retiredPIDs.size, 512);
+    for (const operation of [
+      () => retiredPIDs.has(1), () => retiredPIDs.admits(1, generationBase + 1),
+      () => retiredPIDs.add(1, generationBase + 1), () => updateOwnership(roots)
+    ]) assert.throws(operation, /retired PID history storage failed/,
+      'exhaustion permanently poisons history rather than evicting old generations');
+    childExit = { code: 0 };
+    assert.throws(() => updateOwnership([roots[0]]), /retired PID history storage failed/);
+  `);
+
+  scenario(`
     assert.throws(() => updateOwnership([...roots,
       ...Array.from({ length: 8193 }, (_, i) => descendant(1000 + i))]),
       /tracked descendant identity limit exceeded/);
@@ -1310,7 +1474,7 @@ function verifyRetiredPIDAccounting(treeSource) {
     "retired history directory must remain bounded to the signed pid_t namespace");
   assert.match(treeSource, /!RetiredPIDSet\.isPID\(pid\) \|\| !RetiredPIDSet\.isPID\(ppid, true\)/u);
   assert.match(treeSource, /!RetiredPIDSet\.isPID\(pgid\)/u,
-    "process-table fields must be range checked before bitmap indexing");
+    "process-table fields must be range checked before history indexing");
 }
 
 test("watchdog source contains no blocking reap fallback", async () => {

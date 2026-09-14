@@ -1,4 +1,4 @@
-# Vendored runtime patches — Fulmar 1.2.36 build 156
+# Vendored runtime patches — Fulmar 1.2.37 build 157
 
 Fulmar normally ships the pinned DeepSeek Harness packages unchanged. Any
 intentional divergence is recorded here, included in the signed runtime inventory,
@@ -26,11 +26,11 @@ forces the public HTTPS registry URLs already pinned in the lock, and disables
 lifecycle scripts in both configuration and command-line policy.
 
 After npm verifies every lock-bound package integrity, the materializer rejects
-special files and escaping links, requires the exact upstream SHA-256 for all fourteen
+special files and escaping links, requires the exact upstream SHA-256 for all fifteen
 reviewed patch inputs, applies deterministic anchored transformations, and requires
 the exact reviewed output SHA-256. The temporary dependency tree is moved into place
 only after those checks. `VendorRuntime.inventory.json` then authenticates all 38,504
-paths and 395,128,248 file bytes, not just the patched packages. The generated hidden
+paths and 395,130,487 file bytes, not just the patched packages. The generated hidden
 npm lock metadata now correctly identifies the source runtime package as `1.1.0`;
 the previous `1.0.0` value was stale, and no dependency content changed in that
 correction.
@@ -123,6 +123,43 @@ queued user work, and never reconstructs partial tool calls. The reviewed
 `client-security-bridge` replaces the two exact stock manual-continuation messages in
 English and Chinese so the visible UI describes the automatic behaviour. Mutation of
 unrelated UI text is outside that bridge's contract.
+
+The 2026-09-13 correction additionally requires retained nonblank assistant
+text/reasoning or a successful tool result from the same observed turn. An empty
+max-token response produces one durable plugin notice and no continuation or
+terminal-summary model request. Token usage alone is not progress. Cancelled,
+superseded and disposed requests cannot publish that deferred notice.
+
+## pi-ai model/context output budgeting — revision 1
+
+The pinned shared `simple-options.js` previously subtracted 4,096 tokens from every
+context estimate and floored the result at one output token. With an 8,192-token
+Compatibility context, the real prompt/tool burden exhausted that artificial
+reserve and caused repeated empty, length-limited turns on the 16 GiB Mini.
+
+The checksum-bound transform now reserves
+`min(4096, max(256, ceil(contextWindow / 16)))` tokens and bounds output by the
+caller cap, model cap and estimated remaining capacity. Less than
+`min(256, requestedOutput)` space is a context error, not a one-token request.
+Explicit tiny Chat caps remain explicit; Responses/Azure Responses caps below
+their 16-token protocol minimum are rejected instead of silently increased.
+The DSH adapter preserves the correct error taxonomy both for direct setup throws
+and the normal lazy-loaded terminal error path, allowing existing bounded
+compaction recovery. Invalid numerical limits are not context-retry requests.
+
+This is shared by configured pi-ai routes, including Ollama and LM Studio-style
+OpenAI-compatible endpoints; it is not a provider-name or model-name exception.
+The reserve changes for 32K/49K contexts too; at 64K and above it remains 4K.
+Anthropic's existing thinking expansion still re-clamps to the model and context
+budget. The separate DeepSeek adapter is untouched. Regression tests inspect
+serialized requests, full prefix/tool estimates, prior usage, protocol floors and
+typed errors—not just the first-party output proposal.
+
+The estimate uses character counts or reported prior usage, not the model's exact
+tokenizer. Provider overflow handling remains necessary. Correct server context
+configuration, tool support, sufficient memory and model quality are still
+required; this patch does not increase the native 8K context/memory allowance,
+discover an LM Studio server's active context, or qualify every model.
 
 ## Fulmar runtime plugin — approved page retrieval
 

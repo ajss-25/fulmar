@@ -1,4 +1,4 @@
-# Update and rollback — Fulmar 1.2.36 build 156
+# Update and rollback — Fulmar 1.2.37 build 157
 
 ## Before replacing the current app
 
@@ -8,7 +8,7 @@
 3. Create a separate Harness-state backup for DSH history/settings.
 4. Preserve the installed `.app` with its version/build and record its signature,
    runtime versions, and archive hash if available.
-5. Run the build 156 release and cloned-state canaries. Do not install a candidate
+5. Run the build 157 release and cloned-state canaries. Do not install a candidate
    whose evidence is incomplete or whose high-risk gate failed.
 
 Workspace checkpoints and Harness-state backups solve different problems. Neither
@@ -80,13 +80,13 @@ is atomically published from a fully fsynced private preparation directory, so a
 before publication cannot authorize either rename; safe bounded temporary files from an
 interrupted phase rewrite are ignored in favour of the last authenticated journal.
 
-In-app update remains **NO-GO for public distribution** in build 156 and must not
+In-app update remains **NO-GO for public distribution** in build 157 and must not
 be invoked through a menu, automation, or programmatic selector. The release
 gate still requires the fault matrix and end-to-end exercise across two real Developer
 ID signed, notarized, stapled versions on a clean Mac; source-state tests and private
 ad-hoc identities are not that evidence. It also requires an approved out-of-bundle
 recovery design for the interval where the main app path can be absent.
-Developer ID builds can additionally be notarized and stapled, but build 156 must not
+Developer ID builds can additionally be notarized and stapled, but build 157 must not
 be described that way unless actual Apple evidence is recorded.
 
 ## Manual-install beta profile
@@ -103,11 +103,17 @@ migration, and release copy must not present it as such. Under the beta's
 removed, and existing users are not told they can upgrade. No candidate has been
 qualified under that profile.
 
-## Qualified private update to build 156
+## Qualified private update to build 157
 
-The current private candidate uses one persistent, code-signing-only identity trusted
-in this Mac's login Keychain. That keeps the app/helper designated requirements stable
-across private builds and prevents routine launches from asking for Keychain access.
+This section names the procedure's target, not a completed qualification. The
+separate non-notarized public beta remains clean-install-only and does not inherit
+private update acceptance.
+
+The current private candidate uses one persistent, code-signing-only identity
+already configured on the build Mac. That keeps the app/helper designated
+requirements stable across private builds; it does not guarantee future Keychain
+permission persistence. macOS may require fresh owner authorization, including
+after a signer change or while the login Keychain is locked.
 It is not an Apple Developer ID and has no stable Developer Team for the public
 Gatekeeper/in-app update path. Private replacement therefore uses the separate,
 local-only atomic installer; it does not enable or reuse the public in-app updater:

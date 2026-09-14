@@ -34,17 +34,23 @@ static const char *const beta_material_names[] = {
 
 enum {
     asset_capacity = sizeof(asset_names) / sizeof(asset_names[0])
-        + sizeof(beta_material_names) / sizeof(beta_material_names[0])
+        + sizeof(beta_material_names) / sizeof(beta_material_names[0]) + 2
 };
 
-static size_t asset_count(const bool beta) {
+static const char *const nonnotarized_dmg_names[] = { "Fulmar.dmg", "dmg-binding.json" };
+
+static size_t asset_count(const unsigned int profile) {
     return sizeof(asset_names) / sizeof(asset_names[0])
-        + (beta ? sizeof(beta_material_names) / sizeof(beta_material_names[0]) : 0);
+        + (profile >= 1u ? sizeof(beta_material_names) / sizeof(beta_material_names[0]) : 0)
+        + (profile == 2u ? 2u : 0u);
 }
 
 static const char *asset_name(const size_t index) {
     const size_t stable_count = sizeof(asset_names) / sizeof(asset_names[0]);
-    return index < stable_count ? asset_names[index] : beta_material_names[index - stable_count];
+    const size_t beta_count = sizeof(beta_material_names) / sizeof(beta_material_names[0]);
+    if (index < stable_count) return asset_names[index];
+    return index < stable_count + beta_count ? beta_material_names[index - stable_count]
+        : nonnotarized_dmg_names[index - stable_count - beta_count];
 }
 
 static int fail(const char *message) {
@@ -57,8 +63,8 @@ static bool safe_name(const char *name) {
         && strcmp(name, "..") != 0 && strchr(name, '/') == NULL;
 }
 
-static int asset_index(const char *name, const bool beta) {
-    const size_t count = asset_count(beta);
+static int asset_index(const char *name, const unsigned int profile) {
+    const size_t count = asset_count(profile);
     for (size_t index = 0; index < count; index += 1) {
         if (strcmp(name, asset_name(index)) == 0) {
             return (int)index;
@@ -107,7 +113,7 @@ static bool exact_private_staging(const struct stat *value) {
 }
 
 static int inspect_assets(const int staging_descriptor, const bool allow_partial,
-                          const bool beta, bool present[asset_capacity]) {
+                          const unsigned int profile, bool present[asset_capacity]) {
     const int enumeration_descriptor = dup(staging_descriptor);
     if (enumeration_descriptor < 0) {
         return -1;
@@ -124,7 +130,7 @@ static int inspect_assets(const int staging_descriptor, const bool allow_partial
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        const int index = asset_index(entry->d_name, beta);
+        const int index = asset_index(entry->d_name, profile);
         if (index < 0 || present[(size_t)index]) {
             (void)closedir(directory);
             return -1;
@@ -164,7 +170,7 @@ static int inspect_assets(const int staging_descriptor, const bool allow_partial
     }
 
     if (!allow_partial) {
-        const size_t count = asset_count(beta);
+        const size_t count = asset_count(profile);
         for (size_t index = 0; index < count; index += 1) {
             if (!present[index]) {
                 return -1;
@@ -175,7 +181,7 @@ static int inspect_assets(const int staging_descriptor, const bool allow_partial
 }
 
 static int publish(const char *parent_path, const char *staging_name,
-                   const char *destination_name, const bool beta) {
+                   const char *destination_name, const unsigned int profile) {
     if (!safe_name(staging_name) || !safe_name(destination_name)
         || strcmp(staging_name, destination_name) == 0) {
         return fail("unsafe publication name");
@@ -210,7 +216,7 @@ static int publish(const char *parent_path, const char *staging_name,
     bool present[asset_capacity] = { false };
     if (staging_descriptor < 0 || fstat(staging_descriptor, &opened_staging_identity) != 0
         || !same_identity(&staging_identity, &opened_staging_identity)
-        || inspect_assets(staging_descriptor, false, beta, present) != 0
+        || inspect_assets(staging_descriptor, false, profile, present) != 0
         || fsync(staging_descriptor) != 0
         || !parent_path_still_matches(parent_path, &parent_identity)) {
         if (staging_descriptor >= 0) {
@@ -259,7 +265,7 @@ static bool parse_identity_component(const char *text, uint64_t *value) {
 }
 
 static int cleanup_staging(const char *parent_path, const char *staging_name,
-                           const char *device_text, const char *inode_text, const bool beta) {
+                           const char *device_text, const char *inode_text, const unsigned int profile) {
     uint64_t expected_device;
     uint64_t expected_inode;
     if (!safe_name(staging_name)
@@ -291,7 +297,7 @@ static int cleanup_staging(const char *parent_path, const char *staging_name,
     bool present[asset_capacity] = { false };
     if (staging_descriptor < 0 || fstat(staging_descriptor, &opened_identity) != 0
         || !same_identity(&staging_identity, &opened_identity)
-        || inspect_assets(staging_descriptor, true, beta, present) != 0) {
+        || inspect_assets(staging_descriptor, true, profile, present) != 0) {
         if (staging_descriptor >= 0) {
             (void)close(staging_descriptor);
         }
@@ -299,7 +305,7 @@ static int cleanup_staging(const char *parent_path, const char *staging_name,
         return fail("cleanup refused an unreviewed staging tree");
     }
 
-    const size_t count = asset_count(beta);
+    const size_t count = asset_count(profile);
     for (size_t index = 0; index < count; index += 1) {
         if (present[index] && unlinkat(staging_descriptor, asset_name(index), 0) != 0) {
             (void)close(staging_descriptor);
@@ -336,5 +342,11 @@ int main(const int argc, char *const argv[]) {
     if (argc == 6 && strcmp(argv[1], "cleanup-beta") == 0) {
         return cleanup_staging(argv[2], argv[3], argv[4], argv[5], true);
     }
-    return fail("usage: publisher publish|publish-beta <parent> <staging-name> <destination-name> | publisher cleanup|cleanup-beta <parent> <staging-name> <device> <inode>");
+    if (argc == 5 && strcmp(argv[1], "publish-nonnotarized-beta") == 0) {
+        return publish(argv[2], argv[3], argv[4], 2u);
+    }
+    if (argc == 6 && strcmp(argv[1], "cleanup-nonnotarized-beta") == 0) {
+        return cleanup_staging(argv[2], argv[3], argv[4], argv[5], 2u);
+    }
+    return fail("usage: publisher publish|publish-beta|publish-nonnotarized-beta <parent> <staging-name> <destination-name> | publisher cleanup|cleanup-beta|cleanup-nonnotarized-beta <parent> <staging-name> <device> <inode>");
 }

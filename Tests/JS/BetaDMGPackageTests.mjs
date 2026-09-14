@@ -10,12 +10,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createDMG, parseArguments, verifyDMG } from "../../scripts/prepare-beta-dmg.mjs";
+import { createDMG, createImageWithBusyRecovery, exactWholeDisk, formatDMGError, parseArguments, proveCreateRetrySafe, verifyDMG } from "../../scripts/prepare-beta-dmg.mjs";
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const releaseIdentity = JSON.parse(await readFile(join(project, "Config/ReleaseIdentity.json"), "utf8"));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const EXPECTED_OUTPUTS = ["Fulmar.dmg", "SHA256SUMS.txt", "dmg-binding.json"];
+const PRIVATE_INSTALL = "Fulmar — private DMG packaging preview\n\nThis disk image has not been qualified for public distribution.\nDo not install this engineering artifact as a public beta.\nThe Applications shortcut is a packaging preview only.\n\nThe app inside is copied unchanged from the explicitly bound candidate ZIP.\nSigning/notarisation, licensing and installation/provider acceptance are separate release checks.\n";
 
 function run(executable, args, root) {
   const result = spawnSync(executable, args, {
@@ -142,7 +143,7 @@ async function retired(roots) {
   for (const root of roots) await absent(root);
 }
 
-test("private beta DMG arguments require one exact command, operand set, digest and absolute path", () => {
+test("private beta DMG arguments require one exact command, operand set, digest and absolute path", async () => {
   const archive = "/private/tmp/fulmar-dmg-argument-fixture/Fulmar.app.zip";
   const dmg = "/private/tmp/fulmar-dmg-argument-fixture/Fulmar.dmg";
   const output = "/private/tmp/fulmar-dmg-argument-fixture/output";
@@ -153,6 +154,15 @@ test("private beta DMG arguments require one exact command, operand set, digest 
   const verify = ["verify", dmg, dmgSHA, archive, zipSHA, workParent];
   assert.deepEqual(parseArguments(create), { command: "create", archive, expectedArchiveSHA256: zipSHA, output });
   assert.deepEqual(parseArguments(verify), { command: "verify", dmg, expectedDMGSHA256: dmgSHA, archive, expectedArchiveSHA256: zipSHA, workParent });
+  for (const args of [create, verify]) {
+    assert.deepEqual(parseArguments([...args, "--profile", "nonnotarized-beta"]), { ...parseArguments(args), releaseProfile: "nonnotarized-beta" });
+    for (const profile of ["private", "beta", "stable", "nonnotarized", "", "NONNOTARIZED-BETA"]) {
+      assert.throws(() => parseArguments([...args, "--profile", profile]));
+    }
+    assert.throws(() => parseArguments(["--profile", "nonnotarized-beta", ...args]));
+    assert.throws(() => parseArguments([...args, "--profile", "nonnotarized-beta", "--profile", "nonnotarized-beta"]));
+    assert.throws(() => parseArguments([...args, "--profile"]));
+  }
   const invalid = [
     [], ["package", ...create.slice(1)], create.slice(0, -1), [...create, "extra"],
     verify.slice(0, -1), [...verify, "extra"],
@@ -166,6 +176,79 @@ test("private beta DMG arguments require one exact command, operand set, digest 
     ["verify", dmg, dmgSHA, archive, zipSHA.toUpperCase(), workParent]
   ];
   for (const args of invalid) assert.throws(() => parseArguments(args));
+
+  // Exercise the production retry coordinator without native commands, mounts,
+  // environment switches or extra test topology. Every proof shares one clock.
+  const busy = { code: 1, signal: null, stdout: "", stderr: "hdiutil: create failed - Resource busy\n" };
+  const success = { code: 0, signal: null, stdout: "created fixture", stderr: "" };
+  let clock = 0, attempts = 0, proofs = 0;
+  const budgets = [], sleeps = [], recovered = [];
+  const result = await createImageWithBusyRecovery({
+    now: () => clock,
+    sleep: async (ms) => { sleeps.push(ms); clock += ms; },
+    attempt: async (budget) => { budgets.push(budget()); clock += 100; return ++attempts < 3 ? busy : success; },
+    proveRetrySafe: async (budget) => { proofs += 1; budgets.push(budget()); clock += 1000; },
+    recovered: (event) => recovered.push(event)
+  });
+  assert.equal(result, success);
+  assert.equal(attempts, 3); assert.equal(proofs, 2);
+  assert.deepEqual(sleeps, [250, 500]);
+  assert.ok(budgets.every((value, index) => value <= 180_000 && (index === 0 || value < budgets[index - 1])));
+  assert.equal(recovered.length, 1); assert.equal(recovered[0].attempts, 3);
+  assert.match(recovered[0].firstFailure.message, /hdiutil: create failed - Resource busy/u);
+
+  for (const rejected of [
+    { ...busy, code: 2 }, { ...busy, signal: "SIGTERM" },
+    { ...busy, stderr: "hdiutil: create failed - Permission denied" },
+    { ...busy, stderr: "hdiutil: create failed - Resource busy\nadditional diagnostic" }
+  ]) {
+    let calls = 0;
+    await assert.rejects(createImageWithBusyRecovery({
+      now: () => 0, attempt: async () => { calls += 1; return rejected; },
+      sleep: async () => assert.fail("non-matching native failures cannot sleep"),
+      proveRetrySafe: async () => assert.fail("non-matching native failures cannot retry")
+    }), /hdiutil create failed/u);
+    assert.equal(calls, 1);
+  }
+  for (const phase of ["attempt", "proof", "delay", "proof-deadline", "exhaustion"]) {
+    let ticks = 0, calls = 0, proofCalls = 0;
+    const injected = new Error(`synthetic ${phase} failure`);
+    let failure;
+    await assert.rejects(createImageWithBusyRecovery({
+      now: () => ticks,
+      sleep: async (ms) => { ticks += phase === "delay" ? 180_000 : ms; },
+      attempt: async () => { calls += 1; if (phase === "attempt") throw injected; return busy; },
+      proveRetrySafe: async (budget) => {
+        proofCalls += 1;
+        if (phase === "proof") throw injected;
+        if (phase === "proof-deadline") ticks += 180_000;
+        budget();
+      }
+    }), (error) => { failure = error; return true; });
+    if (phase === "attempt") assert.equal(failure, injected, "native timeout/interruption errors retain their identity");
+    else {
+      assert.ok(failure instanceof AggregateError);
+      assert.match(failure.errors[0].message, /hdiutil: create failed - Resource busy/u);
+      if (phase === "proof") assert.equal(failure.errors[1], injected);
+      if (phase.includes("deadline") || phase === "delay") assert.match(formatDMGError(failure), /deadline/u);
+    }
+    assert.equal(calls, phase === "exhaustion" ? 3 : 1);
+    assert.equal(proofCalls, phase === "attempt" || phase === "delay" ? 0 : phase === "exhaustion" ? 2 : 1);
+  }
+
+  const mount = "/private/fixture/mount";
+  const whole = { "dev-entry": "/dev/disk42" };
+  const mounted = { "dev-entry": "/dev/disk42s1", "mount-point": mount };
+  assert.equal(exactWholeDisk([mounted, whole], mount), "/dev/disk42");
+  assert.equal(exactWholeDisk([whole, mounted], mount), "/dev/disk42");
+  for (const entities of [[mounted], [mounted, whole, whole], [mounted, mounted, whole], [{ ...mounted, "mount-point": "/foreign" }, whole], [{ ...mounted, "dev-entry": "/dev/disk43s1" }, whole]]) {
+    assert.throws(() => exactWholeDisk(entities, mount));
+  }
+  const inner = new Error("exact native detach cause");
+  const nested = new AggregateError([new AggregateError([inner], "detach"), new Error("cleanup")], "outer");
+  inner.cause = nested;
+  assert.match(formatDMGError(nested), /exact native detach cause/u);
+  assert.ok(formatDMGError(new AggregateError(Array.from({ length: 100 }, () => new Error("x".repeat(20_000))), "bounded")).length <= 32_768);
 });
 
 test("private beta DMG preserves one signed fixture through bounded create, verify and failure cleanup", { timeout: 300_000 }, async (context) => {
@@ -215,8 +298,46 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
       const roots = new Set();
       let invoked = false;
       await assert.rejects(createDMG(options, {
-        beforeImageCreate: rememberRoot(roots, () => {
+        beforeImageCreate: rememberRoot(roots, async ({ root, app, imageSource }) => {
           invoked = true;
+          const archive = join(root, "Fulmar.app.zip");
+          const dmg = join(root, "Fulmar.dmg");
+          const bound = {
+            root, app, imageSource, archive, dmg, expectedArchiveSHA256: files.expectedArchiveSHA256,
+            archiveIdentity: await lstat(archive, { bigint: true }),
+            rootIdentity: await lstat(root, { bigint: true }), sourceIdentity: await lstat(imageSource, { bigint: true })
+          };
+          const deadline = process.hrtime.bigint() + 180_000_000_000n;
+          const budget = () => {
+            const remaining = Number((deadline - process.hrtime.bigint()) / 1_000_000n);
+            assert.ok(remaining >= 50, "all real retry proofs share one monotonic budget");
+            return remaining;
+          };
+          await proveCreateRetrySafe(bound, budget);
+          await writeFile(dmg, "partial image must not be overwritten", { flag: "wx", mode: 0o600 });
+          await assert.rejects(proveCreateRetrySafe(bound, budget), /Output already exists/u);
+          assert.equal(await readFile(dmg, "utf8"), "partial image must not be overwritten");
+          await unlink(dmg);
+          await assert.rejects(proveCreateRetrySafe({ ...bound, archiveIdentity: { ...bound.archiveIdentity, ino: bound.archiveIdentity.ino + 1n } }, budget), /Private ZIP identity changed/u);
+          await assert.rejects(proveCreateRetrySafe({ ...bound, expectedArchiveSHA256: "0".repeat(64) }, budget), /Private ZIP digest changed/u);
+          const extra = join(imageSource, "unplanned.txt");
+          await writeFile(extra, "unexpected fixture", { flag: "wx", mode: 0o600 });
+          await assert.rejects(proveCreateRetrySafe(bound, budget), /Unexpected image source contents/u);
+          await unlink(extra);
+          const shortcut = join(imageSource, "Applications");
+          await unlink(shortcut); await symlink("/private/foreign", shortcut);
+          await assert.rejects(proveCreateRetrySafe(bound, budget), /Applications shortcut was changed/u);
+          await unlink(shortcut); await symlink("/Applications", shortcut);
+          const instructions = join(imageSource, "INSTALL.txt");
+          await writeFile(instructions, "incorrect profile instructions");
+          await assert.rejects(proveCreateRetrySafe(bound, budget), /Installation notice does not match/u);
+          await writeFile(instructions, PRIVATE_INSTALL);
+          const resource = join(imageSource, "Fulmar.app", "Contents", "Resources", "fixture.txt");
+          const bytes = await readFile(resource);
+          await writeFile(resource, "changed candidate app");
+          await assert.rejects(proveCreateRetrySafe(bound, budget));
+          await writeFile(resource, bytes);
+          await proveCreateRetrySafe(bound, budget);
           throw new Error("synthetic pre-image failure");
         })
       }), /synthetic pre-image failure/u);
@@ -229,11 +350,17 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
     let expectedDMGSHA256;
     await context.test("create and recipient verification retain the input binding and private-only status", async () => {
       const roots = new Set();
-      const binding = await createDMG(accepted, { beforePublish: rememberRoot(roots) });
+      const binding = await createDMG(accepted, {
+        beforePublish: rememberRoot(roots),
+        beforeImageCreate: async ({ imageSource }) => {
+          assert.equal(await readFile(join(imageSource, "INSTALL.txt"), "utf8"), PRIVATE_INSTALL, "the default private notice remains byte-identical");
+        }
+      });
       assert.deepEqual((await readdir(accepted.output)).sort(), EXPECTED_OUTPUTS);
       const bindingBytes = await readFile(join(accepted.output, "dmg-binding.json"));
       assert.deepEqual(JSON.parse(bindingBytes), binding);
       assert.equal(binding.type, "fulmar-private-dmg-wrapper");
+      assert.equal(Object.hasOwn(binding, "releaseProfile"), false);
       assert.equal(binding.publicBetaQualified, false);
       assert.equal(binding.reproducibleDMGBytes, false);
       assert.equal(binding.version, releaseIdentity.appVersion);
@@ -256,6 +383,58 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
       await retired(roots);
       await verifyDMG({ dmg: join(accepted.output, "Fulmar.dmg"), expectedDMGSHA256, archive: files.archive, expectedArchiveSHA256: files.expectedArchiveSHA256, workParent: files.workParent });
       assert.deepEqual(await readdir(files.workParent), [], "verification must detach and retire its own workspace");
+    });
+
+    await context.test("explicit non-notarised wrapper stays unqualified and rejects both cross-profile images", async () => {
+      const options = createOptions("nonnotarized-beta", { releaseProfile: "nonnotarized-beta" });
+      const roots = new Set();
+      let installText;
+      const binding = await createDMG(options, {
+        beforePublish: rememberRoot(roots),
+        beforeImageCreate: async ({ imageSource }) => {
+          installText = await readFile(join(imageSource, "INSTALL.txt"), "utf8");
+          assert.notEqual(installText, PRIVATE_INSTALL);
+          assert.match(installText, /not Apple-notarised/u);
+          assert.match(installText, /Clean installations only/u);
+          assert.match(installText, /in-app updater to be disabled/u);
+          assert.match(installText, /Do not disable system security controls/u);
+          assert.match(installText, /wrapper alone does not qualify/u);
+        }
+      });
+      assert.deepEqual((await readdir(options.output)).sort(), EXPECTED_OUTPUTS);
+      assert.equal(binding.type, "fulmar-nonnotarized-beta-dmg-wrapper");
+      assert.equal(binding.releaseProfile, "nonnotarized-beta");
+      assert.equal(binding.publicBetaQualified, false);
+      assert.equal(binding.reproducibleDMGBytes, false);
+      const bindingBytes = await readFile(join(options.output, "dmg-binding.json"));
+      assert.deepEqual(JSON.parse(bindingBytes), binding);
+      assert.deepEqual(binding.candidate, { file: "Fulmar.app.zip", sha256: files.expectedArchiveSHA256 });
+      const image = join(options.output, "Fulmar.dmg");
+      const imageBytes = await readFile(image);
+      assert.deepEqual(binding.image, { file: "Fulmar.dmg", bytes: imageBytes.length, sha256: hash(imageBytes) });
+      assert.equal(await readFile(join(options.output, "SHA256SUMS.txt"), "utf8"), `${binding.image.sha256}  Fulmar.dmg\n${hash(bindingBytes)}  dmg-binding.json\n`);
+      const verification = { dmg: image, expectedDMGSHA256: binding.image.sha256, archive: files.archive, expectedArchiveSHA256: files.expectedArchiveSHA256, workParent: files.workParent };
+      assert.deepEqual(await verifyDMG({ ...verification, releaseProfile: "nonnotarized-beta" }), {
+        verified: true, publicBetaQualified: false, candidateSHA256: files.expectedArchiveSHA256,
+        dmgSHA256: binding.image.sha256, releaseProfile: "nonnotarized-beta"
+      });
+      await assert.rejects(verifyDMG(verification), /Installation notice does not match the requested DMG profile/u);
+      await assert.rejects(verifyDMG({ ...verification, dmg: join(accepted.output, "Fulmar.dmg"), expectedDMGSHA256, releaseProfile: "nonnotarized-beta" }), /Installation notice does not match the requested DMG profile/u);
+      for (const releaseProfile of [null, "beta", "stable", "unknown", false]) {
+        const invalid = createOptions("invalid-profile", { releaseProfile });
+        await assert.rejects(createDMG(invalid), /usage:/u);
+        await absent(invalid.output);
+        await assert.rejects(verifyDMG({ ...verification, releaseProfile }), /usage:/u);
+      }
+      const tampered = createOptions("tampered-nonnotarized-notice", { releaseProfile: "nonnotarized-beta" });
+      await assert.rejects(createDMG(tampered, {
+        beforeImageCreate: rememberRoot(roots, async ({ imageSource }) => {
+          await writeFile(join(imageSource, "INSTALL.txt"), `${installText}Unreviewed additional instruction.\n`);
+        })
+      }), /Installation notice does not match the requested DMG profile/u);
+      await absent(tampered.output);
+      await retired(roots);
+      assert.deepEqual(await readdir(files.workParent), [], "cross-profile rejection must still detach and retire each verification workspace");
     });
 
     await context.test("a modified DMG fails its independent expected digest without residual workspace", async () => {
@@ -359,6 +538,19 @@ test("private beta DMG preserves one signed fixture through bounded create, veri
         run(process.execPath, [join(project, "scripts", "verify-release-tree.mjs"), files.app, fixtureApp], files.root);
         run(process.execPath, [join(project, "scripts", "verify-release-tree.mjs"), files.app, join(mountedPath, "Fulmar.app")], files.root);
         assert.equal(hash(await readFile(image)), imageSHA, "the mounted readonly fixture image must remain unchanged");
+        // Match the source-gate emergency cleanup: -x must refuse to traverse
+        // the owned mounted filesystem even when surrounding staging is retired.
+        const cleanup = spawnSync("/bin/rm", ["-rf", "-x", "--", retainedRoot], {
+          cwd: files.root, env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" },
+          encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024
+        });
+        assert.equal(cleanup.error, undefined);
+        assert.equal(cleanup.signal, null);
+        assert.notEqual(cleanup.status, 0, "a mounted descendant must remain, not be recursively traversed");
+        assert.ok((await lstat(retainedRoot)).isDirectory());
+        assert.notEqual((await lstat(mountedPath)).dev, (await lstat(retainedRoot)).dev);
+        run(process.execPath, [join(project, "scripts", "verify-release-tree.mjs"), files.app, join(mountedPath, "Fulmar.app")], files.root);
+        assert.equal(hash(await readFile(image)), imageSHA, "emergency cleanup cannot modify the mounted image");
       } finally {
         // Preabsence plus exact image path, private mount point and fresh device
         // receipt establish ownership. Never detach a preexisting or unrelated

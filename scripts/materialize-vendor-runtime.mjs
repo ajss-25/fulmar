@@ -363,7 +363,67 @@ function patchPiAIAdapterRuntime(bytes) {
   for (const [before, after] of replacements) {
     text = replaceExactlyOnce(text, before, after, "pi-ai adapter explicit no-auth");
   }
-  return Buffer.from(text.endsWith("\n") ? text : `${text}\n`, "utf8");
+  return patchPiAIContextBudgetErrors(Buffer.from(text.endsWith("\n") ? text : `${text}\n`, "utf8"));
+}
+
+function patchPiAIContextBudgetErrors(bytes) {
+  let text = replaceExactlyOnce(bytes.toString("utf8"),
+    '\t\t\t\tif (options.signal?.aborted) throw new LlmError("pi-ai request aborted by caller", "ABORTED", { cause: error });\n\t\t\t\tthrow error;',
+    '\t\t\t\tif (options.signal?.aborted) throw new LlmError("pi-ai request aborted by caller", "ABORTED", { cause: error });\n'
+      + '\t\t\t\t// Preserve Harness-owned context recovery for the local budget preflight.\n'
+      + '\t\t\t\tif (error?.code === "FULMAR_CONTEXT_BUDGET_EXCEEDED") throw new LlmError("The configured model context has insufficient room for a useful response after the prompt and tools. Reduce the conversation or select a model/server with a larger verified context.", CONTEXT_WINDOW_EXCEEDED_CODE, { cause: error });\n'
+      + '\t\t\t\tif (error?.code === "FULMAR_INVALID_TOKEN_BUDGET") throw new LlmError("The configured model or request has invalid context/output limits for this protocol.", "INVALID_REQUEST", { cause: error });\n'
+      + '\t\t\t\tthrow error;',
+    "pi-ai typed token-budget failure");
+  // The normal Models lazy loader serializes setup exceptions into messages,
+  // dropping Error.code. Preserve the taxonomy on that terminal-event path too.
+  text = replaceExactlyOnce(text,
+    'function mapStopReason(message, contextWindow) {\n',
+    'function mapStopReason(message, contextWindow) {\n'
+      + '\tif (message.stopReason === "error" && message.errorMessage === "Invalid model context/output budget") return {\n'
+      + '\t\tkind: "error",\n'
+      + '\t\tfailure: { message: "The configured model or request has invalid context/output limits for this protocol.", code: "INVALID_REQUEST" }\n'
+      + '\t};\n',
+    "pi-ai lazy token-budget failure");
+  return Buffer.from(text, "utf8");
+}
+
+function patchPiAIContextOutputBudget(bytes) {
+  const before = `export function clampMaxTokensToContext(model, context, maxTokens) {
+    if (model.contextWindow <= 0)
+        return Math.max(MIN_MAX_TOKENS, maxTokens);
+    const available = model.contextWindow - estimateContextTokens(context).tokens - CONTEXT_SAFETY_TOKENS;
+    return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, available));
+}`;
+  const after = `// Fulmar: context capacity is not an output budget. Reserve a bounded fraction
+// of small windows instead of starving them with a fixed 4K subtraction. This
+// is an estimate (including tools), not a tokenizer guarantee; provider overflow
+// and the Harness's bounded compaction recovery remain authoritative.
+export function clampMaxTokensToContext(model, context, maxTokens) {
+    const invalid = () => Object.assign(new Error("Invalid model context/output budget"), {
+        code: "FULMAR_INVALID_TOKEN_BUDGET"
+    });
+    if (![model.contextWindow, model.maxTokens, maxTokens].every(value => Number.isSafeInteger(value) && value > 0))
+        throw invalid();
+    const input = estimateContextTokens(context).tokens;
+    if (!Number.isSafeInteger(input) || input < 0) throw invalid();
+    const requested = Math.min(maxTokens, model.maxTokens);
+    // Responses serializes at least 16. Refuse an incompatible explicit cap
+    // instead of letting that later protocol floor silently increase it.
+    if ((model.api === "openai-responses" || model.api === "azure-openai-responses") && requested < 16) throw invalid();
+    const reserve = Math.min(CONTEXT_SAFETY_TOKENS, Math.max(256, Math.ceil(model.contextWindow / 16)));
+    const available = model.contextWindow - input - reserve;
+    // Keep deliberately small caller caps, but do not manufacture one-token
+    // agent completions when the caller actually requested useful output.
+    if (available < Math.min(256, requested)) {
+        throw Object.assign(new Error("Configured context window exceeded: insufficient response budget"), {
+            code: "FULMAR_CONTEXT_BUDGET_EXCEEDED"
+        });
+    }
+    return Math.min(requested, available);
+}`;
+  return Buffer.from(replaceExactlyOnce(bytes.toString("utf8"), before, after,
+    "pi-ai context/output budget"), "utf8");
 }
 
 function patchPiAIConfigTypes(bytes) {
@@ -449,6 +509,7 @@ const PATCHERS = Object.freeze({
   "deepseek-provider-privacy-types": patchDeepSeekTypes,
   "deepseek-provider-privacy-manifest": patchDeepSeekManifest,
   "pi-ai-adapter-private-no-auth": patchPiAIAdapterRuntime,
+  "pi-ai-context-output-budget": patchPiAIContextOutputBudget,
   "pi-ai-adapter-private-no-auth-types": patchPiAIConfigTypes,
   "pi-ai-adapter-private-no-auth-readme-en": patchPiAIReadmeEnglish,
   "pi-ai-adapter-private-no-auth-readme-zh": patchPiAIReadmeChinese,
@@ -669,7 +730,7 @@ async function main() {
     await patchInstalledTree(stagedModules, review);
     await verifyPatchedTree(stagedModules, review);
     await rename(stagedModules, target);
-    process.stdout.write("Materialized the pinned dependency tree and applied fourteen checksum-bound Fulmar patches.\n");
+    process.stdout.write(`Materialized the pinned dependency tree and applied ${review.manifest.patches.length} checksum-bound Fulmar patches.\n`);
   } finally {
     await rm(stage, { recursive: true, force: true });
   }
@@ -683,6 +744,8 @@ export {
   patchDSHProfileReadOnlyBoot,
   patchDeepSeekRuntime,
   patchPiAIAdapterRuntime,
+  patchPiAIContextBudgetErrors,
+  patchPiAIContextOutputBudget,
   patchPiAIConfigTypes,
   patchPiAIReadmeEnglish,
   patchPiAIReadmeChinese,
